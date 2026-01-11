@@ -446,19 +446,18 @@ async def create_review(
             problem_id = problem.id
         
         # 2) Submission保存（認証されている場合はuser_idを設定）
-    sub = Submission(
+        sub = Submission(
             user_id=current_user.id if current_user else None,
             problem_id=problem_id,  # 既存構造用（後方互換性）
             problem_metadata_id=problem_metadata_id,  # 新しい構造用
             problem_details_id=problem_details_id,  # 新しい構造用（設問指定）
             subject=subject,
             question_text=question_text,
-        answer_text=req.answer_text,
-    )
-    db.add(sub)
-    db.commit()
-    db.refresh(sub)
-
+            answer_text=req.answer_text,
+        )
+        db.add(sub)
+        db.commit()
+        db.refresh(sub)
         # 3) LLMで講評を生成
         try:
             review_markdown, review_json, model_name = generate_review(
@@ -502,15 +501,15 @@ async def create_review(
                 detail=error_msg
             )
 
-    rev = Review(
-        submission_id=sub.id,
-        review_markdown=review_markdown,
-        review_json=json.dumps(review_json, ensure_ascii=False),
+        rev = Review(
+            submission_id=sub.id,
+            review_markdown=review_markdown,
+            review_json=json.dumps(review_json, ensure_ascii=False),
             model=model_name,
             prompt_version="v1",
-    )
-    db.add(rev)
-    db.commit()
+        )
+        db.add(rev)
+        db.commit()
 
         # answer_textを追加
     return ReviewResponse(
