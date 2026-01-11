@@ -16,6 +16,7 @@ from .models import (
     User, UserSubscription, SubscriptionPlan,
     Notebook, NoteSection, NotePage
 )
+from config.constants import FIXED_SUBJECTS
 from .schemas import (
     ReviewRequest, ReviewResponse, ReviewChatRequest, ReviewChatResponse,
     FreeChatRequest, FreeChatResponse,
@@ -35,7 +36,6 @@ from pydantic import BaseModel
 from .llm_service import generate_review, chat_about_review, free_chat
 from .auth import get_current_user, get_current_user_required, verify_google_token, get_or_create_user
 from config.settings import AUTH_ENABLED
-from config.constants import FIXED_SUBJECTS
 
 Base.metadata.create_all(bind=engine)
 
@@ -188,7 +188,6 @@ def get_problem_years(db: Session = Depends(get_db)):
             years_from_old = db.query(Problem.year).distinct().all()
             years_list = sorted(set(y[0] for y in years_from_old), reverse=True)
         
-        logger.debug(f"年度データ取得: {len(years_list)}件 - {years_list}")
         return ProblemYearsResponse(years=years_list)
     except Exception as e:
         logger.error(f"年度データ取得エラー: {str(e)}")
@@ -198,25 +197,17 @@ def get_problem_years(db: Session = Depends(get_db)):
 
 @app.get("/v1/problems/subjects", response_model=ProblemSubjectsResponse)
 def get_problem_subjects(db: Session = Depends(get_db)):
-    """利用可能な科目の一覧を取得（軽量版・改善版構造を使用、固定順序で返す）"""
+    """利用可能な科目の一覧を取得（軽量版・改善版構造を使用）"""
     try:
         # 新しい構造（ProblemMetadata）から取得を試みる
         subjects_from_metadata = db.query(ProblemMetadata.subject).distinct().all()
-        subjects_set = set(s[0] for s in subjects_from_metadata)
+        subjects_list = sorted(set(s[0] for s in subjects_from_metadata))
         
         # 新しい構造にデータがない場合は、既存構造（Problem）から取得（後方互換性）
-        if not subjects_set:
+        if not subjects_list:
             subjects_from_old = db.query(Problem.subject).distinct().all()
-            subjects_set = set(s[0] for s in subjects_from_old)
+            subjects_list = sorted(set(s[0] for s in subjects_from_old))
         
-        # 固定順序で並べ替え（FIXED_SUBJECTSの順序に従う）
-        # DBに存在する科目のみを、FIXED_SUBJECTSの順序で並べる
-        subjects_list = [s for s in FIXED_SUBJECTS if s in subjects_set]
-        # FIXED_SUBJECTSにない科目も含める（後方互換性）
-        additional_subjects = sorted(subjects_set - set(FIXED_SUBJECTS))
-        subjects_list.extend(additional_subjects)
-        
-        logger.debug(f"科目データ取得: {len(subjects_list)}件 - {subjects_list}")
         return ProblemSubjectsResponse(subjects=subjects_list)
     except Exception as e:
         logger.error(f"科目データ取得エラー: {str(e)}")
@@ -459,6 +450,7 @@ async def create_review(
         db.add(sub)
         db.commit()
         db.refresh(sub)
+
         # 3) LLMで講評を生成
         try:
             review_markdown, review_json, model_name = generate_review(
@@ -502,6 +494,7 @@ async def create_review(
                 detail=error_msg
             )
 
+        # 4) Review保存
         rev = Review(
             submission_id=sub.id,
             review_markdown=review_markdown,
@@ -512,7 +505,7 @@ async def create_review(
         db.add(rev)
         db.commit()
 
-        # answer_textを追加
+        # 5) レスポンスを返す
         return ReviewResponse(
             submission_id=sub.id,
             review_markdown=review_markdown,
@@ -944,9 +937,7 @@ async def create_notebook(
     db.commit()
     db.refresh(notebook)
     
-    return NotebookResponse.model_validate(notebook)
-
-@app.get("/v1/notebooks/{notebook_id}", response_model=NotebookDetailResponse)
+    return NotebookResponse.model_validate(notebook)@app.get("/v1/notebooks/{notebook_id}", response_model=NotebookDetailResponse)
 async def get_notebook(
     notebook_id: int,
     current_user: Optional[User] = Depends(get_current_user),

@@ -4,7 +4,6 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -15,7 +14,7 @@ import type { ReviewRequest, ProblemMetadata, ProblemMetadataWithDetails } from 
 import { formatYearToEra } from "@/lib/utils"
 import { sortSubjectsByFixedOrder } from "@/lib/subjects"
 
-type Step = 1 | 2 | 3
+type Step = 1 | 2
 type Mode = "existing" | "new"
 
 export default function ReviewPage() {
@@ -26,7 +25,7 @@ export default function ReviewPage() {
   const [error, setError] = useState<string | null>(null)
   const [generationPhase, setGenerationPhase] = useState<string>("")
 
-  // Step 1: 問題選択
+  // Step 1: 問題選択 + 答案入力
   const [examType, setExamType] = useState<string>("")
   const [year, setYear] = useState<number | null>(null)
   const [subject, setSubject] = useState<string>("")
@@ -34,8 +33,6 @@ export default function ReviewPage() {
   const [selectedDetails, setSelectedDetails] = useState<ProblemMetadataWithDetails | null>(null)
   const [questionText, setQuestionText] = useState<string>("")
   const [purposeText, setPurposeText] = useState<string>("")
-
-  // Step 2: 答案入力
   const [answerText, setAnswerText] = useState<string>("")
 
   // データ取得
@@ -45,6 +42,7 @@ export default function ReviewPage() {
   const [loadingSubjects, setLoadingSubjects] = useState(false)
   const [loadingYears, setLoadingYears] = useState(false)
   const [loadingMetadata, setLoadingMetadata] = useState(false)
+  const [accordionValue, setAccordionValue] = useState<string>("")
 
   // localStorageから答案を復元
   useEffect(() => {
@@ -121,7 +119,34 @@ export default function ReviewPage() {
           const res = await fetch(`/api/problems/metadata?${params.toString()}`)
           if (!res.ok) throw new Error("問題データの取得に失敗しました")
           const data = await res.json()
-          setMetadataList(data.metadata_list || [])
+          const metadataList = data.metadata_list || []
+          setMetadataList(metadataList)
+
+          // 3つすべて選択されていて、問題が1件のみの場合は自動的に取得
+          if (examType && year && subject && metadataList.length === 1) {
+            const metadata = metadataList[0]
+            setSelectedMetadata(metadata)
+            try {
+              const detailRes = await fetch(`/api/problems/metadata/${metadata.id}`)
+              if (!detailRes.ok) throw new Error("問題詳細の取得に失敗しました")
+              const detailData: ProblemMetadataWithDetails = await detailRes.json()
+              setSelectedDetails(detailData)
+              setAccordionValue("") // 問題が選択されたときはAccordionを閉じた状態にする
+              // 最初の設問を選択
+              if (detailData.details && detailData.details.length > 0) {
+                setQuestionText(detailData.details[0].question_text)
+                setPurposeText(detailData.details[0].purpose || "")
+              }
+            } catch (err: any) {
+              setError(err.message)
+            }
+          } else if (!(examType && year && subject)) {
+            // 3つすべて選択されていない場合は選択状態をクリア
+            setSelectedMetadata(null)
+            setSelectedDetails(null)
+            setQuestionText("")
+            setPurposeText("")
+          }
         } catch (err: any) {
           setError(err.message)
         } finally {
@@ -208,19 +233,17 @@ export default function ReviewPage() {
 
   // ステップの進行可否チェック
   const canProceedToStep2 = () => {
-    if (mode === "existing") {
-      return selectedDetails !== null && questionText !== ""
-    } else {
-      return questionText.trim() !== ""
-    }
-  }
-
-  const canProceedToStep3 = () => {
-    return answerText.trim().length >= 100 // 最低100文字
+    // 問題の準備ができているか
+    const hasProblem = mode === "existing"
+      ? selectedDetails !== null && questionText !== ""
+      : questionText.trim() !== ""
+    // 答案が入力されているか（最低100文字推奨）
+    const hasAnswer = answerText.trim().length >= 100
+    return hasProblem && hasAnswer
   }
 
   const canGenerate = () => {
-    return canProceedToStep2() && canProceedToStep3() && !loading
+    return canProceedToStep2() && !loading
   }
 
   // コピー機能
@@ -233,50 +256,79 @@ export default function ReviewPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
-      <div className="container mx-auto px-8 py-12 max-w-5xl">
-        {/* ヘッダー */}
-        <div className="mb-12 text-center">
-          <h1 className="text-4xl font-bold mb-2">📝 答案講評生成</h1>
-          <p className="text-muted-foreground text-lg">
-            法律試験の答案をAIで講評します
-          </p>
-        </div>
-
-        {/* ステップインジケーター */}
-        <Card className="mb-8">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between mb-4">
-              {[1, 2, 3].map((s) => (
-                <div key={s} className="flex items-center flex-1">
-                  <div className="flex flex-col items-center flex-1">
-                    <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
-                        step > s
-                          ? "bg-green-500 text-white"
-                          : step === s
-                          ? "bg-primary text-white"
-                          : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      {step > s ? <CheckCircle2 className="w-6 h-6" /> : s}
-                    </div>
-                    <span className="mt-2 text-sm font-medium">
-                      {s === 1 ? "問題準備" : s === 2 ? "答案入力" : "生成"}
-                    </span>
-                  </div>
-                  {s < 3 && (
-                    <div
-                      className={`flex-1 h-1 mx-2 ${
-                        step > s ? "bg-green-500" : "bg-muted"
-                      }`}
-                    />
-                  )}
-                </div>
-              ))}
+      {/* 固定ヘッダーバー */}
+      <div className="fixed top-0 left-0 right-0 z-30 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+        <div className="container mx-auto px-8 py-4 max-w-5xl">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold">Juristutor-AI</h1>
+              <p className="text-muted-foreground text-sm">
+                過去問の答案をAIで講評します
+              </p>
             </div>
-            <Progress value={(step / 3) * 100} className="h-2" />
-          </CardContent>
-        </Card>
+            {mode === "existing" && (
+              <div className="flex gap-2 items-end">
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">試験種別</label>
+                  <select
+                    className="w-24 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                    value={examType}
+                    onChange={(e) => {
+                      setExamType(e.target.value)
+                      setSelectedMetadata(null)
+                      setSelectedDetails(null)
+                    }}
+                  >
+                    <option value="">未選択</option>
+                    <option value="司法試験">司法試験</option>
+                    <option value="予備試験">予備試験</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">年度</label>
+                  <select
+                    className="w-28 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                    value={year || ""}
+                    onChange={(e) => {
+                      setYear(e.target.value ? parseInt(e.target.value) : null)
+                      setSelectedMetadata(null)
+                      setSelectedDetails(null)
+                    }}
+                  >
+                    <option value="">未選択</option>
+                    {years.map((y) => (
+                      <option key={y} value={y}>
+                        {formatYearToEra(y)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">科目</label>
+                  <select
+                    className="w-32 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                    value={subject}
+                    onChange={(e) => {
+                      setSubject(e.target.value)
+                      setSelectedMetadata(null)
+                      setSelectedDetails(null)
+                    }}
+                  >
+                    <option value="">未選択</option>
+                    {subjects.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="container mx-auto px-8 pt-32 pb-24 max-w-5xl">
 
         {/* エラー表示 */}
         {error && (
@@ -287,12 +339,12 @@ export default function ReviewPage() {
           </Alert>
         )}
 
-        {/* Step 1: 問題準備 */}
+        {/* Step 1: 問題準備 + 答案入力 */}
         {step === 1 && (
           <Card>
             <CardHeader>
-              <CardTitle>Step 1: 問題準備</CardTitle>
-              <CardDescription>既存の問題を選択するか、新規に入力してください</CardDescription>
+              <CardTitle>Step 1: 問題準備と答案入力</CardTitle>
+              <CardDescription>既存の問題を選択するか、新規に入力してください。答案も入力できます。</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* モード切替 */}
@@ -326,154 +378,53 @@ export default function ReviewPage() {
 
               {mode === "existing" ? (
                 <div className="space-y-4">
-                  {/* フィルター */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <label className="text-sm font-medium mb-2 block">試験種別</label>
-                      <select
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        value={examType}
-                        onChange={(e) => {
-                          setExamType(e.target.value)
-                          setSelectedMetadata(null)
-                          setSelectedDetails(null)
-                        }}
-                      >
-                        <option value="">すべて</option>
-                        <option value="司法試験">司法試験</option>
-                        <option value="予備試験">予備試験</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium mb-2 block">年度</label>
-                      <select
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        value={year || ""}
-                        onChange={(e) => {
-                          setYear(e.target.value ? parseInt(e.target.value) : null)
-                          setSelectedMetadata(null)
-                          setSelectedDetails(null)
-                        }}
-                      >
-                        <option value="">すべて</option>
-                        {years.map((y) => (
-                          <option key={y} value={y}>
-                            {formatYearToEra(y)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium mb-2 block">科目</label>
-                      <select
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        value={subject}
-                        onChange={(e) => {
-                          setSubject(e.target.value)
-                          setSelectedMetadata(null)
-                          setSelectedDetails(null)
-                        }}
-                      >
-                        <option value="">すべて</option>
-                        {subjects.map((s) => (
-                          <option key={s} value={s}>
-                            {s}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* 選択済みバッジ */}
-                  {(examType || year || subject) && (
-                    <div className="flex flex-wrap gap-2">
-                      {examType && (
-                        <Badge variant="secondary">
-                          試験種別: {examType}
-                        </Badge>
-                      )}
-                      {year && (
-                        <Badge variant="secondary">年度: {formatYearToEra(year)}</Badge>
-                      )}
-                      {subject && (
-                        <Badge variant="secondary">科目: {subject}</Badge>
-                      )}
-                    </div>
-                  )}
-
-                  {/* 問題リスト */}
-                  {loadingMetadata ? (
-                    <div className="space-y-2">
-                      <Skeleton className="h-16 w-full" />
-                      <Skeleton className="h-16 w-full" />
-                    </div>
-                  ) : metadataList.length > 0 ? (
-                    <div className="space-y-2">
-                      {metadataList.map((meta) => (
-                        <Card
-                          key={meta.id}
-                          className={`cursor-pointer hover:bg-muted/50 transition-colors ${
-                            selectedMetadata?.id === meta.id ? "ring-2 ring-primary" : ""
-                          }`}
-                          onClick={() => handleSelectMetadata(meta)}
-                        >
-                          <CardContent className="p-4">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <div className="font-semibold">
-                                  {meta.exam_type} {formatYearToEra(meta.year)} {meta.subject}
-                                </div>
-                              </div>
-                              {selectedMetadata?.id === meta.id && (
-                                <CheckCircle2 className="w-5 h-5 text-primary" />
-                              )}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  ) : (examType || year || subject) ? (
-                    <p className="text-muted-foreground text-center py-4">
-                      該当する問題が見つかりませんでした
-                    </p>
-                  ) : null}
-
-                  {/* 選択された問題の表示 */}
-                  {selectedDetails && questionText && (
+                  {/* 選択された問題の表示（3つすべて選択されていて問題が1件の場合） */}
+                  {examType && year && subject && selectedDetails && questionText && metadataList.length === 1 && (
                     <Card className="border-primary">
-                      <CardHeader>
-                        <CardTitle className="text-lg">選択された問題</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <label className="text-sm font-medium">問題文</label>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleCopy(questionText)}
-                            >
-                              {copied ? (
-                                <Check className="w-4 h-4" />
-                              ) : (
-                                <Copy className="w-4 h-4" />
+                      <CardContent className="pt-6">
+                        <Accordion type="single" collapsible value={accordionValue} onValueChange={setAccordionValue}>
+                          <AccordionItem value="question">
+                            <div className="flex items-center justify-between pr-4">
+                              <div className="flex items-center gap-2">
+                                <AccordionTrigger className="text-base font-semibold">
+                                  {selectedMetadata?.exam_type} {formatYearToEra(selectedMetadata?.year || 0)} {selectedMetadata?.subject}
+                                </AccordionTrigger>
+                                <span className="text-xs text-muted-foreground">
+                                  {accordionValue === "question" ? "非表示にする" : "問題文を表示する"}
+                                </span>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleCopy(questionText)
+                                }}
+                              >
+                                {copied ? (
+                                  <Check className="w-4 h-4" />
+                                ) : (
+                                  <Copy className="w-4 h-4" />
+                                )}
+                              </Button>
+                            </div>
+                            <AccordionContent>
+                              <div className="rounded-md border bg-muted/50 p-4 whitespace-pre-wrap text-sm max-h-[360px] overflow-y-auto">
+                                {questionText}
+                              </div>
+                              {purposeText && (
+                                <Accordion type="single" collapsible className="mt-4">
+                                  <AccordionItem value="purpose">
+                                    <AccordionTrigger>出題趣旨</AccordionTrigger>
+                                    <AccordionContent className="whitespace-pre-wrap text-sm">
+                                      {purposeText}
+                                    </AccordionContent>
+                                  </AccordionItem>
+                                </Accordion>
                               )}
-                            </Button>
-                          </div>
-                          <div className="rounded-md border bg-muted/50 p-4 whitespace-pre-wrap text-sm">
-                            {questionText}
-                          </div>
-                        </div>
-                        {purposeText && (
-                          <Accordion type="single" collapsible>
-                            <AccordionItem value="purpose">
-                              <AccordionTrigger>出題趣旨</AccordionTrigger>
-                              <AccordionContent className="whitespace-pre-wrap text-sm">
-                                {purposeText}
-                              </AccordionContent>
-                            </AccordionItem>
-                          </Accordion>
-                        )}
+                            </AccordionContent>
+                          </AccordionItem>
+                        </Accordion>
                       </CardContent>
                     </Card>
                   )}
@@ -501,66 +452,30 @@ export default function ReviewPage() {
                 </div>
               )}
 
-              <div className="flex justify-end">
-                <Button
-                  onClick={() => setStep(2)}
-                  disabled={!canProceedToStep2()}
-                >
-                  次へ
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Step 2: 答案入力 */}
-        {step === 2 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Step 2: 答案入力</CardTitle>
-              <CardDescription>あなたの答案を入力してください</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
+              {/* 答案入力欄 */}
+              <div className="border-t pt-6">
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-sm font-medium">答案</label>
                   <span className="text-sm text-muted-foreground">
                     {answerText.length} 文字
-                    {answerText.length < 100 && (
-                      <span className="text-destructive ml-2">
-                        （推奨: 100文字以上）
-                      </span>
-                    )}
                   </span>
                 </div>
                 <Textarea
                   placeholder="答案を入力してください"
                   value={answerText}
                   onChange={(e) => setAnswerText(e.target.value)}
-                  className="min-h-[400px] font-mono text-sm"
+                  className="h-[360px] font-mono text-sm resize-none overflow-y-auto"
                 />
-              </div>
-
-              <div className="flex justify-between">
-                <Button variant="outline" onClick={() => setStep(1)}>
-                  戻る
-                </Button>
-                <Button
-                  onClick={() => setStep(3)}
-                  disabled={!canProceedToStep3()}
-                >
-                  次へ
-                </Button>
               </div>
             </CardContent>
           </Card>
         )}
 
-        {/* Step 3: 生成 */}
-        {step === 3 && (
+        {/* Step 2: 生成 */}
+        {step === 2 && (
           <Card>
             <CardHeader>
-              <CardTitle>Step 3: 講評生成</CardTitle>
+              <CardTitle>Step 2: 講評生成</CardTitle>
               <CardDescription>準備ができたら、講評を生成してください</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -602,14 +517,13 @@ export default function ReviewPage() {
                   <AlertCircle className="h-4 w-4" />
                   <AlertTitle>準備が完了していません</AlertTitle>
                   <AlertDescription>
-                    {!canProceedToStep2() && "問題を選択または入力してください"}
-                    {canProceedToStep2() && !canProceedToStep3() && "答案を入力してください（推奨: 100文字以上）"}
+                    問題を選択または入力し、答案を入力してください（推奨: 100文字以上）
                   </AlertDescription>
                 </Alert>
               )}
 
               <div className="flex justify-between">
-                <Button variant="outline" onClick={() => setStep(2)} disabled={loading}>
+                <Button variant="outline" onClick={() => setStep(1)} disabled={loading}>
                   戻る
                 </Button>
                 <Button
@@ -629,6 +543,31 @@ export default function ReviewPage() {
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {/* 固定フッターバー（講評開始ボタン） */}
+        {step === 1 && (
+          <div className="fixed bottom-0 left-0 right-0 z-30 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t shadow-lg">
+            <div className="container mx-auto px-8 py-4 max-w-5xl">
+              <div className="flex justify-end">
+                <Button
+                  onClick={handleGenerate}
+                  disabled={!canProceedToStep2() || loading}
+                  className="min-w-[120px]"
+                  size="lg"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      生成中...
+                    </>
+                  ) : (
+                    "講評開始"
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

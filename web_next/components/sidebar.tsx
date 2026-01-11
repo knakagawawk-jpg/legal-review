@@ -1,10 +1,11 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { FileText, BookOpen, MessageCircle, ScrollText, Wrench } from "lucide-react"
+import { FileText, BookOpen, MessageCircle, ScrollText, Wrench, Menu, ChevronLeft } from "lucide-react"
 
 const navigation = [
   {
@@ -41,20 +42,47 @@ const navigation = [
 
 export function Sidebar() {
   const pathname = usePathname()
+  const [isOpen, setIsOpen] = useState(true)
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-64 border-r bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-full flex-col">
-        {/* ロゴ・タイトル */}
-        <div className="border-b p-6">
-          <div className="flex items-center gap-2">
-            <div className="text-2xl">⚖️</div>
-            <div>
-              <h1 className="text-xl font-bold text-primary">答案講評</h1>
-              <p className="text-xs text-muted-foreground">法律答案の自動講評システム</p>
+    <>
+      {/* 閉じた状態のときのメニューボタン */}
+      {!isOpen && (
+        <button
+          onClick={() => setIsOpen(true)}
+          className="fixed left-4 top-4 z-50 rounded-md bg-background/95 backdrop-blur p-2 shadow-md border hover:bg-accent transition-colors"
+          aria-label="メニューを開く"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+      )}
+
+      <aside
+        className={cn(
+          "fixed left-0 top-0 h-full w-64 border-r bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-40 transition-transform duration-300",
+          isOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
+        <div className="flex h-full flex-col">
+          {/* ロゴ・タイトル */}
+          <div className="border-b p-6">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="text-2xl">⚖️</div>
+                <div>
+                  <h1 className="text-xl font-bold text-primary">答案講評</h1>
+                  <p className="text-xs text-muted-foreground">法律答案の自動講評システム</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsOpen(false)}
+                className="rounded-md p-1 hover:bg-accent transition-colors"
+                aria-label="サイドバーを閉じる"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
             </div>
           </div>
-        </div>
 
         {/* ナビゲーション */}
         <nav className="flex-1 space-y-1 p-4">
@@ -98,5 +126,6 @@ export function Sidebar() {
         </div>
       </div>
     </aside>
+    </>
   )
 }
