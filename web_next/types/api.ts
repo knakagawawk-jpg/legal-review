@@ -60,3 +60,114 @@ export interface ProblemMetadataWithDetails {
   metadata: ProblemMetadata
   details: ProblemDetails[]
 }
+
+// 短答式問題関連の型定義
+export interface ShortAnswerProblem {
+  id: number
+  exam_type: string
+  year: string
+  subject: string
+  question_number: number
+  question_text: string
+  choice_1: string
+  choice_2: string
+  choice_3: string
+  choice_4?: string | null
+  correct_answer: string
+  correctness_pattern: string
+  source_pdf?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ShortAnswerSession {
+  id: number
+  exam_type: string
+  year?: string | null
+  subject: string
+  is_random: boolean
+  problem_ids: number[]
+  started_at: string
+  completed_at?: string | null
+}
+
+export interface ShortAnswerAnswer {
+  id: number
+  session_id: number
+  problem_id: number
+  selected_answer?: string | null
+  is_correct?: boolean | null
+  answered_at: string
+}
+
+// 過去の記録関連の型定義
+export interface SubmissionHistory {
+  id: number
+  subject: string
+  question_text?: string | null
+  answer_text: string
+  created_at: string
+  review?: {
+    overall_review?: {
+      score?: number
+      comment?: string
+    }
+    strengths?: Array<{
+      category: string
+      description: string
+      paragraph_numbers?: number[]
+    }>
+    weaknesses?: Array<{
+      category: string
+      description: string
+      paragraph_numbers?: number[]
+      suggestion?: string
+    }>
+  } | null
+}
+
+export interface ShortAnswerHistory {
+  session_id: number
+  exam_type: string
+  year?: string | null
+  subject: string
+  started_at: string
+  completed_at?: string | null
+  total_problems: number
+  correct_count: number
+  accuracy: number
+}
+
+// ノート機能関連の型定義
+export interface Notebook {
+  id: number
+  title: string
+  description?: string | null
+  color?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface NoteSection {
+  id: number
+  notebook_id: number
+  title: string
+  display_order: number
+  created_at: string
+  updated_at: string
+  pages?: NotePage[]
+}
+
+export interface NotePage {
+  id: number
+  section_id: number
+  title: string
+  content?: string | null
+  display_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface NotebookDetail extends Notebook {
+  sections: Array<NoteSection & { pages: NotePage[] }>
+}

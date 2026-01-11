@@ -12,6 +12,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Skeleton } from "@/components/ui/skeleton"
 import { CheckCircle2, AlertCircle, Loader2, Copy, Check } from "lucide-react"
 import type { ReviewRequest, ProblemMetadata, ProblemMetadataWithDetails } from "@/types/api"
+import { formatYearToEra } from "@/lib/utils"
 
 type Step = 1 | 2 | 3
 type Mode = "existing" | "new"
@@ -38,8 +39,10 @@ export default function ReviewPage() {
 
   // データ取得
   const [subjects, setSubjects] = useState<string[]>([])
+  const [years, setYears] = useState<number[]>([])
   const [metadataList, setMetadataList] = useState<ProblemMetadata[]>([])
   const [loadingSubjects, setLoadingSubjects] = useState(false)
+  const [loadingYears, setLoadingYears] = useState(false)
   const [loadingMetadata, setLoadingMetadata] = useState(false)
 
   // localStorageから答案を復元
@@ -73,6 +76,24 @@ export default function ReviewPage() {
       }
     }
     fetchSubjects()
+  }, [])
+
+  // 年度一覧を取得
+  useEffect(() => {
+    const fetchYears = async () => {
+      setLoadingYears(true)
+      try {
+        const res = await fetch("/api/problems/years")
+        if (!res.ok) throw new Error("年度の取得に失敗しました")
+        const data = await res.json()
+        setYears(data.years || [])
+      } catch (err: any) {
+        setError(err.message)
+      } finally {
+        setLoadingYears(false)
+      }
+    }
+    fetchYears()
   }, [])
 
   // 問題メタデータを取得
@@ -201,7 +222,7 @@ export default function ReviewPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
-      <div className="container mx-auto px-4 py-12 max-w-5xl">
+      <div className="container mx-auto px-8 py-12 max-w-5xl">
         {/* ヘッダー */}
         <div className="mb-12 text-center">
           <h1 className="text-4xl font-bold mb-2">📝 答案講評生成</h1>
@@ -314,17 +335,22 @@ export default function ReviewPage() {
                     </div>
                     <div>
                       <label className="text-sm font-medium mb-2 block">年度</label>
-                      <input
-                        type="number"
+                      <select
                         className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        placeholder="例: 2024"
                         value={year || ""}
                         onChange={(e) => {
                           setYear(e.target.value ? parseInt(e.target.value) : null)
                           setSelectedMetadata(null)
                           setSelectedDetails(null)
                         }}
-                      />
+                      >
+                        <option value="">すべて</option>
+                        {years.map((y) => (
+                          <option key={y} value={y}>
+                            {formatYearToEra(y)}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div>
                       <label className="text-sm font-medium mb-2 block">科目</label>
@@ -356,7 +382,7 @@ export default function ReviewPage() {
                         </Badge>
                       )}
                       {year && (
-                        <Badge variant="secondary">年度: {year}</Badge>
+                        <Badge variant="secondary">年度: {formatYearToEra(year)}</Badge>
                       )}
                       {subject && (
                         <Badge variant="secondary">科目: {subject}</Badge>
@@ -384,7 +410,7 @@ export default function ReviewPage() {
                             <div className="flex items-center justify-between">
                               <div>
                                 <div className="font-semibold">
-                                  {meta.exam_type} {meta.year}年 {meta.subject}
+                                  {meta.exam_type} {formatYearToEra(meta.year)} {meta.subject}
                                 </div>
                               </div>
                               {selectedMetadata?.id === meta.id && (

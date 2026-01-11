@@ -45,7 +45,7 @@ export default function ReviewResultPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
-        <div className="container mx-auto px-4 py-12 max-w-5xl">
+        <div className="container mx-auto px-8 py-12 max-w-5xl">
           <div className="space-y-6">
             <Skeleton className="h-12 w-64" />
             <Skeleton className="h-64 w-full" />
@@ -59,7 +59,7 @@ export default function ReviewResultPage() {
   if (error || !review) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
-        <div className="container mx-auto px-4 py-12 max-w-5xl">
+        <div className="container mx-auto px-8 py-12 max-w-5xl">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>エラー</AlertTitle>
@@ -84,7 +84,7 @@ export default function ReviewResultPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
-      <div className="container mx-auto px-4 py-12 max-w-5xl">
+      <div className="container mx-auto px-8 py-12 max-w-5xl">
         {/* ヘッダー */}
         <div className="mb-8">
           <Button

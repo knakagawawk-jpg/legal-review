@@ -1,0 +1,43 @@
+import { NextRequest, NextResponse } from "next/server"
+
+const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:8000"
+
+// GET /api/dev/submissions - 開発用：全投稿一覧を取得（認証不要）
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const limit = searchParams.get("limit") || "100"
+    const offset = searchParams.get("offset") || "0"
+
+    const params = new URLSearchParams()
+    params.append("limit", limit)
+    params.append("offset", offset)
+
+    const url = `${BACKEND_URL}/v1/dev/submissions?${params.toString()}`
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ detail: "Unknown error" }))
+      return NextResponse.json(
+        { error: errorData.detail || "投稿一覧の取得に失敗しました" },
+        { status: response.status }
+      )
+    }
+
+    const data = await response.json()
+    return NextResponse.json(data)
+  } catch (error: any) {
+    console.error("Dev submissions fetch error:", error)
+    return NextResponse.json(
+      { error: error.message || "予期しないエラーが発生しました" },
+      { status: 500 }
+    )
+  }
+}
