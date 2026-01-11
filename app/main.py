@@ -196,17 +196,25 @@ def get_problem_years(db: Session = Depends(get_db)):
 
 @app.get("/v1/problems/subjects", response_model=ProblemSubjectsResponse)
 def get_problem_subjects(db: Session = Depends(get_db)):
-    """利用可能な科目の一覧を取得（軽量版・改善版構造を使用）"""
+    """利用可能な科目の一覧を取得（軽量版・改善版構造を使用、固定順序で返す）"""
     try:
         # 新しい構造（ProblemMetadata）から取得を試みる
         subjects_from_metadata = db.query(ProblemMetadata.subject).distinct().all()
-        subjects_list = sorted(set(s[0] for s in subjects_from_metadata))
+        subjects_set = set(s[0] for s in subjects_from_metadata)
         
         # 新しい構造にデータがない場合は、既存構造（Problem）から取得（後方互換性）
-        if not subjects_list:
+        if not subjects_set:
             subjects_from_old = db.query(Problem.subject).distinct().all()
-            subjects_list = sorted(set(s[0] for s in subjects_from_old))
+            subjects_set = set(s[0] for s in subjects_from_old)
         
+        # 固定順序で並べ替え（FIXED_SUBJECTSの順序に従う）
+        # DBに存在する科目のみを、FIXED_SUBJECTSの順序で並べる
+        subjects_list = [s for s in FIXED_SUBJECTS if s in subjects_set]
+        # FIXED_SUBJECTSにない科目も含める（後方互換性）
+        additional_subjects = sorted(subjects_set - set(FIXED_SUBJECTS))
+        subjects_list.extend(additional_subjects)
+        
+        logger.debug(f"科目データ取得: {len(subjects_list)}件 - {subjects_list}")
         return ProblemSubjectsResponse(subjects=subjects_list)
     except Exception as e:
         logger.error(f"科目データ取得エラー: {str(e)}")

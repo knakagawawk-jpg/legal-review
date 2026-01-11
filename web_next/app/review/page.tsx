@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { CheckCircle2, AlertCircle, Loader2, Copy, Check } from "lucide-react"
 import type { ReviewRequest, ProblemMetadata, ProblemMetadataWithDetails } from "@/types/api"
 import { formatYearToEra } from "@/lib/utils"
+import { sortSubjectsByFixedOrder } from "@/lib/subjects"
 
 type Step = 1 | 2 | 3
 type Mode = "existing" | "new"
@@ -68,8 +69,14 @@ export default function ReviewPage() {
         const res = await fetch("/api/problems/subjects")
         if (!res.ok) throw new Error("科目の取得に失敗しました")
         const data = await res.json()
-        setSubjects(data.subjects || [])
+        const fetchedSubjects = data.subjects || []
+        // 固定順序で並べ替え
+        const sortedSubjects = sortSubjectsByFixedOrder(fetchedSubjects)
+        setSubjects(sortedSubjects)
+        // デバッグ: 取得した科目をログに出力
+        console.log("科目データ取得:", { fetched: fetchedSubjects, sorted: sortedSubjects })
       } catch (err: any) {
+        console.error("科目データ取得エラー:", err)
         setError(err.message)
       } finally {
         setLoadingSubjects(false)
@@ -86,8 +93,12 @@ export default function ReviewPage() {
         const res = await fetch("/api/problems/years")
         if (!res.ok) throw new Error("年度の取得に失敗しました")
         const data = await res.json()
-        setYears(data.years || [])
+        const fetchedYears = data.years || []
+        setYears(fetchedYears)
+        // デバッグ: 取得した年度をログに出力
+        console.log("年度データ取得:", { years: fetchedYears, count: fetchedYears.length })
       } catch (err: any) {
+        console.error("年度データ取得エラー:", err)
         setError(err.message)
       } finally {
         setLoadingYears(false)

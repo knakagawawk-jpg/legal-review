@@ -22,6 +22,14 @@ export async function GET() {
     }
 
     const data = await response.json()
+    
+    // デバッグ: レスポンスデータをログに出力
+    console.log("Years API response:", {
+      status: response.status,
+      years: data.years,
+      count: data.years?.length || 0,
+    })
+    
     return NextResponse.json(data)
   } catch (error: any) {
     console.error("Years fetch error:", error)

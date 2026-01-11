@@ -21,6 +21,14 @@ export async function GET() {
     }
 
     const data = await response.json()
+    
+    // デバッグ: レスポンスデータをログに出力
+    console.log("Subjects API response:", {
+      status: response.status,
+      subjects: data.subjects,
+      count: data.subjects?.length || 0,
+    })
+    
     return NextResponse.json(data)
   } catch (error: any) {
     console.error("Subjects fetch error:", error)
