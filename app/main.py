@@ -187,6 +187,7 @@ def get_problem_years(db: Session = Depends(get_db)):
             years_from_old = db.query(Problem.year).distinct().all()
             years_list = sorted(set(y[0] for y in years_from_old), reverse=True)
         
+        logger.debug(f"年度データ取得: {len(years_list)}件 - {years_list}")
         return ProblemYearsResponse(years=years_list)
     except Exception as e:
         logger.error(f"年度データ取得エラー: {str(e)}")
