@@ -76,3 +76,5 @@ web_next/out/
 web_next/node_modules/
 web_next/.env*.local
 web_next/.vercel
+# Next.js libディレクトリは含める（utils.tsなど）
+!web_next/lib/
