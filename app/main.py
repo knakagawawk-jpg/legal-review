@@ -512,10 +512,10 @@ async def create_review(
         db.commit()
 
         # answer_textを追加
-    return ReviewResponse(
-        submission_id=sub.id,
-        review_markdown=review_markdown,
-        review_json=review_json,
+        return ReviewResponse(
+            submission_id=sub.id,
+            review_markdown=review_markdown,
+            review_json=review_json,
             answer_text=req.answer_text,
             question_text=question_text,
             subject=subject,
