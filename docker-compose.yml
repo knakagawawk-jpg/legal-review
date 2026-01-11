@@ -1,0 +1,139 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    container_name: law-review-backend
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-sqlite:////data/dev.db}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-3-opus-20240229}
+      - AUTH_ENABLED=${AUTH_ENABLED:-false}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - SECRET_KEY=${SECRET_KEY:-change-this-secret-key-in-production}
+    volumes:
+      - ./data:/data
+    networks:
+      - law-review-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # ports公開しない（内部ネットワークのみアクセス可能）
+
+  # Streamlit（旧フロントエンド、移行期間中は残す）
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: law-review-frontend
+    environment:
+      - API_BASE_URL=${API_BASE_URL:-http://backend:8000}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - law-review-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    profiles:
+      - legacy  # 旧UI用プロファイル（移行期間中のみ使用）
+    # ports公開しない（proxy経由のみアクセス可能）
+
+  # Next.js（新フロントエンド）
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.nextjs
+    container_name: law-review-web
+    environment:
+      - BACKEND_INTERNAL_URL=${BACKEND_INTERNAL_URL:-http://backend:8000}
+      - REVIEW_TIMEOUT_MS=${REVIEW_TIMEOUT_MS:-240000}
+      - NODE_ENV=production
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - law-review-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # ports公開しない（proxy経由のみアクセス可能）
+
+  proxy:
+    image: caddy:2-alpine
+    container_name: law-review-proxy
+    profiles:
+      - production  # 本番環境用プロファイル
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3用
+    volumes:
+      # 本番環境用Caddyfileを使用（環境変数 CADDYFILE_PATH で切り替え可能、デフォルト: Caddyfile.production）
+      - ${CADDYFILE_PATH:-./Caddyfile.production}:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    networks:
+      - law-review-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:2019/config/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  proxy-local:
+    image: caddy:2-alpine
+    container_name: law-review-proxy-local
+    profiles:
+      - local  # ローカル開発用プロファイル
+    ports:
+      - "8080:80"  # ローカル開発用（権限不要、競合回避）
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    networks:
+      - law-review-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:2019/config/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  # Caddyの証明書と設定を永続化（HTTPS証明書を保持）
+  # 名前付きボリュームとして管理（Dockerが管理する場所に保存）
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
+
+networks:
+  law-review-network:
+    driver: bridge

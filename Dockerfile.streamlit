@@ -1,0 +1,28 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# システム依存関係のインストール
+# wgetはヘルスチェック用に追加
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# requirements.txtをコピーして依存関係をインストール
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Streamlitアプリケーションコードをコピー
+COPY web.py .
+COPY streamlit_app/ ./streamlit_app/
+COPY config/ ./config/
+COPY utils/ ./utils/
+
+# Streamlit設定ファイルを作成（RUNで直接作成）
+RUN mkdir -p /root/.streamlit && \
+    printf '[server]\naddress = "0.0.0.0"\nport = 8501\nheadless = true\nenableCORS = false\nenableXsrfProtection = false\n' > /root/.streamlit/config.toml
+
+# Streamlitアプリケーションを起動
+CMD ["streamlit", "run", "web.py"]

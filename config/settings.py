@@ -1,0 +1,28 @@
+"""アプリケーション設定"""
+import os
+from pathlib import Path
+
+# .envファイルの読み込み（python-dotenvがインストールされている場合）
+try:
+    from dotenv import load_dotenv
+    # プロジェクトルートの.envファイルを読み込む
+    env_path = Path(__file__).parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+except ImportError:
+    # python-dotenvがインストールされていない場合はスキップ
+    pass
+
+# FastAPIのベースURL（環境変数で設定可能、デフォルトはlocalhost:8000）
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+
+# Anthropic API設定
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-opus-20240229")
+
+# 認証設定（デフォルトはOFF）
+AUTH_ENABLED = os.getenv("AUTH_ENABLED", "false").lower() == "true"
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+SECRET_KEY = os.getenv("SECRET_KEY", "change-this-secret-key-in-production")
+ALGORITHM = "HS256"

@@ -1,0 +1,15 @@
+# docker-compose.override.yml の例
+# ローカル開発用の追加設定を定義する場合に使用
+# 使用方法: このファイルを docker-compose.override.yml としてコピー
+# cp docker-compose.override.yml.example docker-compose.override.yml
+#
+# docker-compose.override.yml は docker compose up 時に自動的に読み込まれます
+# Gitにコミットしないことを推奨（.gitignoreに追加済み）
+
+version: '3.8'
+
+services:
+  # ローカル開発用のproxy-localサービスのポート設定を上書きする場合の例
+  proxy-local:
+    ports:
+      - "8080:80"  # 既にdocker-compose.ymlで設定済みのため、この例は参考用
