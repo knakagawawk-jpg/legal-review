@@ -35,6 +35,7 @@ from pydantic import BaseModel
 from .llm_service import generate_review, chat_about_review, free_chat
 from .auth import get_current_user, get_current_user_required, verify_google_token, get_or_create_user
 from config.settings import AUTH_ENABLED
+from config.constants import FIXED_SUBJECTS
 
 Base.metadata.create_all(bind=engine)
 
