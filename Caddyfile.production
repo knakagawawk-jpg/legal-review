@@ -1,24 +1,15 @@
-# 本番環境用Caddyfile（ドメイン指定、HTTPS自動取得）
-# 環境変数 CADDY_DOMAIN が設定されている場合に使用
-# docker-compose.ymlでこのファイルをマウントするか、環境変数で切り替え
+# Production Caddyfile
+# - Domain is configured via CADDY_DOMAIN (default: localhost)
+# - Basic auth uses BASIC_AUTH_USER / BASIC_AUTH_PASS_HASH (bcrypt hash)
 
 {$CADDY_DOMAIN:localhost} {
-    # Next.js（新UI）にリバースプロキシ
     reverse_proxy web:3000
-    
-    # Basic認証（環境変数 ENABLE_BASIC_AUTH=true かつ BASIC_AUTH_PASS_HASH が設定されている場合に有効化）
-    # パスワードハッシュは以下のコマンドで生成:
-    #   docker compose exec proxy caddy hash-password --plaintext "your-password"
-    #   または
-    #   docker run --rm caddy:2-alpine caddy hash-password --plaintext "your-password"
-    # 
-    # 有効化する場合は、このセクションのコメントを解除し、BASIC_AUTH_USER と BASIC_AUTH_PASS_HASH を設定してください。
-    # 詳細は DEPLOY_PRODUCTION.md の「13. Basic認証の有効化」セクションを参照してください。
-    # basicauth {
-    #     {$BASIC_AUTH_USER:admin} {$BASIC_AUTH_PASS_HASH}
-    # }
-    
-    # セキュリティヘッダー（推奨）
+
+    # Basic auth (bcrypt hash)
+    basic_auth {
+        {env.BASIC_AUTH_USER} {env.BASIC_AUTH_PASS_HASH}
+    }
+
     header {
         X-Content-Type-Options "nosniff"
         X-Frame-Options "DENY"
@@ -26,7 +17,3 @@
         Referrer-Policy "strict-origin-when-cross-origin"
     }
 }
-
-# HTTPSはCaddyが自動で証明書を取得・更新します
-# Let's Encryptを使用し、初回アクセス時に自動で証明書が発行されます
-# 証明書は caddy_data ボリュームに永続化されます
