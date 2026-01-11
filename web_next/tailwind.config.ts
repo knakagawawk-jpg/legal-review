@@ -52,6 +52,14 @@ const config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          muted: "hsl(var(--success-muted))",
+        },
+        error: {
+          DEFAULT: "hsl(var(--error))",
+          muted: "hsl(var(--error-muted))",
+        },
       },
       borderRadius: {
         lg: "12px",

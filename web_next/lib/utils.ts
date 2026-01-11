@@ -28,3 +28,27 @@ export function formatYearToEra(yearInt: number): string {
     return `${yearInt}年`
   }
 }
+
+/**
+ * 年度（整数）を短縮元号形式に変換（H30、R6など）
+ * @param yearInt 年度（整数、例: 2025, 2018）
+ * @returns 短縮元号形式の年度文字列（例: "R7", "H30"）
+ */
+export function formatYearToShortEra(yearInt: number): string {
+  if (yearInt >= 2019) {
+    // 令和: 2019年 = R1, 2025年 = R7
+    const reiwaYear = yearInt - 2018
+    return `R${reiwaYear}`
+  } else if (yearInt >= 1989) {
+    // 平成: 1989年 = H1, 2018年 = H30
+    const heiseiYear = yearInt - 1988
+    return `H${heiseiYear}`
+  } else if (yearInt >= 1926) {
+    // 昭和: 1926年 = S1, 1988年 = S63
+    const showaYear = yearInt - 1925
+    return `S${showaYear}`
+  } else {
+    // それ以前は西暦で表示
+    return `${yearInt}`
+  }
+}

@@ -13,6 +13,31 @@ export interface ReviewResponse {
   submission_id: number
   review_markdown: string
   review_json: {
+    evaluation?: {
+      overall_review?: {
+        score?: number
+        comment?: string
+      }
+      strengths?: Array<{
+        category: string
+        description: string
+        paragraph_numbers?: number[]
+      }>
+      weaknesses?: Array<{
+        category: string
+        description: string
+        paragraph_numbers?: number[]
+        suggestion?: string
+      }>
+      important_points?: Array<{
+        paragraph_number: number
+        what_is_good: string
+        what_is_lacking: string
+        why_important: string
+      }>
+      future_considerations?: string[]
+    }
+    // 後方互換性のため、直接プロパティにもアクセス可能にする
     overall_review?: {
       score?: number
       comment?: string
@@ -35,6 +60,7 @@ export interface ReviewResponse {
       why_important: string
     }>
     future_considerations?: string[]
+    subject?: string
   }
   answer_text: string
   question_text?: string | null

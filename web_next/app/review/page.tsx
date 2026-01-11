@@ -8,10 +8,14 @@ import { Textarea } from "@/components/ui/textarea"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Skeleton } from "@/components/ui/skeleton"
-import { CheckCircle2, AlertCircle, Loader2, Copy, Check } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { CheckCircle2, AlertCircle, Loader2, Copy, Check, ChevronDown, ChevronRight, BookOpen, PenLine, Sparkles, Scale, FileText } from "lucide-react"
+import { cn } from "@/lib/utils"
 import type { ReviewRequest, ProblemMetadata, ProblemMetadataWithDetails } from "@/types/api"
-import { formatYearToEra } from "@/lib/utils"
+import { formatYearToEra, formatYearToShortEra } from "@/lib/utils"
 import { sortSubjectsByFixedOrder } from "@/lib/subjects"
 
 type Step = 1 | 2
@@ -43,6 +47,8 @@ export default function ReviewPage() {
   const [loadingYears, setLoadingYears] = useState(false)
   const [loadingMetadata, setLoadingMetadata] = useState(false)
   const [accordionValue, setAccordionValue] = useState<string>("")
+  const [isQuestionOpen, setIsQuestionOpen] = useState(false)
+  const [isPurposeOpen, setIsPurposeOpen] = useState(false)
 
   // localStorageから答案を復元
   useEffect(() => {
@@ -132,6 +138,8 @@ export default function ReviewPage() {
               const detailData: ProblemMetadataWithDetails = await detailRes.json()
               setSelectedDetails(detailData)
               setAccordionValue("") // 問題が選択されたときはAccordionを閉じた状態にする
+              setIsQuestionOpen(false) // Collapsibleも閉じた状態にする
+              setIsPurposeOpen(false)
               // 最初の設問を選択
               if (detailData.details && detailData.details.length > 0) {
                 setQuestionText(detailData.details[0].question_text)
@@ -246,89 +254,108 @@ export default function ReviewPage() {
     return canProceedToStep2() && !loading
   }
 
+  // 文字数カウントと進捗計算
+  const charCount = answerText.length
+  const targetChars = 2000
+  const progress = Math.min((charCount / targetChars) * 100, 100)
+
+  const getProgressColor = () => {
+    if (charCount < 100) return "bg-red-500"
+    if (charCount < 500) return "bg-amber-500"
+    if (charCount < 1500) return "bg-emerald-500"
+    return "bg-sky-500"
+  }
+
   // コピー機能
   const [copied, setCopied] = useState(false)
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text)
+  const handleCopy = async (text: string) => {
+    await navigator.clipboard.writeText(text)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
-      {/* 固定ヘッダーバー */}
-      <div className="fixed top-0 left-0 right-0 z-30 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
-        <div className="container mx-auto px-8 py-4 max-w-5xl">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold">Juristutor-AI</h1>
-              <p className="text-muted-foreground text-sm">
-                過去問の答案をAIで講評します
-              </p>
+    <div className="flex min-h-screen flex-col bg-slate-50">
+      <header className="shrink-0 border-b border-slate-200/60 bg-white/80 backdrop-blur-md">
+        <div className="mx-auto flex h-11 max-w-7xl items-center justify-between px-3">
+          <div className="flex items-center gap-2">
+            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-gradient-to-br from-indigo-500 to-sky-500">
+              <Scale className="h-3.5 w-3.5 text-white" />
             </div>
+            <h1 className="text-sm font-bold text-slate-800">Juristutor-AI</h1>
+          </div>
+
+          <div className="flex items-center gap-2">
             {mode === "existing" && (
-              <div className="flex gap-2 items-end">
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">試験種別</label>
-                  <select
-                    className="w-24 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                    value={examType}
-                    onChange={(e) => {
-                      setExamType(e.target.value)
-                      setSelectedMetadata(null)
-                      setSelectedDetails(null)
-                    }}
-                  >
-                    <option value="">未選択</option>
-                    <option value="司法試験">司法試験</option>
-                    <option value="予備試験">予備試験</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">年度</label>
-                  <select
-                    className="w-28 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                    value={year || ""}
-                    onChange={(e) => {
-                      setYear(e.target.value ? parseInt(e.target.value) : null)
-                      setSelectedMetadata(null)
-                      setSelectedDetails(null)
-                    }}
-                  >
-                    <option value="">未選択</option>
+              <>
+                <Select value={examType} onValueChange={(value) => {
+                  setExamType(value)
+                  setSelectedMetadata(null)
+                  setSelectedDetails(null)
+                }}>
+                  <SelectTrigger className="h-7 w-24 border-slate-200 bg-white text-xs shadow-sm">
+                    <SelectValue placeholder="試験種別" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="司法試験" className="text-xs">司法試験</SelectItem>
+                    <SelectItem value="予備試験" className="text-xs">予備試験</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={year ? year.toString() : ""} onValueChange={(value) => {
+                  setYear(value ? parseInt(value) : null)
+                  setSelectedMetadata(null)
+                  setSelectedDetails(null)
+                }}>
+                  <SelectTrigger className="h-7 w-20 border-slate-200 bg-white text-xs shadow-sm">
+                    <SelectValue placeholder="年度" />
+                  </SelectTrigger>
+                  <SelectContent>
                     {years.map((y) => (
-                      <option key={y} value={y}>
-                        {formatYearToEra(y)}
-                      </option>
+                      <SelectItem key={y} value={y.toString()} className="text-xs">
+                        {formatYearToShortEra(y)}
+                      </SelectItem>
                     ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">科目</label>
-                  <select
-                    className="w-32 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                    value={subject}
-                    onChange={(e) => {
-                      setSubject(e.target.value)
-                      setSelectedMetadata(null)
-                      setSelectedDetails(null)
-                    }}
-                  >
-                    <option value="">未選択</option>
+                  </SelectContent>
+                </Select>
+                <Select value={subject} onValueChange={(value) => {
+                  setSubject(value)
+                  setSelectedMetadata(null)
+                  setSelectedDetails(null)
+                }}>
+                  <SelectTrigger className="h-7 w-24 border-slate-200 bg-white text-xs shadow-sm">
+                    <SelectValue placeholder="科目" />
+                  </SelectTrigger>
+                  <SelectContent>
                     {subjects.map((s) => (
-                      <option key={s} value={s}>
+                      <SelectItem key={s} value={s} className="text-xs">
                         {s}
-                      </option>
+                      </SelectItem>
                     ))}
-                  </select>
-                </div>
-              </div>
+                  </SelectContent>
+                </Select>
+              </>
             )}
+
+            <button
+              onClick={() => {
+                const newMode = mode === "existing" ? "new" : "existing"
+                setMode(newMode)
+                setSelectedMetadata(null)
+                setSelectedDetails(null)
+                setQuestionText("")
+                if (newMode === "new") {
+                  setPurposeText("")
+                }
+              }}
+              className="ml-1 text-xs text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              {mode === "existing" ? "お好きな問題" : "既存問題"}
+            </button>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="container mx-auto px-8 pt-32 pb-24 max-w-5xl">
+      <main className="flex flex-col mx-auto w-full max-w-5xl p-3 gap-2" style={{ height: 'calc(100vh - 2.75rem)' }}>
 
         {/* エラー表示 */}
         {error && (
@@ -341,134 +368,164 @@ export default function ReviewPage() {
 
         {/* Step 1: 問題準備 + 答案入力 */}
         {step === 1 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Step 1: 問題準備と答案入力</CardTitle>
-              <CardDescription>既存の問題を選択するか、新規に入力してください。答案も入力できます。</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* モード切替 */}
-              <div className="flex gap-2">
-                <Button
-                  variant={mode === "existing" ? "default" : "outline"}
-                  onClick={() => {
-                    setMode("existing")
-                    setSelectedMetadata(null)
-                    setSelectedDetails(null)
-                    setQuestionText("")
-                  }}
-                  className="flex-1"
-                >
-                  既存問題を選択
-                </Button>
-                <Button
-                  variant={mode === "new" ? "default" : "outline"}
-                  onClick={() => {
-                    setMode("new")
-                    setSelectedMetadata(null)
-                    setSelectedDetails(null)
-                    setQuestionText("")
-                    setPurposeText("")
-                  }}
-                  className="flex-1"
-                >
-                  新規入力
-                </Button>
-              </div>
-
+          <>
+            {/* 問題選択/入力エリア */}
+            <div className="shrink-0 rounded-lg border border-slate-200/80 bg-white shadow-sm flex-shrink-0">
               {mode === "existing" ? (
-                <div className="space-y-4">
-                  {/* 選択された問題の表示（3つすべて選択されていて問題が1件の場合） */}
-                  {examType && year && subject && selectedDetails && questionText && metadataList.length === 1 && (
-                    <Card className="border-primary">
-                      <CardContent className="pt-6">
-                        <Accordion type="single" collapsible value={accordionValue} onValueChange={setAccordionValue}>
-                          <AccordionItem value="question">
-                            <div className="flex items-center justify-between pr-4">
-                              <div className="flex items-center gap-2">
-                                <AccordionTrigger className="text-base font-semibold">
-                                  {selectedMetadata?.exam_type} {formatYearToEra(selectedMetadata?.year || 0)} {selectedMetadata?.subject}
-                                </AccordionTrigger>
-                                <span className="text-xs text-muted-foreground">
-                                  {accordionValue === "question" ? "非表示にする" : "問題文を表示する"}
-                                </span>
-                              </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleCopy(questionText)
-                                }}
-                              >
-                                {copied ? (
-                                  <Check className="w-4 h-4" />
-                                ) : (
-                                  <Copy className="w-4 h-4" />
-                                )}
-                              </Button>
+                <>
+                  {examType && year && subject && selectedDetails && questionText ? (
+                    <div className="p-2.5">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-5 w-5 items-center justify-center rounded bg-indigo-100">
+                            <BookOpen className="h-3 w-3 text-indigo-600" />
+                          </div>
+                          <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100 text-xs">
+                            {selectedMetadata?.exam_type} {formatYearToEra(selectedMetadata?.year || 0)} {selectedMetadata?.subject}
+                          </Badge>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleCopy(questionText)}
+                          className="h-5 gap-1 px-1.5 text-xs text-slate-400 hover:text-slate-600"
+                        >
+                          {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                        </Button>
+                      </div>
+
+                      <Collapsible open={isQuestionOpen} onOpenChange={setIsQuestionOpen}>
+                        <CollapsibleTrigger className="flex items-center gap-1 text-xs text-slate-600 hover:text-slate-800">
+                          {isQuestionOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                          <span className="font-medium">問題文</span>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="mt-1.5">
+                          <div className="max-h-[200px] overflow-y-auto rounded bg-slate-50 p-2 font-mono text-xs leading-relaxed text-slate-700">
+                            <pre className="whitespace-pre-wrap">{questionText}</pre>
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+
+                      {purposeText && (
+                        <Collapsible open={isPurposeOpen} onOpenChange={setIsPurposeOpen} className="mt-2">
+                          <CollapsibleTrigger className="flex items-center gap-1 text-xs text-slate-600 hover:text-slate-800">
+                            {isPurposeOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                            <span className="font-medium">出題趣旨</span>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent className="mt-1.5">
+                            <div className="max-h-[120px] overflow-y-auto rounded bg-amber-50/50 p-2 text-xs leading-relaxed text-slate-700">
+                              {purposeText}
                             </div>
-                            <AccordionContent>
-                              <div className="rounded-md border bg-muted/50 p-4 whitespace-pre-wrap text-sm max-h-[360px] overflow-y-auto">
-                                {questionText}
-                              </div>
-                              {purposeText && (
-                                <Accordion type="single" collapsible className="mt-4">
-                                  <AccordionItem value="purpose">
-                                    <AccordionTrigger>出題趣旨</AccordionTrigger>
-                                    <AccordionContent className="whitespace-pre-wrap text-sm">
-                                      {purposeText}
-                                    </AccordionContent>
-                                  </AccordionItem>
-                                </Accordion>
-                              )}
-                            </AccordionContent>
-                          </AccordionItem>
-                        </Accordion>
-                      </CardContent>
-                    </Card>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-start gap-2 p-4">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 shrink-0">
+                        <FileText className="h-4 w-4 text-slate-400" />
+                      </div>
+                      <p className="text-xs text-slate-500">試験種別・年度・科目を選択してください</p>
+                    </div>
                   )}
-                </div>
+                </>
               ) : (
-                <div className="space-y-4">
+                <div className="p-2.5 space-y-2">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="flex h-5 w-5 items-center justify-center rounded bg-indigo-100">
+                      <BookOpen className="h-3 w-3 text-indigo-600" />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-700">問題入力</span>
+                  </div>
                   <div>
-                    <label className="text-sm font-medium mb-2 block">問題文</label>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">
+                      問題文 <span className="text-red-400">*</span>
+                    </label>
                     <Textarea
-                      placeholder="問題文を入力してください"
                       value={questionText}
                       onChange={(e) => setQuestionText(e.target.value)}
-                      className="min-h-[200px]"
+                      placeholder="問題文を入力..."
+                      className="h-24 resize-none rounded border-slate-200 bg-slate-50/50 font-mono text-xs leading-relaxed focus:bg-white"
                     />
                   </div>
                   <div>
-                    <label className="text-sm font-medium mb-2 block">出題趣旨（任意）</label>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">
+                      出題趣旨 <span className="text-slate-400">(任意)</span>
+                    </label>
                     <Textarea
-                      placeholder="出題趣旨を入力してください（任意）"
                       value={purposeText}
                       onChange={(e) => setPurposeText(e.target.value)}
-                      className="min-h-[100px]"
+                      placeholder="出題趣旨を入力..."
+                      className="h-16 resize-none rounded border-slate-200 bg-amber-50/30 text-xs leading-relaxed focus:bg-white"
                     />
                   </div>
                 </div>
               )}
+            </div>
 
-              {/* 答案入力欄 */}
-              <div className="border-t pt-6">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-sm font-medium">答案</label>
-                  <span className="text-sm text-muted-foreground">
-                    {answerText.length} 文字
-                  </span>
-                </div>
-                <Textarea
-                  placeholder="答案を入力してください"
-                  value={answerText}
-                  onChange={(e) => setAnswerText(e.target.value)}
-                  className="h-[360px] font-mono text-sm resize-none overflow-y-auto"
+            {/* 答案入力エリア */}
+            <div className="flex flex-1 min-h-0 flex-col rounded-lg border border-slate-200/80 bg-white shadow-sm">
+              {/* 進捗バー */}
+              <div className="h-1 shrink-0 overflow-hidden rounded-t-lg bg-slate-100">
+                <div
+                  className={cn("h-full transition-all duration-300", getProgressColor())}
+                  style={{ width: `${progress}%` }}
                 />
               </div>
-            </CardContent>
-          </Card>
+
+              {/* ヘッダー */}
+              <div className="shrink-0 flex items-center justify-between border-b border-slate-100 px-2.5 py-1.5">
+                <div className="flex items-center gap-1.5">
+                  <div className="flex h-5 w-5 items-center justify-center rounded bg-emerald-100">
+                    <PenLine className="h-3 w-3 text-emerald-600" />
+                  </div>
+                  <h2 className="text-xs font-semibold text-slate-700">答案</h2>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={cn("text-xs font-medium", charCount < 100 ? "text-red-500" : "text-slate-500")}>
+                    {charCount.toLocaleString()}字
+                  </span>
+                  {charCount < 100 && <span className="text-xs text-red-400">(100字以上)</span>}
+                </div>
+              </div>
+
+              {/* 入力欄 */}
+              <div className="flex-1 min-h-0 p-2 overflow-hidden">
+                <Textarea
+                  value={answerText}
+                  onChange={(e) => setAnswerText(e.target.value)}
+                  placeholder="答案を入力してください..."
+                  className="h-full w-full resize-none rounded border-slate-200 bg-slate-50/50 font-mono text-xs leading-relaxed focus:bg-white"
+                />
+              </div>
+
+              {/* フッター（講評開始ボタン） */}
+              <div className="shrink-0 flex items-center justify-between border-t border-slate-100 px-2.5 py-1.5">
+                <span className="text-xs text-slate-400">推奨: 1,500〜2,500字</span>
+                <Button
+                  size="sm"
+                  disabled={!canProceedToStep2() || loading}
+                  onClick={handleGenerate}
+                  className={cn(
+                    "h-7 gap-1 rounded-full px-3 text-xs shadow transition-all",
+                    canProceedToStep2() ? "bg-gradient-to-r from-indigo-500 to-sky-500 hover:from-indigo-600 hover:to-sky-600" : "",
+                  )}
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      生成中
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-3 w-3" />
+                      講評開始
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </>
         )}
 
         {/* Step 2: 生成 */}
@@ -545,31 +602,7 @@ export default function ReviewPage() {
           </Card>
         )}
 
-        {/* 固定フッターバー（講評開始ボタン） */}
-        {step === 1 && (
-          <div className="fixed bottom-0 left-0 right-0 z-30 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t shadow-lg">
-            <div className="container mx-auto px-8 py-4 max-w-5xl">
-              <div className="flex justify-end">
-                <Button
-                  onClick={handleGenerate}
-                  disabled={!canProceedToStep2() || loading}
-                  className="min-w-[120px]"
-                  size="lg"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      生成中...
-                    </>
-                  ) : (
-                    "講評開始"
-                  )}
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      </main>
     </div>
   )
 }
