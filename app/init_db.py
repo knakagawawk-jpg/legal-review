@@ -1,0 +1,222 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+データベース初期化スクリプト
+- JSONファイルを再帰的に探索してProblemテーブルにインポート
+- ProblemテーブルからProblemMetadata/ProblemDetailsにマイグレーション
+"""
+
+import json
+import sys
+import logging
+from pathlib import Path
+
+# ロギング設定
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# プロジェクトルートをパスに追加
+BASE_DIR = Path("/app")
+sys.path.insert(0, str(BASE_DIR))
+
+from app.db import SessionLocal, engine, Base
+from app.models import Problem, ProblemMetadata, ProblemDetails, Submission, Review, User
+
+def year_to_int(year_str: str) -> int:
+    """年度文字列を整数に変換
+    
+    例: "R7" -> 2025, "H30" -> 2018
+    """
+    if year_str.startswith("R"):
+        # 令和: R1 = 2019, R2 = 2020, ...
+        reiwa_num = int(year_str[1:])
+        return 2018 + reiwa_num
+    elif year_str.startswith("H"):
+        # 平成: H1 = 1989, H30 = 2018
+        heisei_num = int(year_str[1:])
+        return 1988 + heisei_num
+    else:
+        # 数値として解釈を試みる
+        try:
+            return int(year_str)
+        except:
+            raise ValueError(f"年度の形式が不正です: {year_str}")
+
+def import_all_json_files():
+    """JSONディレクトリを再帰的に探索してインポート"""
+    db = SessionLocal()
+    json_base_dir = Path("/data/json")
+    
+    try:
+        if not json_base_dir.exists():
+            logger.warning(f"JSON directory not found: {json_base_dir}")
+            return
+        
+        # 再帰的にJSONファイルを探索
+        json_files = list(json_base_dir.rglob("*.json"))
+        
+        if not json_files:
+            logger.info("No JSON files found")
+            return
+        
+        logger.info(f"Found {len(json_files)} JSON files")
+        logger.info("-" * 60)
+        
+        imported_count = 0
+        skipped_count = 0
+        error_count = 0
+        batch_size = 50  # バッチサイズ
+        
+        # 既存データを一度に取得（パフォーマンス改善）
+        # 初期化時のみなので全件取得でも問題ない
+        existing_problems = {
+            (p.exam_type, p.year, p.subject)
+            for p in db.query(Problem).all()
+        }
+        
+        problems_to_add = []
+        
+        for json_file in json_files:
+            try:
+                with open(json_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                
+                year_str = data.get("year", "")
+                exam_type = data.get("exam_type", "")
+                subject = data.get("subject", "").strip()
+                text = data.get("text", "")
+                purpose = data.get("purpose", "")
+                source_pdf = data.get("source_pdf", "")
+                
+                try:
+                    year = year_to_int(year_str)
+                except ValueError as e:
+                    logger.error(f"Error parsing year in {json_file.name}: {e}")
+                    error_count += 1
+                    continue
+                
+                # 試験種別を正規化
+                if exam_type == "予備":
+                    exam_type = "予備試験"
+                elif exam_type == "司法":
+                    exam_type = "司法試験"
+                
+                # 既存の問題をチェック
+                key = (exam_type, year, subject)
+                if key in existing_problems:
+                    skipped_count += 1
+                    continue
+                
+                # 問題を作成（バッチコミット用）
+                problem = Problem(
+                    exam_type=exam_type,
+                    year=year,
+                    subject=subject,
+                    question_text=text,
+                    purpose=purpose if purpose else None,
+                    pdf_path=source_pdf
+                )
+                problems_to_add.append(problem)
+                existing_problems.add(key)  # 重複を防ぐ
+                
+                # バッチサイズに達したらコミット
+                if len(problems_to_add) >= batch_size:
+                    db.bulk_save_objects(problems_to_add)
+                    db.commit()
+                    logger.info(f"Imported batch: {len(problems_to_add)} problems")
+                    imported_count += len(problems_to_add)
+                    problems_to_add = []
+                
+            except Exception as e:
+                logger.error(f"Error processing {json_file.name}: {str(e)}")
+                error_count += 1
+        
+        # 残りをコミット
+        if problems_to_add:
+            for p in problems_to_add:
+                db.add(p)
+            db.commit()
+            imported_count += len(problems_to_add)
+            logger.info(f"Imported final batch: {len(problems_to_add)} problems")
+        
+        logger.info("-" * 60)
+        logger.info(f"Import complete: imported={imported_count}, skipped={skipped_count}, errors={error_count}")
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Fatal error during import: {str(e)}", exc_info=True)
+        raise
+    finally:
+        db.close()
+
+def check_needs_import():
+    """ProblemMetadataテーブルが空かチェック"""
+    db = SessionLocal()
+    try:
+        count = db.query(ProblemMetadata).count()
+        return count == 0
+    except Exception as e:
+        logger.error(f"Error checking database: {str(e)}")
+        # テーブルが存在しない場合はインポートが必要
+        return True
+    finally:
+        db.close()
+
+def run_migration():
+    """マイグレーションスクリプトを実行"""
+    try:
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, str(BASE_DIR / "migrate_to_new_problem_structure.py")],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True
+        )
+        
+        if result.stdout:
+            logger.info("Migration output:")
+            logger.info(result.stdout)
+        
+        if result.stderr:
+            logger.warning("Migration warnings:")
+            logger.warning(result.stderr)
+        
+        if result.returncode != 0:
+            logger.error(f"Migration script exited with code {result.returncode}")
+            if result.stderr:
+                logger.error(result.stderr)
+            raise RuntimeError(f"Migration failed with exit code {result.returncode}")
+        
+        logger.info("Migration completed successfully")
+        
+    except FileNotFoundError:
+        logger.error(f"Migration script not found: {BASE_DIR / 'migrate_to_new_problem_structure.py'}")
+        raise
+    except Exception as e:
+        logger.error(f"Error running migration: {str(e)}", exc_info=True)
+        raise
+
+if __name__ == "__main__":
+    try:
+        # データベーステーブルを作成
+        logger.info("Creating database tables...")
+        Base.metadata.create_all(bind=engine)
+        logger.info("✓ Database tables created")
+        
+        # ProblemMetadataテーブルが空かチェック
+        if check_needs_import():
+            logger.info("Database is empty. Starting import...")
+            import_all_json_files()
+            
+            # マイグレーション（Problem → ProblemMetadata/ProblemDetails）
+            logger.info("Running migration (Problem → ProblemMetadata/ProblemDetails)...")
+            run_migration()
+        else:
+            logger.info("Database already has data. Skipping import.")
+            
+    except Exception as e:
+        logger.error(f"Database initialization failed: {str(e)}", exc_info=True)
+        sys.exit(1)

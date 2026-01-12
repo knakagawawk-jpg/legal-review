@@ -20,6 +20,17 @@ COPY config/ ./config/
 COPY prompts/ ./prompts/
 COPY utils/ ./utils/
 
+# インポートスクリプトとマイグレーションスクリプトをコピー
+COPY import_json_to_db.py ./
+COPY migrate_to_new_problem_structure.py ./
+
+# エントリーポイントスクリプトをコピーして実行可能にする
+COPY app/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# エントリーポイントを設定
+ENTRYPOINT ["/app/entrypoint.sh"]
+
 # FastAPIアプリケーションを起動
 # --reloadなし（本番環境用）
 # 0.0.0.0:8000でリッスン（Docker内からアクセス可能にするため）

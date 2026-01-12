@@ -37,7 +37,8 @@ from .llm_service import generate_review, chat_about_review, free_chat
 from .auth import get_current_user, get_current_user_required, verify_google_token, get_or_create_user
 from config.settings import AUTH_ENABLED
 
-Base.metadata.create_all(bind=engine)
+# テーブル作成はエントリーポイントスクリプト（app/init_db.py）で実行されるため、ここでは削除
+# Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="法律答案講評システム API", version="1.0.0")
 
