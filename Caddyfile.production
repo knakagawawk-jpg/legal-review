@@ -3,7 +3,16 @@
 # - Basic auth uses BASIC_AUTH_USER / BASIC_AUTH_PASS_HASH (bcrypt hash)
 
 {$CADDY_DOMAIN:localhost} {
-    reverse_proxy web:3000
+    # リバースプロキシのタイムアウトを10分に設定（講評生成処理に時間がかかるため）
+    # 注意: この設定はユーザーが明示的に指定したものです。AIが勝手に変更しないでください。
+    reverse_proxy web:3000 {
+        transport http {
+            dial_timeout 10s
+            response_header_timeout 600s  # 10分（レスポンスヘッダーの待機時間）
+            read_timeout 600s  # 10分（レスポンスボディの読み込みタイムアウト）
+            write_timeout 600s  # 10分（リクエストボディの書き込みタイムアウト）
+        }
+    }
 
     # Basic auth (bcrypt hash)
     basic_auth {

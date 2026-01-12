@@ -60,7 +60,9 @@ services:
     container_name: law-review-web
     environment:
       - BACKEND_INTERNAL_URL=${BACKEND_INTERNAL_URL:-http://backend:8000}
-      - REVIEW_TIMEOUT_MS=${REVIEW_TIMEOUT_MS:-240000}
+      # 講評生成のタイムアウト（デフォルト: 10分 = 600000ms）
+      # 注意: この値はユーザーが明示的に指定したものです。AIが勝手に変更しないでください。
+      - REVIEW_TIMEOUT_MS=${REVIEW_TIMEOUT_MS:-600000}
       - NODE_ENV=production
     depends_on:
       backend:
