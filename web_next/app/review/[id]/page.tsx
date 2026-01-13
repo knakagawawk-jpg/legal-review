@@ -139,26 +139,66 @@ export default function ReviewResultPage() {
   }
 
   const handleSendMessage = async () => {
-    if (!inputValue.trim() || isLoading) return
+    if (!inputValue.trim() || isLoading || !review) return
 
     const userMessage = inputValue.trim()
     setInputValue("")
-    setChatMessages((prev) => [...prev, { role: "user", content: userMessage }])
+    
+    // ユーザーメッセージを追加
+    const updatedMessages = [...chatMessages, { role: "user" as const, content: userMessage }]
+    setChatMessages(updatedMessages)
     setIsLoading(true)
 
-    setTimeout(() => {
+    try {
+      // チャット履歴を構築（最初の挨拶メッセージを除く）
+      const chatHistory = updatedMessages
+        .slice(1) // 最初の挨拶メッセージを除外
+        .map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+        }))
+
+      // APIを呼び出し
+      const response = await fetch("/api/review/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          submission_id: parseInt(submissionId),
+          question: userMessage,
+          chat_history: chatHistory.length > 0 ? chatHistory : undefined,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }))
+        throw new Error(errorData.error || "チャットの送信に失敗しました")
+      }
+
+      const data = await response.json()
+      
+      // アシスタントの回答を追加
       setChatMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content:
-            "ご質問ありがとうございます。" +
-            userMessage +
-            "についてですが、講評で指摘した点を踏まえて詳しくご説明します。法的三段論法を意識して、規範→事実の当てはめ→結論という流れで論述することが重要です。",
+          content: data.answer || "回答を取得できませんでした",
         },
       ])
+    } catch (error: any) {
+      console.error("Chat error:", error)
+      // エラーメッセージを表示
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `申し訳ございませんが、エラーが発生しました: ${error.message || "不明なエラー"}`,
+        },
+      ])
+    } finally {
       setIsLoading(false)
-    }, 1000)
+    }
   }
 
   const handleClearChat = () => {

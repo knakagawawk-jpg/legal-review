@@ -22,7 +22,7 @@ BASE_DIR = Path(__file__).parent
 sys.path.insert(0, str(BASE_DIR))
 
 from app.db import SessionLocal
-from app.models import Problem
+from app.models import Problem, ProblemMetadata, ProblemDetails
 
 def year_to_int(year_str: str) -> int:
     """年度文字列を整数に変換
@@ -90,33 +90,41 @@ def import_json_files(json_dir: Path):
                 elif exam_type == "司法":
                     exam_type = "司法試験"
                 
-                # 既存の問題をチェック（同じ年度・試験種別・科目の組み合わせ）
-                existing = db.query(Problem).filter(
-                    Problem.exam_type == exam_type,
-                    Problem.year == year,
-                    Problem.subject == subject
+                # 既存のメタデータをチェック（新しい構造）
+                existing_metadata = db.query(ProblemMetadata).filter(
+                    ProblemMetadata.exam_type == exam_type,
+                    ProblemMetadata.year == year,
+                    ProblemMetadata.subject == subject
                 ).first()
                 
-                if existing:
+                if existing_metadata:
                     print(f"スキップ: {json_file.name} (既に登録済み)")
                     skipped_count += 1
                     continue
                 
-                # 問題を作成
-                problem = Problem(
+                # 新しい構造でメタデータを作成
+                metadata = ProblemMetadata(
                     exam_type=exam_type,
                     year=year,
-                    subject=subject,
+                    subject=subject
+                )
+                db.add(metadata)
+                db.flush()  # IDを取得するためにflush
+                
+                # 詳細情報を作成（設問1として全体の問題文を保存）
+                detail = ProblemDetails(
+                    problem_metadata_id=metadata.id,
+                    question_number=1,  # 設問1として扱う
                     question_text=text,
-                    purpose=purpose if purpose else None,  # 出題趣旨を追加
+                    purpose=purpose if purpose else None,
                     pdf_path=source_pdf,
                 )
-                
-                db.add(problem)
+                db.add(detail)
                 db.commit()
                 
                 print(f"登録: {json_file.name}")
                 print(f"  {exam_type} {year}年 {subject}")
+                print(f"  メタデータID: {metadata.id}, 詳細ID: {detail.id}")
                 imported_count += 1
                 
             except Exception as e:

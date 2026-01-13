@@ -30,8 +30,20 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ detail: "Unknown error" }))
+      const errorMessage = errorData.detail || "講評の生成に失敗しました"
+      
+      // API側のタイムアウトエラーを検出（FastAPIから返されるエラーメッセージに"timeout"が含まれる場合）
+      if (response.status === 500 && errorMessage.toLowerCase().includes("timeout")) {
+        return NextResponse.json(
+          { 
+            error: `API側でタイムアウトが発生しました。Anthropic APIの応答が遅い可能性があります。しばらく待ってから再度お試しください。エラー詳細: ${errorMessage}`
+          },
+          { status: 504 }
+        )
+      }
+      
       return NextResponse.json(
-        { error: errorData.detail || "講評の生成に失敗しました" },
+        { error: errorMessage },
         { status: response.status }
       )
     }
@@ -41,12 +53,12 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error("Review generation error:", error)
     
-    // タイムアウトエラーの処理
+    // タイムアウトエラーの処理（クライアント側のタイムアウト）
     if (error.name === "AbortError" || error.name === "TimeoutError") {
       const timeoutMinutes = Math.floor(REVIEW_TIMEOUT_MS / 60000)
       return NextResponse.json(
         { 
-          error: `講評の生成に時間がかかりすぎています（${timeoutMinutes}分以上）。ネットワークやAPIの応答が遅い可能性があります。しばらく待ってから再度お試しください。または、答案の長さを短くして再試行してください。`
+          error: `クライアント側のタイムアウトが発生しました（${timeoutMinutes}分以上経過）。FastAPIバックエンドへの接続がタイムアウトしました。ネットワークの問題やバックエンドの応答が遅い可能性があります。しばらく待ってから再度お試しください。`
         },
         { status: 504 }
       )

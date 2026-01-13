@@ -1,131 +1,174 @@
 "use client"
 
-import { useState } from "react"
+import { useState, createContext, useContext } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { FileText, BookOpen, MessageCircle, ScrollText, Wrench, Menu, ChevronLeft } from "lucide-react"
+import { FileText, BookOpen, MessageCircle, ScrollText, Wrench, Menu, ChevronLeft, Scale } from "lucide-react"
+
+// サイドバーの状態を共有するContext
+type SidebarContextType = {
+  isOpen: boolean
+  setIsOpen: (open: boolean) => void
+}
+
+const SidebarContext = createContext<SidebarContextType | undefined>(undefined)
+
+export function useSidebar() {
+  const context = useContext(SidebarContext)
+  if (!context) {
+    // Contextが提供されていない場合は、デフォルトの動作（常に閉じている）を返す
+    return { isOpen: false, setIsOpen: () => {} }
+  }
+  return context
+}
 
 const navigation = [
   {
     name: "講評生成",
     href: "/review",
     icon: FileText,
-    description: "答案の講評を生成",
+    description: "過去問の答案をAIがレビュー",
+    color: "from-blue-500 to-cyan-500",
   },
   {
-    name: "短答式試験",
+    name: "短答チャレンジ",
     href: "/short-answer",
     icon: BookOpen,
-    description: "短答式問題を解く",
+    description: "AIに尋ねながら学習する",
+    color: "from-violet-500 to-purple-500",
   },
   {
     name: "Your Page",
     href: "/your-page",
     icon: ScrollText,
     description: "過去の記録とノート",
+    color: "from-amber-500 to-orange-500",
   },
   {
     name: "フリーチャット",
     href: "/free-chat",
     icon: MessageCircle,
-    description: "LLMと自由にチャット",
+    description: "最新LLMに質問できる",
+    color: "from-emerald-500 to-teal-500",
   },
   {
     name: "開発用",
     href: "/dev",
     icon: Wrench,
-    description: "開発・デバッグ用ページ",
+    description: "開発・デバッグ用",
+    color: "from-slate-500 to-zinc-500",
   },
 ]
 
+// サイドバーの状態を管理するProviderコンポーネント
+export function SidebarProvider({ children }: { children: React.ReactNode }) {
+  const [isOpen, setIsOpen] = useState(true)
+  return <SidebarContext.Provider value={{ isOpen, setIsOpen }}>{children}</SidebarContext.Provider>
+}
+
 export function Sidebar() {
   const pathname = usePathname()
-  const [isOpen, setIsOpen] = useState(true)
+  const { isOpen, setIsOpen } = useSidebar()
 
   return (
     <>
-      {/* 閉じた状態のときのメニューボタン */}
-      {!isOpen && (
-        <button
-          onClick={() => setIsOpen(true)}
-          className="fixed left-4 top-4 z-50 rounded-md bg-background/95 backdrop-blur p-2 shadow-md border hover:bg-accent transition-colors"
-          aria-label="メニューを開く"
-        >
-          <Menu className="h-5 w-5" />
-        </button>
-      )}
-
       <aside
         className={cn(
-          "fixed left-0 top-0 h-full w-64 border-r bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-40 transition-transform duration-300",
-          isOpen ? "translate-x-0" : "-translate-x-full"
+          "fixed left-0 top-0 h-full w-52 bg-gradient-to-b from-blue-50/80 via-slate-50 to-white border-r border-slate-200/60 z-40 transition-transform duration-300 ease-out shadow-xl shadow-slate-200/50",
+          isOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
         <div className="flex h-full flex-col">
-          {/* ロゴ・タイトル */}
-          <div className="border-b p-6">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <div className="text-2xl">⚖️</div>
+          <div className="px-3 py-3 border-b border-blue-100/60 bg-gradient-to-r from-blue-100/80 to-cyan-50/60">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 shadow-sm">
+                  <Scale className="h-4 w-4 text-white" />
+                </div>
                 <div>
-                  <h1 className="text-xl font-bold text-primary">答案講評</h1>
-                  <p className="text-xs text-muted-foreground">法律答案の自動講評システム</p>
+                  <h1 className="text-sm font-bold text-slate-700 tracking-tight">Juristutor</h1>
+                  <p className="text-[9px] text-blue-500/70 font-medium">AI法律学習アシスタント</p>
                 </div>
               </div>
               <button
                 onClick={() => setIsOpen(false)}
-                className="rounded-md p-1 hover:bg-accent transition-colors"
+                className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-blue-200/40 transition-colors"
                 aria-label="サイドバーを閉じる"
               >
-                <ChevronLeft className="h-5 w-5" />
+                <ChevronLeft className="h-3.5 w-3.5 text-slate-500" />
               </button>
             </div>
           </div>
 
-        {/* ナビゲーション */}
-        <nav className="flex-1 space-y-1 p-4">
-          <div className="mb-4 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            🧭 ナビゲーション
+          <nav className="flex-1 p-3 overflow-y-auto bg-gradient-to-b from-blue-50/30 to-transparent">
+            <p className="px-2 mb-2 text-[10px] font-semibold uppercase tracking-wider text-blue-400/70">メニュー</p>
+            <div className="space-y-0.5">
+              {navigation.map((item) => {
+                const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
+                const Icon = item.icon
+
+                return (
+                  <Link key={item.href} href={item.href}>
+                    <div
+                      className={cn(
+                        "group flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all duration-200",
+                        isActive ? "bg-white/80 shadow-sm ring-1 ring-blue-100/50" : "hover:bg-white/60",
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gradient-to-br shadow-sm transition-transform duration-200",
+                          item.color,
+                          isActive ? "scale-105" : "group-hover:scale-105",
+                        )}
+                      >
+                        <Icon className="h-3.5 w-3.5 text-white" />
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span
+                          className={cn(
+                            "text-xs font-medium truncate transition-colors",
+                            isActive ? "text-slate-800" : "text-slate-600 group-hover:text-slate-800",
+                          )}
+                        >
+                          {item.name}
+                        </span>
+                        <span className="text-[10px] text-slate-400 truncate">{item.description}</span>
+                      </div>
+                      {isActive && (
+                        <div className="ml-auto h-1.5 w-1.5 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500" />
+                      )}
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          </nav>
+
+          {/* フッター */}
+          <div className="p-3 border-t border-blue-100/40 bg-blue-50/20">
+            <p className="text-[10px] text-center text-slate-400">Juristutor v1.0</p>
           </div>
-          {navigation.map((item) => {
-            const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
-            const Icon = item.icon
-
-            return (
-              <Link key={item.href} href={item.href}>
-                <Button
-                  variant={isActive ? "default" : "ghost"}
-                  className={cn(
-                    "w-full justify-start gap-3",
-                    isActive && "bg-primary text-primary-foreground"
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                  <div className="flex flex-col items-start">
-                    <span className="text-sm font-medium">{item.name}</span>
-                    <span className={cn(
-                      "text-xs",
-                      isActive ? "text-primary-foreground/80" : "text-muted-foreground"
-                    )}>
-                      {item.description}
-                    </span>
-                  </div>
-                </Button>
-              </Link>
-            )
-          })}
-        </nav>
-
-        {/* フッター（必要に応じて） */}
-        <div className="border-t p-4">
-          <p className="text-xs text-center text-muted-foreground">
-            答案講評システム v1.0
-          </p>
         </div>
-      </div>
-    </aside>
+      </aside>
     </>
+  )
+}
+
+// サイドバーを開くボタンコンポーネント（ヘッダーなどで使用）
+export function SidebarToggle() {
+  const { isOpen, setIsOpen } = useSidebar()
+  
+  if (isOpen) return null
+  
+  return (
+    <button
+      onClick={() => setIsOpen(true)}
+      className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-slate-100 transition-colors"
+      aria-label="メニューを開く"
+    >
+      <Menu className="h-4 w-4 text-slate-700" />
+    </button>
   )
 }

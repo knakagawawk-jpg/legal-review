@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils"
 import type { ReviewRequest, ProblemMetadata, ProblemMetadataWithDetails } from "@/types/api"
 import { formatYearToEra, formatYearToShortEra } from "@/lib/utils"
 import { sortSubjectsByFixedOrder } from "@/lib/subjects"
+import { SidebarToggle } from "@/components/sidebar"
 
 type Step = 1 | 2
 type Mode = "existing" | "new"
@@ -278,7 +279,8 @@ export default function ReviewPage() {
     <div className="flex min-h-screen flex-col bg-slate-50">
       <header className="shrink-0 border-b border-slate-200/60 bg-white/80 backdrop-blur-md">
         <div className="mx-auto flex h-11 max-w-7xl items-center justify-between px-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 ml-2">
+            <SidebarToggle />
             <div className="flex h-6 w-6 items-center justify-center rounded-md bg-gradient-to-br from-indigo-500 to-sky-500">
               <Scale className="h-3.5 w-3.5 text-white" />
             </div>
@@ -347,9 +349,9 @@ export default function ReviewPage() {
                   setPurposeText("")
                 }
               }}
-              className="ml-1 text-xs text-slate-400 hover:text-slate-600 transition-colors"
+              className="ml-1 px-3 py-1.5 text-xs text-slate-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 hover:border-blue-300 transition-colors"
             >
-              {mode === "existing" ? "お好きな問題" : "既存問題"}
+              {mode === "existing" ? "好きな問題を貼りつけレビュー" : "既存問題"}
             </button>
           </div>
         </div>
@@ -500,8 +502,7 @@ export default function ReviewPage() {
               </div>
 
               {/* フッター（講評開始ボタン） */}
-              <div className="shrink-0 flex items-center justify-between border-t border-slate-100 px-2.5 py-1.5">
-                <span className="text-xs text-slate-400">推奨: 1,500〜2,500字</span>
+              <div className="shrink-0 flex items-center justify-end border-t border-slate-100 px-2.5 py-1.5">
                 <Button
                   size="sm"
                   disabled={!canProceedToStep2() || loading}

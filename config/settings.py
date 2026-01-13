@@ -19,7 +19,7 @@ API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 # Anthropic API設定
 # 注意: モデル名はユーザーが明示的に指定したものです。AIが勝手に変更しないでください。
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
 
 # 認証設定（デフォルトはOFF）
 AUTH_ENABLED = os.getenv("AUTH_ENABLED", "false").lower() == "true"

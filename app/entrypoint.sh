@@ -3,7 +3,7 @@ set -e
 
 echo "=== Database Initialization Script ==="
 
-# データベース初期化スクリプトを実行
+# チE�Eタベ�Eス初期化スクリプトを実衁E
 echo "Running database initialization..."
 if ! python3 /app/app/init_db.py; then
     echo "ERROR: Database initialization failed. Exiting."
@@ -14,5 +14,5 @@ echo ""
 echo "=== Initialization complete ==="
 echo "Starting FastAPI application..."
 
-# FastAPIアプリケーションを起動
+# FastAPIアプリケーションを起勁E
 exec "$@"

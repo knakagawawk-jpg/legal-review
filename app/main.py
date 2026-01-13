@@ -485,7 +485,8 @@ async def create_review(
             if "API key" in str(e).lower() or "authentication" in str(e).lower():
                 error_msg = "Anthropic APIキーが設定されていないか、無効です。環境変数ANTHROPIC_API_KEYを確認してください。"
             elif "timeout" in str(e).lower():
-                error_msg = f"LLM API呼び出しがタイムアウトしました: {str(e)}"
+                # API側のタイムアウトエラー（Anthropic APIのタイムアウトなど）
+                error_msg = f"API側でタイムアウトが発生しました。Anthropic APIの応答が遅い可能性があります。エラー詳細: {str(e)}"
             elif "rate limit" in str(e).lower():
                 error_msg = f"LLM APIのレート制限に達しました: {str(e)}"
             else:

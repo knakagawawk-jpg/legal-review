@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
-import { Sidebar } from "@/components/sidebar"
+import { Sidebar, SidebarProvider, SidebarToggle } from "@/components/sidebar"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -18,14 +18,10 @@ export default function RootLayout({
   return (
     <html lang="ja">
       <body className={inter.className}>
-        <div className="flex h-screen overflow-hidden">
+        <SidebarProvider>
           <Sidebar />
-          <main className="flex-1 overflow-y-auto">
-            <div className="mx-auto min-h-full">
-              {children}
-            </div>
-          </main>
-        </div>
+          <main className="h-screen">{children}</main>
+        </SidebarProvider>
       </body>
     </html>
   )
