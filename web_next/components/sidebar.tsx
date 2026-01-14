@@ -6,6 +6,9 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { FileText, BookOpen, MessageCircle, ScrollText, Wrench, Menu, ChevronLeft, Scale } from "lucide-react"
 import { SidebarContentSection } from "./sidebar-sections"
+import { LoginButton } from "./auth/login-button"
+import { UserMenu } from "./auth/user-menu"
+import { useAuth } from "@/contexts/auth-context"
 
 // サイドバーの状態を共有するContext
 type SidebarContextType = {
@@ -157,11 +160,27 @@ export function Sidebar() {
 
           {/* フッター */}
           <div className="p-3 border-t border-blue-100/40 bg-blue-50/20">
-            <p className="text-[10px] text-center text-slate-400">Juristutor v1.0</p>
+            <AuthSection />
+            <p className="text-[10px] text-center text-slate-400 mt-2">Juristutor v1.0</p>
           </div>
         </div>
       </aside>
     </>
+  )
+}
+
+// 認証セクション
+function AuthSection() {
+  const { isAuthenticated, isLoading } = useAuth()
+
+  if (isLoading) {
+    return null
+  }
+
+  return (
+    <div className="flex items-center justify-center">
+      {isAuthenticated ? <UserMenu /> : <LoginButton />}
+    </div>
   )
 }
 

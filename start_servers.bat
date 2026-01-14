@@ -1,5 +1,5 @@
 @echo off
-echo FastAPIサーバーとStreamlitアプリを起動します...
+echo FastAPIサーバーとNext.jsアプリを起動します...
 
 cd /d "%~dp0"
 
@@ -9,13 +9,15 @@ start "FastAPI Server" cmd /k "python -m uvicorn app.main:app --reload --host 12
 
 timeout /t 3 /nobreak >nul
 
-echo Streamlitアプリを起動中...
-start "Streamlit App" cmd /k "python -m streamlit run web.py"
+echo Next.jsアプリを起動中...
+cd web_next
+start "Next.js App" cmd /k "npm run dev"
+cd ..
 
 echo.
 echo 両方のサーバーが起動しました。
 echo FastAPIサーバー: http://127.0.0.1:8000
-echo Streamlitアプリ: http://localhost:8501
+echo Next.jsアプリ: http://localhost:3000
 echo.
 echo サーバーを停止するには、それぞれのウィンドウを閉じてください。
 pause

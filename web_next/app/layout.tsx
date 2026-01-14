@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
 import { Sidebar, SidebarProvider, SidebarToggle } from "@/components/sidebar"
+import { AuthProvider } from "@/contexts/auth-context"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -18,10 +19,12 @@ export default function RootLayout({
   return (
     <html lang="ja">
       <body className={inter.className}>
-        <SidebarProvider>
-          <Sidebar />
-          <main className="h-screen">{children}</main>
-        </SidebarProvider>
+        <AuthProvider>
+          <SidebarProvider>
+            <Sidebar />
+            <main className="h-screen">{children}</main>
+          </SidebarProvider>
+        </AuthProvider>
       </body>
     </html>
   )

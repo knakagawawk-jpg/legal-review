@@ -28,31 +28,7 @@ services:
       start_period: 40s
     # ports公開しない（内部ネットワークのみアクセス可能）
 
-  # Streamlit（旧フロントエンド、移行期間中は残す）
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.streamlit
-    container_name: law-review-frontend
-    environment:
-      - API_BASE_URL=${API_BASE_URL:-http://backend:8000}
-    depends_on:
-      backend:
-        condition: service_healthy
-    networks:
-      - law-review-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8501/_stcore/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    profiles:
-      - legacy  # 旧UI用プロファイル（移行期間中のみ使用）
-    # ports公開しない（proxy経由のみアクセス可能）
-
-  # Next.js（新フロントエンド）
+  # Next.js（フロントエンド）
   web:
     build:
       context: .
