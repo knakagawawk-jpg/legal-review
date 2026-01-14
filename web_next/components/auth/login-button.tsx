@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useAuth } from "@/contexts/auth-context"
-import { Loader2 } from "lucide-react"
+import { Loader2, AlertCircle, X } from "lucide-react"
 
 declare global {
   interface Window {
@@ -23,9 +24,10 @@ declare global {
 }
 
 export function LoginButton() {
-  const { login, isLoading, isAuthenticated } = useAuth()
+  const { login, isLoading, isAuthenticated, error, clearError } = useAuth()
   const [isGoogleLoaded, setIsGoogleLoaded] = useState(false)
   const [isLoggingIn, setIsLoggingIn] = useState(false)
+  const [loginError, setLoginError] = useState<string | null>(null)
 
   useEffect(() => {
     // Google Identity Services スクリプトを読み込む
@@ -61,11 +63,13 @@ export function LoginButton() {
           client_id: clientId,
           callback: async (response) => {
             setIsLoggingIn(true)
+            setLoginError(null)
+            clearError()
             try {
               await login(response.credential)
             } catch (error: any) {
               console.error("Login failed:", error)
-              alert(error.message || "ログインに失敗しました")
+              setLoginError(error.message || "ログインに失敗しました")
             } finally {
               setIsLoggingIn(false)
             }
@@ -73,7 +77,7 @@ export function LoginButton() {
         })
       }
     }
-  }, [isGoogleLoaded, isAuthenticated, login])
+  }, [isGoogleLoaded, isAuthenticated, login, clearError])
 
   const handleLogin = () => {
     if (window.google?.accounts?.id) {
@@ -85,18 +89,45 @@ export function LoginButton() {
     return null
   }
 
-  if (!isGoogleLoaded || isLoggingIn) {
-    return (
-      <Button disabled variant="outline" size="sm">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        読み込み中...
-      </Button>
-    )
-  }
+  const displayError = loginError || error
 
   return (
-    <Button onClick={handleLogin} variant="outline" size="sm">
-      Googleでログイン
-    </Button>
+    <div className="flex flex-col gap-2">
+      {displayError && (
+        <Alert variant="destructive" className="py-2">
+          <div className="flex items-start justify-between">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 mt-0.5" />
+              <div className="flex-1">
+                <AlertTitle className="text-sm">ログインエラー</AlertTitle>
+                <AlertDescription className="text-xs mt-1">
+                  {displayError}
+                </AlertDescription>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setLoginError(null)
+                clearError()
+              }}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </Alert>
+      )}
+
+      {!isGoogleLoaded || isLoggingIn || isLoading ? (
+        <Button disabled variant="outline" size="sm">
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          {isLoggingIn ? "ログイン中..." : "読み込み中..."}
+        </Button>
+      ) : (
+        <Button onClick={handleLogin} variant="outline" size="sm">
+          Googleでログイン
+        </Button>
+      )}
+    </div>
   )
 }

@@ -1,15 +1,26 @@
 """認証機能（設定でON/OFF可能）"""
+import logging
+import hashlib
+import time
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from typing import Optional
-from jose import JWTError, jwt
+from typing import Optional, Dict, Tuple
 
 from .db import SessionLocal
 from .models import User
-from config.settings import AUTH_ENABLED, GOOGLE_CLIENT_ID, SECRET_KEY, ALGORITHM
+from config.settings import (
+    AUTH_ENABLED, GOOGLE_CLIENT_ID, SECRET_KEY, ALGORITHM,
+    TOKEN_CACHE_TTL, TOKEN_CACHE_MAX_SIZE
+)
+
+logger = logging.getLogger(__name__)
 
 security = HTTPBearer(auto_error=False)  # 認証がなくてもエラーにしない
+
+# トークン検証結果のキャッシュ（インメモリ）
+# キー: トークンのハッシュ、値: (google_info, 有効期限のタイムスタンプ)
+_token_cache: Dict[str, Tuple[dict, float]] = {}
 
 def get_db():
     db = SessionLocal()
@@ -18,28 +29,109 @@ def get_db():
     finally:
         db.close()
 
+def _get_token_hash(token: str) -> str:
+    """トークンのハッシュ値を取得（キャッシュキー用）"""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+def _cleanup_expired_cache():
+    """期限切れのキャッシュエントリを削除"""
+    current_time = time.time()
+    expired_keys = [
+        key for key, (_, expiry) in _token_cache.items()
+        if expiry < current_time
+    ]
+    for key in expired_keys:
+        del _token_cache[key]
+    
+    # キャッシュサイズが大きすぎる場合は、古いエントリを削除
+    if len(_token_cache) > TOKEN_CACHE_MAX_SIZE:
+        # 有効期限が近い順にソートして、古いものを削除
+        sorted_items = sorted(
+            _token_cache.items(),
+            key=lambda x: x[1][1]  # expiry timeでソート
+        )
+        # 半分を削除
+        for key, _ in sorted_items[:len(sorted_items) // 2]:
+            del _token_cache[key]
+        logger.warning(
+            f"Token cache size exceeded limit ({TOKEN_CACHE_MAX_SIZE}), "
+            f"cleaned up to {len(_token_cache)} entries"
+        )
+
 async def verify_google_token(token: str) -> dict:
-    """Google IDトークンを検証"""
+    """
+    Google IDトークンを検証（キャッシュ付き）
+    
+    最適化:
+    - 検証済みトークンの情報をキャッシュして再検証を回避
+    - 詳細なエラーハンドリングとログ
+    - トークンの有効期限に基づいたキャッシュTTL
+    """
     if not AUTH_ENABLED or not GOOGLE_CLIENT_ID:
+        logger.warning("Authentication attempt but AUTH_ENABLED is False or GOOGLE_CLIENT_ID is not set")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Authentication is not enabled"
         )
     
+    # キャッシュキーを生成
+    cache_key = _get_token_hash(token)
+    current_time = time.time()
+    
+    # キャッシュから取得を試みる
+    if cache_key in _token_cache:
+        cached_info, expiry_time = _token_cache[cache_key]
+        if expiry_time > current_time:
+            logger.debug(f"Token verification cache hit for key: {cache_key[:16]}...")
+            return cached_info
+        else:
+            # 期限切れのキャッシュエントリを削除
+            del _token_cache[cache_key]
+            logger.debug(f"Token verification cache expired for key: {cache_key[:16]}...")
+    
+    # キャッシュにない、または期限切れの場合は検証を実行
     try:
         from google.oauth2 import id_token
         from google.auth.transport import requests
         
+        logger.debug("Verifying Google ID token with Google API")
         idinfo = id_token.verify_oauth2_token(
             token, requests.Request(), GOOGLE_CLIENT_ID
         )
-        if idinfo['iss'] not in ['accounts.google.com', 'https://accounts.google.com']:
+        
+        # 発行者の確認
+        if idinfo.get('iss') not in ['accounts.google.com', 'https://accounts.google.com']:
+            logger.warning(f"Invalid token issuer: {idinfo.get('iss')}")
             raise ValueError('Wrong issuer.')
+        
+        # 有効期限の確認とキャッシュTTLの設定
+        exp = idinfo.get('exp')
+        if exp:
+            # トークンの有効期限までキャッシュ（ただし最大5分）
+            cache_expiry = min(exp, current_time + TOKEN_CACHE_TTL)
+        else:
+            # 有効期限情報がない場合はデフォルトTTLを使用
+            cache_expiry = current_time + TOKEN_CACHE_TTL
+        
+        # キャッシュに保存
+        _cleanup_expired_cache()  # 定期的にクリーンアップ
+        _token_cache[cache_key] = (idinfo, cache_expiry)
+        logger.debug(f"Token verified and cached for key: {cache_key[:16]}... (expires at {cache_expiry})")
+        
         return idinfo
+        
     except ValueError as e:
+        logger.warning(f"Token verification failed: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid authentication credentials: {str(e)}"
+        )
+    except Exception as e:
+        # 予期しないエラー（ネットワークエラーなど）
+        logger.error(f"Unexpected error during token verification: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Token verification service unavailable: {str(e)}"
         )
 
 def get_or_create_user(google_info: dict, db: Session) -> User:
@@ -97,13 +189,14 @@ async def get_current_user(
     try:
         token = credentials.credentials
         
-        # Googleトークンを検証
+        # Googleトークンを検証（キャッシュ付き）
         google_info = await verify_google_token(token)
         
         # ユーザーを取得または作成
         user = get_or_create_user(google_info, db)
         
         if not user.is_active:
+            logger.warning(f"Authentication attempt by disabled user: {user.email}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="User account is disabled"
@@ -111,9 +204,11 @@ async def get_current_user(
         
         return user
     except HTTPException:
+        # HTTPExceptionはそのまま再スロー
         raise
-    except Exception:
-        # 認証エラーは無視してNoneを返す（認証オプションのため）
+    except Exception as e:
+        # その他のエラーはログに記録してNoneを返す（認証オプションのため）
+        logger.debug(f"Authentication failed (optional): {str(e)}", exc_info=True)
         return None
 
 async def get_current_user_required(
@@ -123,14 +218,20 @@ async def get_current_user_required(
     """
     現在のユーザーを取得（認証必須）
     認証がOFFの場合、またはトークンがない場合はエラーを返す
+    
+    最適化:
+    - トークン検証結果のキャッシュ
+    - 詳細なエラーハンドリングとログ
     """
     if not AUTH_ENABLED:
+        logger.warning("Authentication required but AUTH_ENABLED is False")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Authentication is required but not enabled"
         )
     
     if not credentials:
+        logger.debug("Authentication required but no credentials provided")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required"
@@ -138,16 +239,30 @@ async def get_current_user_required(
     
     token = credentials.credentials
     
-    # Googleトークンを検証
-    google_info = await verify_google_token(token)
-    
-    # ユーザーを取得または作成
-    user = get_or_create_user(google_info, db)
-    
-    if not user.is_active:
+    try:
+        # Googleトークンを検証（キャッシュ付き）
+        google_info = await verify_google_token(token)
+        
+        # ユーザーを取得または作成
+        user = get_or_create_user(google_info, db)
+        
+        if not user.is_active:
+            logger.warning(f"Authentication attempt by disabled user: {user.email} (user_id: {user.id})")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User account is disabled"
+            )
+        
+        logger.debug(f"User authenticated successfully: {user.email} (user_id: {user.id})")
+        return user
+        
+    except HTTPException:
+        # HTTPExceptionはそのまま再スロー
+        raise
+    except Exception as e:
+        # 予期しないエラー
+        logger.error(f"Unexpected error during authentication: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User account is disabled"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Authentication service error"
         )
-    
-    return user

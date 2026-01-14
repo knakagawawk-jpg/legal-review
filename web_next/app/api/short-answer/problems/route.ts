@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server"
 
 const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:8000"
 
+// 動的ルートとしてマーク（request.urlを使用するため）
+export const dynamic = 'force-dynamic'
+
 // GET /api/short-answer/problems - 短答式問題一覧を取得
 export async function GET(request: NextRequest) {
   try {

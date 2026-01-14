@@ -1,6 +1,7 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react"
+import { authStorage } from "@/lib/auth-storage"
 
 export interface User {
   user_id: number
@@ -13,8 +14,11 @@ interface AuthContextType {
   user: User | null
   token: string | null
   isLoading: boolean
-  login: (token: string) => Promise<void>
+  error: string | null
+  login: (token: string, rememberMe?: boolean) => Promise<void>
   logout: () => void
+  refreshUser: () => Promise<void>
+  clearError: () => void
   isAuthenticated: boolean
 }
 
@@ -24,9 +28,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const fetchUserInfo = async (authToken: string) => {
+  const fetchUserInfo = useCallback(async (authToken: string) => {
     try {
+      setError(null)
       const response = await fetch("/api/users/me", {
         headers: {
           Authorization: `Bearer ${authToken}`,
@@ -35,43 +41,91 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (response.ok) {
         const userData = await response.json()
-        setUser({
+        const userInfo = {
           user_id: userData.id,
           email: userData.email,
           name: userData.name,
           is_active: userData.is_active,
-        })
+        }
+        setUser(userInfo)
+        // ユーザー情報をキャッシュに保存
+        authStorage.setUser(userInfo)
       } else {
         // トークンが無効な場合は削除
-        localStorage.removeItem("auth_token")
+        const errorData = await response.json().catch(() => ({ error: "認証に失敗しました" }))
+        setError(errorData.error || "認証に失敗しました")
+        authStorage.removeToken()
+        authStorage.removeUser()
         setToken(null)
         setUser(null)
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to fetch user info:", error)
-      localStorage.removeItem("auth_token")
+      setError(error.message || "ユーザー情報の取得に失敗しました")
+      authStorage.removeToken()
+      authStorage.removeUser()
       setToken(null)
       setUser(null)
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
 
-  // 初期化時にローカルストレージからトークンを読み込む
+  const refreshUser = useCallback(async () => {
+    const storedToken = authStorage.getToken()
+    if (storedToken) {
+      setIsLoading(true)
+      await fetchUserInfo(storedToken)
+    }
+  }, [fetchUserInfo])
+
+  const logout = useCallback(() => {
+    setUser(null)
+    setToken(null)
+    setError(null)
+    authStorage.clear()
+  }, [])
+
+  const clearError = useCallback(() => {
+    setError(null)
+  }, [])
+
+  // 認証エラーイベントをリスン
   useEffect(() => {
-    const storedToken = localStorage.getItem("auth_token")
+    const handleAuthError = () => {
+      // 認証エラーが発生した場合はログアウト
+      logout()
+    }
+
+    window.addEventListener('auth:error', handleAuthError)
+    return () => {
+      window.removeEventListener('auth:error', handleAuthError)
+    }
+  }, [logout])
+
+  // 初期化時にストレージからトークンを読み込む
+  useEffect(() => {
+    // まずキャッシュされたユーザー情報を確認（高速化）
+    const cachedUser = authStorage.getUser()
+    if (cachedUser) {
+      setUser(cachedUser)
+    }
+
+    const storedToken = authStorage.getToken()
     if (storedToken) {
       setToken(storedToken)
-      // トークンからユーザー情報を取得
+      // トークンからユーザー情報を取得（キャッシュがあっても最新情報を取得）
       fetchUserInfo(storedToken)
     } else {
       setIsLoading(false)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [fetchUserInfo])
 
-  const login = async (idToken: string) => {
+  const login = async (idToken: string, rememberMe: boolean = true) => {
     try {
+      setError(null)
+      setIsLoading(true)
+      
       const response = await fetch("/api/auth/google", {
         method: "POST",
         headers: {
@@ -81,31 +135,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "認証に失敗しました")
+        const errorData = await response.json().catch(() => ({ error: "認証に失敗しました" }))
+        const errorMessage = errorData.error || "認証に失敗しました"
+        setError(errorMessage)
+        throw new Error(errorMessage)
       }
 
       const userData = await response.json()
       const authToken = idToken // Google IDトークンを認証トークンとして使用
-
-      setUser({
+      const userInfo = {
         user_id: userData.user_id,
         email: userData.email,
         name: userData.name,
         is_active: userData.is_active,
-      })
-      setToken(authToken)
-      localStorage.setItem("auth_token", authToken)
-    } catch (error) {
-      console.error("Login error:", error)
-      throw error
-    }
-  }
+      }
 
-  const logout = () => {
-    setUser(null)
-    setToken(null)
-    localStorage.removeItem("auth_token")
+      setUser(userInfo)
+      setToken(authToken)
+      setError(null) // 成功時はエラーをクリア
+      
+      // ストレージに保存（rememberMeに応じて使い分け）
+      authStorage.setToken(authToken, rememberMe)
+      authStorage.setUser(userInfo)
+    } catch (error: any) {
+      console.error("Login error:", error)
+      setError(error.message || "ログインに失敗しました")
+      throw error
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -114,8 +172,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         token,
         isLoading,
+        error,
         login,
         logout,
+        refreshUser,
+        clearError,
         isAuthenticated: !!user && !!token,
       }}
     >

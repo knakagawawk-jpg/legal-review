@@ -1,8 +1,9 @@
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
-import { Sidebar, SidebarProvider, SidebarToggle } from "@/components/sidebar"
+import { SidebarProvider } from "@/components/sidebar"
 import { AuthProvider } from "@/contexts/auth-context"
+import { ConditionalSidebar } from "@/components/conditional-sidebar"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -21,7 +22,7 @@ export default function RootLayout({
       <body className={inter.className}>
         <AuthProvider>
           <SidebarProvider>
-            <Sidebar />
+            <ConditionalSidebar />
             <main className="h-screen">{children}</main>
           </SidebarProvider>
         </AuthProvider>

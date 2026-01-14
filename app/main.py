@@ -3,6 +3,7 @@ import logging
 from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi import Request
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import Optional, List
 
@@ -15,7 +16,8 @@ from .models import (
     ShortAnswerProblem, ShortAnswerSession, ShortAnswerAnswer,
     User, UserSubscription, SubscriptionPlan,
     Notebook, NoteSection, NotePage,
-    Thread, Message
+    Thread, Message,
+    UserPreference, UserDashboard, UserDashboardHistory, UserReviewHistory
 )
 from config.constants import FIXED_SUBJECTS
 from .schemas import (
@@ -33,7 +35,8 @@ from .schemas import (
     NotePageCreate, NotePageUpdate, NotePageResponse,
     SubmissionHistoryResponse, ShortAnswerHistoryResponse,
     ThreadCreate, ThreadResponse, ThreadListResponse,
-    MessageCreate, MessageResponse, MessageListResponse, ThreadMessageCreate
+    MessageCreate, MessageResponse, MessageListResponse, ThreadMessageCreate,
+    UserUpdate, UserResponse
 )
 from pydantic import BaseModel
 from .llm_service import generate_review, chat_about_review, free_chat
@@ -44,6 +47,20 @@ from config.settings import AUTH_ENABLED
 # Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="法律答案講評システム API", version="1.0.0")
+
+# CORS設定（Next.jsフロントエンドからのリクエストを許可）
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",  # 通常の開発環境（npm run dev）
+        "http://127.0.0.1:3000",
+        "http://localhost:8080",   # Docker Compose使用時
+        "http://127.0.0.1:8080",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # グローバルエラーハンドラーを追加（HTTPExceptionは除外）
 @app.exception_handler(Exception)
@@ -118,18 +135,54 @@ async def google_auth(req: GoogleAuthRequest, db: Session = Depends(get_db)):
         "is_active": user.is_active
     }
 
-@app.get("/v1/users/me")
+@app.get("/v1/users/me", response_model=UserResponse)
 async def get_current_user_info(
     current_user: User = Depends(get_current_user_required)
 ):
     """現在のユーザー情報を取得（認証必須）"""
-    return {
-        "id": current_user.id,
-        "email": current_user.email,
-        "name": current_user.name,
-        "is_active": current_user.is_active,
-        "is_admin": current_user.is_admin
-    }
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        name=current_user.name,
+        is_active=current_user.is_active,
+        is_admin=current_user.is_admin
+    )
+
+@app.put("/v1/users/me", response_model=UserResponse)
+async def update_current_user_info(
+    user_update: UserUpdate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """現在のユーザー情報を更新（認証必須）"""
+    # 名前の更新
+    if user_update.name is not None:
+        current_user.name = user_update.name
+    
+    # メールアドレスの更新（Google認証の場合は変更不可にする場合もある）
+    if user_update.email is not None:
+        # メールアドレスの重複チェック
+        existing_user = db.query(User).filter(
+            User.email == user_update.email,
+            User.id != current_user.id
+        ).first()
+        if existing_user:
+            raise HTTPException(
+                status_code=400,
+                detail="このメールアドレスは既に使用されています"
+            )
+        current_user.email = user_update.email
+    
+    db.commit()
+    db.refresh(current_user)
+    
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        name=current_user.name,
+        is_active=current_user.is_active,
+        is_admin=current_user.is_admin
+    )
 
 def problem_to_response(problem: Problem) -> ProblemResponse:
     """ProblemモデルをProblemResponseに変換"""
@@ -388,7 +441,7 @@ def create_problems_bulk(problems: List[ProblemCreate], db: Session = Depends(ge
 @app.post("/v1/review", response_model=ReviewResponse)
 async def create_review(
     req: ReviewRequest,
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     try:
@@ -532,11 +585,19 @@ async def create_review(
         )
 
 @app.get("/v1/review/{submission_id}", response_model=ReviewResponse)
-def get_review(submission_id: int, db: Session = Depends(get_db)):
-    """講評を取得"""
+async def get_review(
+    submission_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """講評を取得（認証必須）"""
     submission = db.query(Submission).filter(Submission.id == submission_id).first()
     if not submission:
         raise HTTPException(status_code=404, detail="Submission not found")
+    
+    # ユーザー所有チェック
+    if submission.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
     
     review = db.query(Review).filter(Review.submission_id == submission_id).first()
     if not review:
@@ -584,12 +645,20 @@ def get_review(submission_id: int, db: Session = Depends(get_db)):
     )
 
 @app.post("/v1/review/chat", response_model=ReviewChatResponse)
-def chat_review(req: ReviewChatRequest, db: Session = Depends(get_db)):
-    """講評に関する質問に答える"""
+async def chat_review(
+    req: ReviewChatRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """講評に関する質問に答える（認証必須）"""
     # SubmissionとReviewを取得
     submission = db.query(Submission).filter(Submission.id == req.submission_id).first()
     if not submission:
         raise HTTPException(status_code=404, detail="Submission not found")
+    
+    # ユーザー所有チェック
+    if submission.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
     
     review = db.query(Review).filter(Review.submission_id == req.submission_id).first()
     if not review:
@@ -675,12 +744,12 @@ def get_short_answer_problem(problem_id: int, db: Session = Depends(get_db)):
 @app.post("/v1/short-answer/sessions", response_model=ShortAnswerSessionResponse)
 async def create_short_answer_session(
     session_data: ShortAnswerSessionCreate,
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """短答式解答セッションを作成"""
+    """短答式解答セッションを作成（認証必須）"""
     db_session = ShortAnswerSession(
-        user_id=current_user.id if current_user else None,
+        user_id=current_user.id,
         exam_type=session_data.exam_type,
         year=session_data.year,
         subject=session_data.subject,
@@ -704,11 +773,19 @@ async def create_short_answer_session(
     )
 
 @app.get("/v1/short-answer/sessions/{session_id}", response_model=ShortAnswerSessionResponse)
-def get_short_answer_session(session_id: int, db: Session = Depends(get_db)):
-    """短答式解答セッション情報を取得"""
+async def get_short_answer_session(
+    session_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """短答式解答セッション情報を取得（認証必須）"""
     session = db.query(ShortAnswerSession).filter(ShortAnswerSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="ShortAnswerSession not found")
+    
+    # ユーザー所有チェック
+    if session.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
     
     problem_ids_list = json.loads(session.problem_ids)
     return ShortAnswerSessionResponse(
@@ -723,8 +800,19 @@ def get_short_answer_session(session_id: int, db: Session = Depends(get_db)):
     )
 
 @app.post("/v1/short-answer/answers", response_model=ShortAnswerAnswerResponse)
-def create_short_answer_answer(answer_data: ShortAnswerAnswerCreate, db: Session = Depends(get_db)):
-    """短答式解答を送信"""
+async def create_short_answer_answer(
+    answer_data: ShortAnswerAnswerCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """短答式解答を送信（認証必須）"""
+    # セッションの所有権を確認
+    session = db.query(ShortAnswerSession).filter(ShortAnswerSession.id == answer_data.session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="ShortAnswerSession not found")
+    if session.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     # 問題を取得して正誤を判定
     problem = db.query(ShortAnswerProblem).filter(ShortAnswerProblem.id == answer_data.problem_id).first()
     if not problem:
@@ -776,8 +864,19 @@ def create_short_answer_answer(answer_data: ShortAnswerAnswerCreate, db: Session
         )
 
 @app.get("/v1/short-answer/sessions/{session_id}/answers", response_model=List[ShortAnswerAnswerResponse])
-def get_short_answer_session_answers(session_id: int, db: Session = Depends(get_db)):
-    """セッション内の解答一覧を取得"""
+async def get_short_answer_session_answers(
+    session_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """セッション内の解答一覧を取得（認証必須）"""
+    # セッションの所有権を確認
+    session = db.query(ShortAnswerSession).filter(ShortAnswerSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="ShortAnswerSession not found")
+    if session.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     answers = db.query(ShortAnswerAnswer).filter(
         ShortAnswerAnswer.session_id == session_id
     ).all()
@@ -794,19 +893,13 @@ def get_short_answer_session_answers(session_id: int, db: Session = Depends(get_
 # 過去の記録取得エンドポイント
 @app.get("/v1/users/me/submissions", response_model=List[SubmissionHistoryResponse])
 async def get_my_submissions(
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0)
 ):
-    """自分の答案一覧を取得（認証オプション）"""
-    query = db.query(Submission)
-    
-    if current_user:
-        query = query.filter(Submission.user_id == current_user.id)
-    else:
-        # 認証されていない場合は空のリストを返す
-        return []
+    """自分の答案一覧を取得（認証必須）"""
+    query = db.query(Submission).filter(Submission.user_id == current_user.id)
     
     submissions = query.order_by(Submission.created_at.desc()).offset(offset).limit(limit).all()
     
@@ -907,17 +1000,11 @@ async def get_my_short_answer_sessions(
 # ノート機能のエンドポイント
 @app.get("/v1/notebooks", response_model=List[NotebookResponse])
 async def list_notebooks(
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """ノートブック一覧を取得"""
-    query = db.query(Notebook)
-    
-    if current_user:
-        query = query.filter(Notebook.user_id == current_user.id)
-    else:
-        # 認証されていない場合は空のリストを返す
-        return []
+    """ノートブック一覧を取得（認証必須）"""
+    query = db.query(Notebook).filter(Notebook.user_id == current_user.id)
     
     notebooks = query.order_by(Notebook.created_at.desc()).all()
     return [NotebookResponse.model_validate(nb) for nb in notebooks]
@@ -925,12 +1012,10 @@ async def list_notebooks(
 @app.post("/v1/notebooks", response_model=NotebookResponse)
 async def create_notebook(
     notebook_data: NotebookCreate,
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """ノートブックを作成"""
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Authentication required")
+    """ノートブックを作成（認証必須）"""
     
     notebook = Notebook(
         user_id=current_user.id,
@@ -945,15 +1030,15 @@ async def create_notebook(
     return NotebookResponse.model_validate(notebook)@app.get("/v1/notebooks/{notebook_id}", response_model=NotebookDetailResponse)
 async def get_notebook(
     notebook_id: int,
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """ノートブック詳細を取得"""
+    """ノートブック詳細を取得（認証必須）"""
     notebook = db.query(Notebook).filter(Notebook.id == notebook_id).first()
     if not notebook:
         raise HTTPException(status_code=404, detail="Notebook not found")
     
-    if current_user and notebook.user_id != current_user.id:
+    if notebook.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     
     # セクションとページを取得
@@ -975,15 +1060,15 @@ async def get_notebook(
 async def update_notebook(
     notebook_id: int,
     notebook_data: NotebookUpdate,
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """ノートブックを更新"""
+    """ノートブックを更新（認証必須）"""
     notebook = db.query(Notebook).filter(Notebook.id == notebook_id).first()
     if not notebook:
         raise HTTPException(status_code=404, detail="Notebook not found")
     
-    if not current_user or notebook.user_id != current_user.id:
+    if notebook.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     
     if notebook_data.title is not None:
@@ -1001,15 +1086,15 @@ async def update_notebook(
 @app.delete("/v1/notebooks/{notebook_id}")
 async def delete_notebook(
     notebook_id: int,
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """ノートブックを削除"""
+    """ノートブックを削除（認証必須）"""
     notebook = db.query(Notebook).filter(Notebook.id == notebook_id).first()
     if not notebook:
         raise HTTPException(status_code=404, detail="Notebook not found")
     
-    if not current_user or notebook.user_id != current_user.id:
+    if notebook.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     
     db.delete(notebook)
@@ -1021,15 +1106,15 @@ async def delete_notebook(
 @app.post("/v1/note-sections", response_model=NoteSectionResponse)
 async def create_note_section(
     section_data: NoteSectionCreate,
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """セクションを作成"""
+    """セクションを作成（認証必須）"""
     notebook = db.query(Notebook).filter(Notebook.id == section_data.notebook_id).first()
     if not notebook:
         raise HTTPException(status_code=404, detail="Notebook not found")
     
-    if not current_user or notebook.user_id != current_user.id:
+    if notebook.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     
     section = NoteSection(
@@ -1047,16 +1132,16 @@ async def create_note_section(
 async def update_note_section(
     section_id: int,
     section_data: NoteSectionUpdate,
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """セクションを更新"""
+    """セクションを更新（認証必須）"""
     section = db.query(NoteSection).filter(NoteSection.id == section_id).first()
     if not section:
         raise HTTPException(status_code=404, detail="Section not found")
     
     notebook = db.query(Notebook).filter(Notebook.id == section.notebook_id).first()
-    if not current_user or notebook.user_id != current_user.id:
+    if notebook.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     
     if section_data.title is not None:
@@ -1072,16 +1157,16 @@ async def update_note_section(
 @app.delete("/v1/note-sections/{section_id}")
 async def delete_note_section(
     section_id: int,
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """セクションを削除"""
+    """セクションを削除（認証必須）"""
     section = db.query(NoteSection).filter(NoteSection.id == section_id).first()
     if not section:
         raise HTTPException(status_code=404, detail="Section not found")
     
     notebook = db.query(Notebook).filter(Notebook.id == section.notebook_id).first()
-    if not current_user or notebook.user_id != current_user.id:
+    if notebook.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     
     db.delete(section)
@@ -1093,16 +1178,16 @@ async def delete_note_section(
 @app.post("/v1/note-pages", response_model=NotePageResponse)
 async def create_note_page(
     page_data: NotePageCreate,
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """ページを作成"""
+    """ページを作成（認証必須）"""
     section = db.query(NoteSection).filter(NoteSection.id == page_data.section_id).first()
     if not section:
         raise HTTPException(status_code=404, detail="Section not found")
     
     notebook = db.query(Notebook).filter(Notebook.id == section.notebook_id).first()
-    if not current_user or notebook.user_id != current_user.id:
+    if notebook.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     
     page = NotePage(
@@ -1121,17 +1206,17 @@ async def create_note_page(
 async def update_note_page(
     page_id: int,
     page_data: NotePageUpdate,
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """ページを更新"""
+    """ページを更新（認証必須）"""
     page = db.query(NotePage).filter(NotePage.id == page_id).first()
     if not page:
         raise HTTPException(status_code=404, detail="Page not found")
     
     section = db.query(NoteSection).filter(NoteSection.id == page.section_id).first()
     notebook = db.query(Notebook).filter(Notebook.id == section.notebook_id).first()
-    if not current_user or notebook.user_id != current_user.id:
+    if notebook.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     
     if page_data.title is not None:
@@ -1149,17 +1234,17 @@ async def update_note_page(
 @app.delete("/v1/note-pages/{page_id}")
 async def delete_note_page(
     page_id: int,
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """ページを削除"""
+    """ページを削除（認証必須）"""
     page = db.query(NotePage).filter(NotePage.id == page_id).first()
     if not page:
         raise HTTPException(status_code=404, detail="Page not found")
     
     section = db.query(NoteSection).filter(NoteSection.id == page.section_id).first()
     notebook = db.query(Notebook).filter(Notebook.id == section.notebook_id).first()
-    if not current_user or notebook.user_id != current_user.id:
+    if notebook.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     
     db.delete(page)
@@ -1171,12 +1256,11 @@ async def delete_note_page(
 @app.post("/v1/threads", response_model=ThreadResponse)
 async def create_thread(
     thread_data: ThreadCreate,
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """新しいフリーチャットスレッドを作成"""
-    # 認証されていない場合はダミーユーザーIDを使用（開発用）
-    user_id = current_user.id if current_user else 1
+    """新しいフリーチャットスレッドを作成（認証必須）"""
+    user_id = current_user.id
     
     thread = Thread(
         user_id=user_id,
@@ -1191,15 +1275,14 @@ async def create_thread(
 
 @app.get("/v1/threads", response_model=ThreadListResponse)
 async def list_threads(
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
     type: str = Query("free_chat", description="スレッドタイプ")
 ):
-    """スレッド一覧を取得（直近N件）"""
-    # 認証されていない場合はダミーユーザーIDを使用（開発用）
-    user_id = current_user.id if current_user else 1
+    """スレッド一覧を取得（直近N件）（認証必須）"""
+    user_id = current_user.id
     
     query = db.query(Thread).filter(
         Thread.user_id == user_id,
@@ -1222,18 +1305,15 @@ async def list_threads(
 @app.get("/v1/threads/{thread_id}", response_model=ThreadResponse)
 async def get_thread(
     thread_id: int,
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """スレッド詳細を取得"""
+    """スレッド詳細を取得（認証必須）"""
     thread = db.query(Thread).filter(Thread.id == thread_id).first()
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found")
     
-    # 認証されていない場合はダミーユーザーIDを使用（開発用）
-    user_id = current_user.id if current_user else 1
-    
-    if thread.user_id != user_id:
+    if thread.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     
     return ThreadResponse.model_validate(thread)
@@ -1241,20 +1321,17 @@ async def get_thread(
 @app.get("/v1/threads/{thread_id}/messages", response_model=MessageListResponse)
 async def list_messages(
     thread_id: int,
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
     limit: int = Query(200, ge=1, le=500),
     offset: int = Query(0, ge=0)
 ):
-    """スレッドのメッセージ一覧を取得"""
+    """スレッドのメッセージ一覧を取得（認証必須）"""
     thread = db.query(Thread).filter(Thread.id == thread_id).first()
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found")
     
-    # 認証されていない場合はダミーユーザーIDを使用（開発用）
-    user_id = current_user.id if current_user else 1
-    
-    if thread.user_id != user_id:
+    if thread.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     
     query = db.query(Message).filter(Message.thread_id == thread_id)
@@ -1270,18 +1347,15 @@ async def list_messages(
 async def create_message(
     thread_id: int,
     message_data: ThreadMessageCreate,
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """スレッドにメッセージを送信（LLM呼び出し含む）"""
+    """スレッドにメッセージを送信（LLM呼び出し含む）（認証必須）"""
     thread = db.query(Thread).filter(Thread.id == thread_id).first()
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found")
     
-    # 認証されていない場合はダミーユーザーIDを使用（開発用）
-    user_id = current_user.id if current_user else 1
-    
-    if thread.user_id != user_id:
+    if thread.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     
     # 1. ユーザーメッセージを保存

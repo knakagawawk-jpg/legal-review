@@ -8,8 +8,9 @@ import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { Plus, FileText, Folder, ChevronRight, ChevronDown } from "lucide-react"
 import type { Notebook, NoteSection, NotePage } from "@/types/api"
+import { withAuth } from "@/components/auth/with-auth"
 
-export default function NotesPage() {
+function NotesPage() {
   const { isOpen } = useSidebar()
   const [notebooks, setNotebooks] = useState<Notebook[]>([])
   const [loading, setLoading] = useState(true)
@@ -127,3 +128,5 @@ export default function NotesPage() {
     </div>
   )
 }
+
+export default withAuth(NotesPage, { requireAuth: true })

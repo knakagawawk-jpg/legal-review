@@ -12,8 +12,9 @@ import { cn } from "@/lib/utils"
 import { FIXED_SUBJECTS } from "@/lib/subjects"
 import { BookOpen, FileText, StickyNote, Plus, Folder, ChevronRight, ChevronDown } from "lucide-react"
 import type { Notebook, NoteSection, NotePage } from "@/types/api"
+import { withAuth } from "@/components/auth/with-auth"
 
-export default function SubjectPage() {
+function SubjectPage() {
   const params = useParams()
   const router = useRouter()
   const { isOpen } = useSidebar()
@@ -223,3 +224,5 @@ export default function SubjectPage() {
     </div>
   )
 }
+
+export default withAuth(SubjectPage, { requireAuth: true })

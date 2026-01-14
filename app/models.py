@@ -148,7 +148,7 @@ class Review(Base):
     __tablename__ = "reviews"
     
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, nullable=False, index=True)  # ユーザーID（usersテーブルは別管理）
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)  # 作成者（NULL可で共有講評も可能）
     
     # タイムスタンプ
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -181,8 +181,10 @@ class Review(Base):
     has_chat = Column(Boolean, nullable=False, default=False)  # チャット有無フラグ（一覧表示の高速化用）
     
     # リレーションシップ
+    user = relationship("User", back_populates="reviews")  # 作成者
     official_question = relationship("OfficialQuestion", foreign_keys=[official_question_id], back_populates="reviews")
     thread = relationship("Thread", foreign_keys=[thread_id], back_populates="reviews")
+    user_history = relationship("UserReviewHistory", back_populates="review")
     
     __table_args__ = (
         # CHECK制約: source_typeと問題参照の整合性
@@ -195,6 +197,7 @@ class Review(Base):
         
         # インデックス
         Index('idx_reviews_user_created', 'user_id', 'created_at'),
+        Index('idx_reviews_created', 'created_at'),
         Index('idx_reviews_official_q', 'official_question_id'),
         Index('idx_reviews_thread', 'thread_id'),  # チャット検索用
     )
@@ -213,7 +216,7 @@ class Thread(Base):
     __tablename__ = "threads"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, nullable=False, index=True)  # 所有者
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)  # 所有者
     
     # スレッドの種類
     type = Column(String(20), nullable=False)  # 'free_chat', 'review_chat', 'short_answer_chat' など
@@ -228,6 +231,7 @@ class Thread(Base):
     pinned = Column(Boolean, nullable=False, default=False)  # 固定表示フラグ（任意）
     
     # リレーションシップ
+    user = relationship("User", back_populates="threads")
     messages = relationship("Message", back_populates="thread", cascade="all, delete-orphan", order_by="Message.created_at")
     reviews = relationship("Review", foreign_keys="Review.thread_id", back_populates="thread")
     
@@ -481,6 +485,12 @@ class User(Base):
     short_answer_sessions = relationship("ShortAnswerSession", back_populates="user")
     monthly_usage = relationship("MonthlyUsage", back_populates="user")
     notebooks = relationship("Notebook", back_populates="user")
+    reviews = relationship("Review", back_populates="user", order_by="desc(Review.created_at)")  # 作成した講評
+    threads = relationship("Thread", back_populates="user", order_by="desc(Thread.last_message_at)")
+    preference = relationship("UserPreference", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    dashboard = relationship("UserDashboard", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    dashboard_history = relationship("UserDashboardHistory", back_populates="user", order_by="desc(UserDashboardHistory.date)")
+    review_history = relationship("UserReviewHistory", back_populates="user", order_by="desc(UserReviewHistory.created_at)")
 
 class SubscriptionPlan(Base):
     __tablename__ = "subscription_plans"
@@ -630,4 +640,130 @@ class NotePage(Base):
     
     __table_args__ = (
         Index('idx_section_pages', 'section_id', 'display_order'),
+    )
+
+# ユーザー設定・プリファレンス
+class UserPreference(Base):
+    """ユーザー設定・プリファレンス"""
+    __tablename__ = "user_preferences"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    
+    # UI設定
+    theme = Column(String(20), default="light", nullable=False)  # "light", "dark", "auto"
+    language = Column(String(10), default="ja", nullable=False)  # "ja", "en"
+    
+    # 通知設定
+    email_notifications = Column(Boolean, default=True, nullable=False)
+    push_notifications = Column(Boolean, default=False, nullable=False)
+    
+    # 表示設定
+    items_per_page = Column(Integer, default=20, nullable=False)
+    default_view = Column(String(20), default="list", nullable=False)  # "list", "grid"
+    
+    # タイムスタンプ
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # リレーションシップ
+    user = relationship("User", back_populates="preference", uselist=False)
+    
+    __table_args__ = (
+        Index('idx_user_preferences', 'user_id'),
+    )
+
+# ユーザーダッシュボード情報
+class UserDashboard(Base):
+    """ユーザーの現在のダッシュボード情報（リアルタイム編集用）"""
+    __tablename__ = "user_dashboards"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    
+    # 今日の目標
+    today_goal = Column(Text, nullable=True)
+    
+    # 集中メモ
+    focus_memo = Column(Text, nullable=True)
+    
+    # 学習項目
+    study_items = Column(Text, nullable=True)  # JSON配列として保存可能
+    
+    # タイマー設定
+    timer_enabled = Column(Boolean, default=False, nullable=False)
+    timer_elapsed_seconds = Column(Integer, default=0, nullable=False)  # 累計学習時間（秒）
+    
+    # タイムスタンプ
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # リレーションシップ
+    user = relationship("User", back_populates="dashboard", uselist=False)
+    
+    __table_args__ = (
+        Index('idx_user_dashboard', 'user_id'),
+    )
+
+# ユーザーダッシュボード日次履歴
+class UserDashboardHistory(Base):
+    """ユーザーのダッシュボード情報の日次履歴（毎朝4時に自動保存）"""
+    __tablename__ = "user_dashboard_history"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # 日付（JST基準、YYYY-MM-DD形式）
+    date = Column(String(10), nullable=False)  # "2024-01-15"形式
+    
+    # その日の目標
+    today_goal = Column(Text, nullable=True)
+    
+    # 集中メモ
+    focus_memo = Column(Text, nullable=True)
+    
+    # 学習項目
+    study_items = Column(Text, nullable=True)  # JSON配列として保存可能
+    
+    # タイマー情報
+    timer_elapsed_seconds = Column(Integer, default=0, nullable=False)  # その日の累計学習時間（秒）
+    
+    # タイムスタンプ
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # リレーションシップ
+    user = relationship("User", back_populates="dashboard_history")
+    
+    __table_args__ = (
+        UniqueConstraint('user_id', 'date', name='uq_user_dashboard_date'),
+        Index('idx_user_dashboard_history_date', 'user_id', 'date'),
+    )
+
+# ユーザー講評使用履歴
+class UserReviewHistory(Base):
+    """ユーザーの講評利用履歴（簡易情報を重複保存）"""
+    __tablename__ = "user_review_history"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    review_id = Column(BigInteger, ForeignKey("reviews.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # 簡易情報（マイページ表示用）
+    subject = Column(String(50), nullable=True)  # 科目（検索・フィルタ用）
+    exam_type = Column(String(20), nullable=True)  # 試験種別（"司法試験" or "予備試験"）
+    year = Column(Integer, nullable=True)  # 年度
+    score = Column(Numeric(5, 2), nullable=True)  # 点数（講評結果から抽出）
+    score_breakdown = Column(Text, nullable=True)  # 点数内訳（JSON形式、簡易版）
+    
+    # タイムスタンプ
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # リレーションシップ
+    user = relationship("User", back_populates="review_history")
+    review = relationship("Review", back_populates="user_history")
+    
+    __table_args__ = (
+        Index('idx_user_review_history_created', 'user_id', 'created_at'),
+        Index('idx_user_review_history_review', 'review_id'),
+        Index('idx_user_review_history_subject', 'user_id', 'subject', 'created_at'),
     )

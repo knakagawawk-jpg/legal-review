@@ -366,3 +366,20 @@ class MessageListResponse(BaseModel):
 class ThreadMessageCreate(BaseModel):
     """スレッドにメッセージを送信する用スキーマ"""
     content: str
+
+# ユーザー関連のスキーマ
+class UserUpdate(BaseModel):
+    """ユーザー情報更新用スキーマ"""
+    name: Optional[str] = None
+    email: Optional[str] = None
+
+class UserResponse(BaseModel):
+    """ユーザー情報レスポンス"""
+    id: int
+    email: str
+    name: Optional[str]
+    is_active: bool
+    is_admin: bool
+
+    class Config:
+        from_attributes = True

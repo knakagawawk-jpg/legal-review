@@ -36,6 +36,7 @@ services:
     container_name: law-review-web
     environment:
       - BACKEND_INTERNAL_URL=${BACKEND_INTERNAL_URL:-http://backend:8000}
+      - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
       # 講評生成のタイムアウト（デフォルト: 10分 = 600000ms）
       # 注意: この値はユーザーが明示的に指定したものです。AIが勝手に変更しないでください。
       - REVIEW_TIMEOUT_MS=${REVIEW_TIMEOUT_MS:-600000}
@@ -101,11 +102,11 @@ services:
       - law-review-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "--timeout=5", "http://localhost/"]
       interval: 30s
-      timeout: 10s
+      timeout: 15s
       retries: 3
-      start_period: 10s
+      start_period: 20s
 
 volumes:
   # Caddyの証明書と設定を永続化（HTTPS証明書を保持）

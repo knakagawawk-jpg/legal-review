@@ -9,6 +9,7 @@ import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { FIXED_SUBJECTS } from "@/lib/subjects"
+import { withAuth } from "@/components/auth/with-auth"
 
 type ExamRecord = {
   id: number
@@ -190,7 +191,7 @@ const sampleData: Record<
   },
 }
 
-export default function PastExamsPage() {
+function PastExamsPage() {
   const { isOpen } = useSidebar()
   const [selectedSubject, setSelectedSubject] = useState<string>(FIXED_SUBJECTS[0] as string)
 
@@ -239,3 +240,5 @@ export default function PastExamsPage() {
     </div>
   )
 }
+
+export default withAuth(PastExamsPage, { requireAuth: true })

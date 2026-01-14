@@ -2,7 +2,14 @@
 # docker-compose.ymlで profiles: local を使用する場合
 :80 {
     # Next.js（新UI）にリバースプロキシ
-    reverse_proxy web:3000
+    reverse_proxy web:3000 {
+        transport http {
+            dial_timeout 10s
+            response_header_timeout 30s  # ヘルスチェック用に少し長めに設定
+            read_timeout 30s
+            write_timeout 10s
+        }
+    }
 }
 
 # 本番環境用の設定例（Caddyfile.production を参照）

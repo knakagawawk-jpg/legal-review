@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle, Loader2 } from "lucide-react"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
+import { apiClient } from "@/lib/api-client"
 
 export default function FreeChatPage() {
   const router = useRouter()
@@ -20,25 +21,15 @@ export default function FreeChatPage() {
         setLoading(true)
         setError(null)
         
-        const response = await fetch("/api/threads", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            type: "free_chat",
-            title: null 
-          }),
+        const data = await apiClient.post<{ id: number }>("/api/threads", {
+          type: "free_chat",
+          title: null 
         })
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: "Unknown error" }))
-          throw new Error(errorData.error || errorData.detail || "スレッドの作成に失敗しました")
-        }
-
-        const data = await response.json()
         router.push(`/free-chat/${data.id}`)
       } catch (error: any) {
         console.error("Error creating thread:", error)
-        setError(error.message || "スレッドの作成中にエラーが発生しました")
+        setError(error.error || error.message || "スレッドの作成中にエラーが発生しました")
         setLoading(false)
       }
     }

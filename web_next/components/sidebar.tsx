@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, createContext, useContext } from "react"
+import { useState, createContext, useContext, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -67,7 +67,25 @@ const navigation = [
 
 // サイドバーの状態を管理するProviderコンポーネント
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
-  const [isOpen, setIsOpen] = useState(true)
+  const [isOpen, setIsOpen] = useState(() => {
+    // クライアントサイドでのみパスをチェック
+    if (typeof window !== "undefined") {
+      // トップページの場合はデフォルトで閉じた状態
+      return window.location.pathname !== "/"
+    }
+    return true
+  })
+  
+  // パス変更時にサイドバーの状態を更新
+  const pathname = usePathname()
+  useEffect(() => {
+    if (pathname === "/") {
+      setIsOpen(false)
+    } else {
+      setIsOpen(true)
+    }
+  }, [pathname])
+  
   return <SidebarContext.Provider value={{ isOpen, setIsOpen }}>{children}</SidebarContext.Provider>
 }
 
@@ -86,7 +104,7 @@ export function Sidebar() {
         <div className="flex h-full flex-col">
           <div className="px-3 py-3 border-b border-blue-100/60 bg-gradient-to-r from-blue-100/80 to-cyan-50/60">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
+              <Link href="/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity cursor-pointer">
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-500 shadow-sm">
                   <Scale className="h-4 w-4 text-white" />
                 </div>
@@ -94,7 +112,7 @@ export function Sidebar() {
                   <h1 className="text-sm font-bold text-slate-700 tracking-tight">Juristutor</h1>
                   <p className="text-[9px] text-blue-500/70 font-medium">AI法律学習アシスタント</p>
                 </div>
-              </div>
+              </Link>
               <button
                 onClick={() => setIsOpen(false)}
                 className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-blue-200/40 transition-colors"

@@ -10,8 +10,9 @@ import { Target, FileText, RotateCcw, Clock, ChevronDown, Sparkles } from "lucid
 import { SidebarToggle } from "@/components/sidebar"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
+import { withAuth } from "@/components/auth/with-auth"
 
-export default function YourPageDashboard() {
+function YourPageDashboard() {
   const { isOpen } = useSidebar()
   const [todayGoal, setTodayGoal] = useState("")
   const [focusMemo, setFocusMemo] = useState("")
@@ -202,3 +203,5 @@ export default function YourPageDashboard() {
     </div>
   )
 }
+
+export default withAuth(YourPageDashboard, { requireAuth: true })

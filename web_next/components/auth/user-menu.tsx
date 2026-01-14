@@ -10,13 +10,22 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { LogOut, User } from "lucide-react"
+import { LogOut, User, Loader2 } from "lucide-react"
 
 export function UserMenu() {
-  const { user, logout } = useAuth()
+  const { user, logout, isLoading } = useAuth()
 
   if (!user) {
     return null
+  }
+
+  if (isLoading) {
+    return (
+      <Button variant="ghost" size="sm" disabled className="gap-2">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span className="hidden sm:inline">読み込み中...</span>
+      </Button>
+    )
   }
 
   return (

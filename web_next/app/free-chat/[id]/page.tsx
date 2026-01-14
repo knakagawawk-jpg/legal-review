@@ -9,6 +9,7 @@ import { Loader2 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
+import { apiClient } from "@/lib/api-client"
 import type { Message, Thread } from "@/types/api"
 
 export default function FreeChatThreadPage() {
@@ -27,22 +28,14 @@ export default function FreeChatThreadPage() {
     const fetchThreadAndMessages = async () => {
       try {
         // スレッド情報を取得
-        const threadRes = await fetch(`/api/threads/${threadId}`)
-        if (!threadRes.ok) {
-          throw new Error("スレッドが見つかりません")
-        }
-        const threadData = await threadRes.json()
+        const threadData = await apiClient.get<Thread>(`/api/threads/${threadId}`)
         setThread(threadData)
 
         // メッセージ一覧を取得
-        const messagesRes = await fetch(`/api/threads/${threadId}/messages`)
-        if (!messagesRes.ok) {
-          throw new Error("メッセージの取得に失敗しました")
-        }
-        const messagesData = await messagesRes.json()
+        const messagesData = await apiClient.get<{ messages: Message[] }>(`/api/threads/${threadId}/messages`)
         setMessages(messagesData.messages || [])
       } catch (err: any) {
-        setError(err.message || "エラーが発生しました")
+        setError(err.error || err.message || "エラーが発生しました")
       } finally {
         setLoadingMessages(false)
       }
@@ -60,32 +53,19 @@ export default function FreeChatThreadPage() {
     setError(null)
 
     try {
-      const response = await fetch(`/api/threads/${threadId}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: content.trim() }),
+      await apiClient.post(`/api/threads/${threadId}/messages`, {
+        content: content.trim()
       })
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Unknown error" }))
-        throw new Error(errorData.error || "メッセージの送信に失敗しました")
-      }
-
       // メッセージ一覧を再取得
-      const messagesRes = await fetch(`/api/threads/${threadId}/messages`)
-      if (messagesRes.ok) {
-        const messagesData = await messagesRes.json()
-        setMessages(messagesData.messages || [])
-      }
+      const messagesData = await apiClient.get<{ messages: Message[] }>(`/api/threads/${threadId}/messages`)
+      setMessages(messagesData.messages || [])
 
       // スレッド情報を更新（last_message_atが更新されている可能性があるため）
-      const threadRes = await fetch(`/api/threads/${threadId}`)
-      if (threadRes.ok) {
-        const threadData = await threadRes.json()
-        setThread(threadData)
-      }
+      const threadData = await apiClient.get<Thread>(`/api/threads/${threadId}`)
+      setThread(threadData)
     } catch (err: any) {
-      setError(err.message || "エラーが発生しました")
+      setError(err.error || err.message || "エラーが発生しました")
     } finally {
       setLoading(false)
     }

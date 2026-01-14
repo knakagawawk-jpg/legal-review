@@ -27,3 +27,7 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 SECRET_KEY = os.getenv("SECRET_KEY", "change-this-secret-key-in-production")
 ALGORITHM = "HS256"
+
+# トークン検証キャッシュ設定
+TOKEN_CACHE_TTL = int(os.getenv("TOKEN_CACHE_TTL", "300"))  # デフォルト5分（秒）
+TOKEN_CACHE_MAX_SIZE = int(os.getenv("TOKEN_CACHE_MAX_SIZE", "1000"))  # デフォルト1000エントリ
