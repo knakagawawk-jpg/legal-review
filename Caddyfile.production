@@ -14,10 +14,13 @@
         }
     }
 
-    # Basic auth (bcrypt hash)
-    basic_auth {
-        {env.BASIC_AUTH_USER} {env.BASIC_AUTH_PASS_HASH}
-    }
+    # Basic auth (bcrypt hash) - Optional: only enabled if BASIC_AUTH_USER and BASIC_AUTH_PASS_HASH are set
+    # Uncomment and set environment variables to enable:
+    # BASIC_AUTH_USER=your_username
+    # BASIC_AUTH_PASS_HASH=$2a$10$... (bcrypt hash)
+    # basic_auth {
+    #     {env.BASIC_AUTH_USER} {env.BASIC_AUTH_PASS_HASH}
+    # }
 
     header {
         X-Content-Type-Options "nosniff"
