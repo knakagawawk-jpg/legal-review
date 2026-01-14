@@ -12,6 +12,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
 import { AlertCircle, Loader2, Search, Eye, Trash2 } from "lucide-react"
 import type { ReviewResponse, SubmissionHistory } from "@/types/api"
+import { useSidebar } from "@/components/sidebar"
+import { cn } from "@/lib/utils"
 
 type DevReviewData = {
   submission_id?: number
@@ -25,10 +27,11 @@ type DevReviewData = {
 
 export default function DevPage() {
   const router = useRouter()
+  const { isOpen } = useSidebar()
   const [activeTab, setActiveTab] = useState("verify")
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background to-muted/20">
+    <div className={cn("min-h-screen bg-gradient-to-b from-background to-muted/20 transition-all duration-300", isOpen && "ml-52")}>
       <div className="container mx-auto px-8 py-12 max-w-7xl">
         {/* ヘッダー */}
         <div className="mb-8 text-center">

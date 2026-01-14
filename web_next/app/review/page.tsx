@@ -17,13 +17,14 @@ import { cn } from "@/lib/utils"
 import type { ReviewRequest, ProblemMetadata, ProblemMetadataWithDetails } from "@/types/api"
 import { formatYearToEra, formatYearToShortEra } from "@/lib/utils"
 import { sortSubjectsByFixedOrder } from "@/lib/subjects"
-import { SidebarToggle } from "@/components/sidebar"
+import { SidebarToggle, useSidebar } from "@/components/sidebar"
 
 type Step = 1 | 2
 type Mode = "existing" | "new"
 
 export default function ReviewPage() {
   const router = useRouter()
+  const { isOpen } = useSidebar()
   const [step, setStep] = useState<Step>(1)
   const [mode, setMode] = useState<Mode>("existing")
   const [loading, setLoading] = useState(false)
@@ -276,7 +277,7 @@ export default function ReviewPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50">
+    <div className={cn("flex min-h-screen flex-col bg-slate-50 transition-all duration-300", isOpen && "ml-52")}>
       <header className="shrink-0 border-b border-slate-200/60 bg-white/80 backdrop-blur-md">
         <div className="mx-auto flex h-11 max-w-7xl items-center justify-between px-3">
           <div className="flex items-center gap-2 ml-2">

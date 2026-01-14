@@ -14,7 +14,8 @@ from .models import (
     ProblemMetadata, ProblemDetails,
     ShortAnswerProblem, ShortAnswerSession, ShortAnswerAnswer,
     User, UserSubscription, SubscriptionPlan,
-    Notebook, NoteSection, NotePage
+    Notebook, NoteSection, NotePage,
+    Thread, Message
 )
 from config.constants import FIXED_SUBJECTS
 from .schemas import (
@@ -30,7 +31,9 @@ from .schemas import (
     NotebookCreate, NotebookUpdate, NotebookResponse, NotebookDetailResponse,
     NoteSectionCreate, NoteSectionUpdate, NoteSectionResponse, NoteSectionDetailResponse,
     NotePageCreate, NotePageUpdate, NotePageResponse,
-    SubmissionHistoryResponse, ShortAnswerHistoryResponse
+    SubmissionHistoryResponse, ShortAnswerHistoryResponse,
+    ThreadCreate, ThreadResponse, ThreadListResponse,
+    MessageCreate, MessageResponse, MessageListResponse, ThreadMessageCreate
 )
 from pydantic import BaseModel
 from .llm_service import generate_review, chat_about_review, free_chat
@@ -1163,3 +1166,180 @@ async def delete_note_page(
     db.commit()
     
     return {"message": "Page deleted"}
+
+# フリーチャット用エンドポイント（threads/messagesベース）
+@app.post("/v1/threads", response_model=ThreadResponse)
+async def create_thread(
+    thread_data: ThreadCreate,
+    current_user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """新しいフリーチャットスレッドを作成"""
+    # 認証されていない場合はダミーユーザーIDを使用（開発用）
+    user_id = current_user.id if current_user else 1
+    
+    thread = Thread(
+        user_id=user_id,
+        type="free_chat",
+        title=thread_data.title
+    )
+    db.add(thread)
+    db.commit()
+    db.refresh(thread)
+    
+    return ThreadResponse.model_validate(thread)
+
+@app.get("/v1/threads", response_model=ThreadListResponse)
+async def list_threads(
+    current_user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    limit: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    type: str = Query("free_chat", description="スレッドタイプ")
+):
+    """スレッド一覧を取得（直近N件）"""
+    # 認証されていない場合はダミーユーザーIDを使用（開発用）
+    user_id = current_user.id if current_user else 1
+    
+    query = db.query(Thread).filter(
+        Thread.user_id == user_id,
+        Thread.type == type,
+        Thread.is_archived == False
+    )
+    
+    total = query.count()
+    threads = query.order_by(
+        Thread.pinned.desc(),
+        Thread.last_message_at.desc().nullslast(),
+        Thread.created_at.desc()
+    ).offset(offset).limit(limit).all()
+    
+    return ThreadListResponse(
+        threads=[ThreadResponse.model_validate(t) for t in threads],
+        total=total
+    )
+
+@app.get("/v1/threads/{thread_id}", response_model=ThreadResponse)
+async def get_thread(
+    thread_id: int,
+    current_user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """スレッド詳細を取得"""
+    thread = db.query(Thread).filter(Thread.id == thread_id).first()
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    
+    # 認証されていない場合はダミーユーザーIDを使用（開発用）
+    user_id = current_user.id if current_user else 1
+    
+    if thread.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    return ThreadResponse.model_validate(thread)
+
+@app.get("/v1/threads/{thread_id}/messages", response_model=MessageListResponse)
+async def list_messages(
+    thread_id: int,
+    current_user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0)
+):
+    """スレッドのメッセージ一覧を取得"""
+    thread = db.query(Thread).filter(Thread.id == thread_id).first()
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    
+    # 認証されていない場合はダミーユーザーIDを使用（開発用）
+    user_id = current_user.id if current_user else 1
+    
+    if thread.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    query = db.query(Message).filter(Message.thread_id == thread_id)
+    total = query.count()
+    messages = query.order_by(Message.created_at.asc()).offset(offset).limit(limit).all()
+    
+    return MessageListResponse(
+        messages=[MessageResponse.model_validate(m) for m in messages],
+        total=total
+    )
+
+@app.post("/v1/threads/{thread_id}/messages", response_model=MessageResponse)
+async def create_message(
+    thread_id: int,
+    message_data: ThreadMessageCreate,
+    current_user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """スレッドにメッセージを送信（LLM呼び出し含む）"""
+    thread = db.query(Thread).filter(Thread.id == thread_id).first()
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    
+    # 認証されていない場合はダミーユーザーIDを使用（開発用）
+    user_id = current_user.id if current_user else 1
+    
+    if thread.user_id != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # 1. ユーザーメッセージを保存
+    user_message = Message(
+        thread_id=thread_id,
+        role="user",
+        content=message_data.content
+    )
+    db.add(user_message)
+    db.commit()
+    
+    # 2. 既存のメッセージ履歴を取得（LLM用）
+    existing_messages = db.query(Message).filter(
+        Message.thread_id == thread_id
+    ).order_by(Message.created_at.asc()).all()
+    
+    # チャット履歴を構築（最後のユーザーメッセージは除く）
+    chat_history = []
+    for msg in existing_messages[:-1]:  # 最後のユーザーメッセージは除く
+        chat_history.append({
+            "role": msg.role,
+            "content": msg.content
+        })
+    
+    # 3. LLMを呼び出し
+    try:
+        # 指示文を読み込む（一旦空でもOK）
+        from pathlib import Path
+        prompt_file = Path(__file__).parent.parent / "prompts" / "main" / "free_chat.txt"
+        system_prompt = ""
+        if prompt_file.exists():
+            system_prompt = prompt_file.read_text(encoding="utf-8").strip()
+        
+        # free_chat関数を使用してLLM呼び出し
+        from .llm_service import free_chat
+        assistant_content = free_chat(
+            question=message_data.content,
+            chat_history=chat_history if chat_history else None
+        )
+        
+        # 4. アシスタントメッセージを保存（コスト情報は一旦NULL）
+        assistant_message = Message(
+            thread_id=thread_id,
+            role="assistant",
+            content=assistant_content
+        )
+        db.add(assistant_message)
+        
+        # 5. threads.last_message_atを更新
+        from datetime import datetime, timezone
+        thread.last_message_at = datetime.now(timezone.utc)
+        
+        db.commit()
+        db.refresh(assistant_message)
+        
+        return MessageResponse.model_validate(assistant_message)
+        
+    except Exception as e:
+        # エラーが発生した場合もユーザーメッセージは保存済み
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"LLM呼び出しエラー: {str(e)}")

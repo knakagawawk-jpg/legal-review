@@ -28,10 +28,12 @@ import { FeedbackCard } from "@/components/feedback-card"
 import { ChatMessage } from "@/components/chat-message"
 import { cn } from "@/lib/utils"
 import type { ReviewResponse } from "@/types/api"
+import { useSidebar } from "@/components/sidebar"
 
 export default function ReviewResultPage() {
   const params = useParams()
   const router = useRouter()
+  const { isOpen } = useSidebar()
   const submissionId = params.id as string
 
   const [review, setReview] = useState<ReviewResponse | null>(null)
@@ -93,7 +95,7 @@ export default function ReviewResultPage() {
 
   if (loading) {
     return (
-      <div className="h-screen bg-background flex flex-col overflow-hidden">
+      <div className={cn("h-screen bg-background flex flex-col overflow-hidden transition-all duration-300", isOpen && "ml-52")}>
         <div className="container mx-auto px-5 py-12">
           <div className="space-y-6">
             <Skeleton className="h-12 w-64" />
@@ -107,7 +109,7 @@ export default function ReviewResultPage() {
 
   if (error || !review) {
     return (
-      <div className="h-screen bg-background flex flex-col overflow-hidden">
+      <div className={cn("h-screen bg-background flex flex-col overflow-hidden transition-all duration-300", isOpen && "ml-52")}>
         <div className="container mx-auto px-5 py-12">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
@@ -218,7 +220,7 @@ export default function ReviewResultPage() {
   const purposeText = review.purpose || ""
 
   return (
-    <div className="h-screen bg-background flex flex-col overflow-hidden">
+    <div className={cn("h-screen bg-background flex flex-col overflow-hidden transition-all duration-300", isOpen && "ml-52")}>
       <header className="border-b border-border shrink-0 bg-gradient-to-r from-primary/5 via-transparent to-accent/5">
         <div className="px-5 py-1.5 flex items-center justify-between">
           <div className="flex items-center gap-4">

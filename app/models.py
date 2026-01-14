@@ -1,7 +1,298 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, Index, UniqueConstraint
-from sqlalchemy.sql import func
+from sqlalchemy import Column, Integer, BigInteger, String, Text, DateTime, ForeignKey, Boolean, Index, UniqueConstraint, CheckConstraint, Numeric
+from sqlalchemy.sql import func, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from .db import Base
+
+# ============================================================================
+# 新しいDB設計: 科目管理
+# ============================================================================
+
+class Subject(Base):
+    """
+    科目テーブル
+    
+    設計のポイント:
+    - 科目名を一元管理し、IDで参照
+    - display_order で科目の表示順序を管理
+    - 憲法=1, 行政法=2, 民法=3, ... の順序
+    """
+    __tablename__ = "subjects"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, unique=True)  # 科目名
+    display_order = Column(Integer, nullable=False, unique=True)  # 表示順序
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # リレーションシップ
+    official_questions = relationship("OfficialQuestion", back_populates="subject")
+    
+    __table_args__ = (
+        Index('idx_subjects_display_order', 'display_order'),
+        Index('idx_subjects_name', 'name'),
+    )
+
+
+# ============================================================================
+# 新しいDB設計: 公式問題管理
+# ============================================================================
+
+class OfficialQuestion(Base):
+    """
+    公式問題テーブル（バージョン管理対応）
+    
+    設計のポイント:
+    - 同一の試験種別・年度・科目に対して複数のバージョンを持つことができる
+    - status='active'のものは1つだけ（部分ユニークインデックスで保証）
+    - 司法試験のみ採点実感を持つ（別テーブルで管理）
+    """
+    __tablename__ = "official_questions"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    
+    # 識別情報
+    shiken_type = Column(String(10), nullable=False)  # 'shihou' or 'yobi'
+    nendo = Column(Integer, nullable=False)  # 年度（2000以上）
+    subject_id = Column(
+        Integer,
+        ForeignKey("subjects.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True
+    )  # 科目ID
+    
+    # バージョン管理
+    version = Column(Integer, nullable=False)  # バージョン番号（1以上）
+    status = Column(String(10), nullable=False)  # 'active' or 'old'
+    
+    # 問題文関連
+    text = Column(Text, nullable=False)  # 問題文
+    syutudaisyusi = Column(Text, nullable=True)  # 出題趣旨
+    
+    # タイムスタンプ
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # リレーションシップ
+    subject = relationship("Subject", back_populates="official_questions")
+    reviews = relationship("Review", foreign_keys="Review.official_question_id", back_populates="official_question")
+    grading_impression = relationship(
+        "ShihouGradingImpression",
+        back_populates="question",
+        uselist=False,
+        cascade="all, delete-orphan"
+    )
+    
+    __table_args__ = (
+        # CHECK制約
+        CheckConstraint("shiken_type IN ('shihou', 'yobi')", name="ck_shiken_type"),
+        CheckConstraint("nendo >= 2000", name="ck_nendo"),
+        CheckConstraint("version >= 1", name="ck_version"),
+        CheckConstraint("status IN ('active', 'old')", name="ck_status"),
+        
+        # バージョンごとのユニーク制約
+        UniqueConstraint('shiken_type', 'nendo', 'subject_id', 'version', name='uq_question_version'),
+        
+        # 検索用インデックス
+        Index('idx_questions_lookup', 'shiken_type', 'nendo', 'subject_id', 'status'),
+        Index('idx_questions_subject', 'subject_id'),
+        
+        # 注意: 部分ユニークインデックス（status='active'を1つに制限）は
+        # PostgreSQLでは postgresql_where パラメータで実装可能だが、
+        # SQLiteではサポートされていないため、アプリケーションレベルでの制約が必要
+        # PostgreSQL使用時は以下のように追加:
+        # Index('uq_one_active_per_question', 'shiken_type', 'nendo', 'kamoku',
+        #       postgresql_where=text("status = 'active'"), unique=True),
+    )
+
+
+class ShihouGradingImpression(Base):
+    """
+    司法試験の採点実感テーブル
+    
+    設計のポイント:
+    - 司法試験の問題のみがこのテーブルにレコードを持つ
+    - question_idがPRIMARY KEY（1対1の関係）
+    - CASCADE削除で問題削除時に自動削除
+    """
+    __tablename__ = "shihou_grading_impressions"
+    
+    question_id = Column(
+        BigInteger,
+        ForeignKey("official_questions.id", ondelete="CASCADE"),
+        primary_key=True
+    )
+    grading_impression_text = Column(Text, nullable=False)
+    
+    # タイムスタンプ
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # リレーションシップ
+    question = relationship("OfficialQuestion", back_populates="grading_impression")
+
+
+class Review(Base):
+    """
+    講評テーブル（新設計）
+    
+    設計のポイント:
+    - 公式問題と自由問題の両方に対応
+    - source_typeで区別（'official' または 'custom'）
+    - 公式問題の場合: official_question_idを保存
+    - 自由問題の場合: custom_question_textに問題文を直接保存
+    - チャット機能: thread_idで管理（NULL可）
+    - 講評チャットはthreads.type='review_chat'として管理
+    - LLMの出力JSONはkouhyo_kekka（JSONB）に保存
+    """
+    __tablename__ = "reviews"
+    
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, nullable=False, index=True)  # ユーザーID（usersテーブルは別管理）
+    
+    # タイムスタンプ
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # 問題の種類と参照
+    source_type = Column(String(10), nullable=False)  # 'official' or 'custom'
+    official_question_id = Column(
+        BigInteger,
+        ForeignKey("official_questions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+    custom_question_text = Column(Text, nullable=True)  # 自由問題の場合の問題文
+    
+    # ユーザー答案
+    answer_text = Column(Text, nullable=False)
+    
+    # LLMの出力結果（JSONB形式）
+    # PostgreSQL: JSONB型、SQLite: Text型（JSON文字列として保存）
+    kouhyo_kekka = Column(JSONB, nullable=False) if hasattr(JSONB, '__init__') else Column(Text, nullable=False)
+    
+    # チャット機能
+    thread_id = Column(
+        Integer,
+        ForeignKey("threads.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )  # threads.id を参照
+    has_chat = Column(Boolean, nullable=False, default=False)  # チャット有無フラグ（一覧表示の高速化用）
+    
+    # リレーションシップ
+    official_question = relationship("OfficialQuestion", foreign_keys=[official_question_id], back_populates="reviews")
+    thread = relationship("Thread", foreign_keys=[thread_id], back_populates="reviews")
+    
+    __table_args__ = (
+        # CHECK制約: source_typeと問題参照の整合性
+        CheckConstraint(
+            "(source_type='official' AND official_question_id IS NOT NULL AND custom_question_text IS NULL) "
+            "OR (source_type='custom' AND official_question_id IS NULL AND custom_question_text IS NOT NULL)",
+            name="ck_reviews_source_consistency"
+        ),
+        CheckConstraint("source_type IN ('official', 'custom')", name="ck_reviews_source_type"),
+        
+        # インデックス
+        Index('idx_reviews_user_created', 'user_id', 'created_at'),
+        Index('idx_reviews_official_q', 'official_question_id'),
+        Index('idx_reviews_thread', 'thread_id'),  # チャット検索用
+    )
+
+
+class Thread(Base):
+    """
+    チャットスレッドテーブル（会話の箱）
+    
+    設計のポイント:
+    - 1つのチャットルーム = 1 thread
+    - フリーチャットは type='free_chat' を使用
+    - 講評チャット、短答チャットも同じ仕組みで管理可能（将来拡張）
+    - last_message_at で一覧の並び替えを高速化
+    """
+    __tablename__ = "threads"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)  # 所有者
+    
+    # スレッドの種類
+    type = Column(String(20), nullable=False)  # 'free_chat', 'review_chat', 'short_answer_chat' など
+    
+    # タイムスタンプ
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_message_at = Column(DateTime(timezone=True), nullable=True)  # 最終発言日時（一覧の並び替えに必須）
+    
+    # メタデータ
+    title = Column(String(200), nullable=True)  # タイトル（空でもOK、後から自動生成・手動編集可能）
+    is_archived = Column(Boolean, nullable=False, default=False)  # アーカイブフラグ（履歴整理用）
+    pinned = Column(Boolean, nullable=False, default=False)  # 固定表示フラグ（任意）
+    
+    # リレーションシップ
+    messages = relationship("Message", back_populates="thread", cascade="all, delete-orphan", order_by="Message.created_at")
+    reviews = relationship("Review", foreign_keys="Review.thread_id", back_populates="thread")
+    
+    __table_args__ = (
+        CheckConstraint("type IN ('free_chat', 'review_chat', 'short_answer_chat')", name="ck_thread_type"),
+        
+        # 一覧表示を高速化するインデックス
+        # 完全版: (user_id, type, is_archived, pinned, last_message_at)
+        Index('idx_threads_user_type_archived_pinned_last', 'user_id', 'type', 'is_archived', 'pinned', 'last_message_at'),
+        # 最低限版: (user_id, type, is_archived, last_message_at DESC)
+        Index('idx_threads_user_type_archived_last', 'user_id', 'type', 'is_archived', 'last_message_at'),
+    )
+
+
+class Message(Base):
+    """
+    メッセージテーブル（会話の中身）
+    
+    設計のポイント:
+    - スレッドに紐づく発言を全てここに保存
+    - role で user/assistant/system を区別
+    - コスト管理のため、LLM呼び出し情報を記録
+    - request_id で同一LLM呼び出しの重複計上を防止
+    """
+    __tablename__ = "messages"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    thread_id = Column(
+        Integer,
+        ForeignKey("threads.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    
+    # メッセージ内容
+    role = Column(String(20), nullable=False)  # 'user', 'assistant', 'system'
+    content = Column(Text, nullable=False)  # 本文
+    
+    # タイムスタンプ
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # LLM呼び出し情報（運用・コスト管理）
+    model = Column(String(100), nullable=True)  # 使用したLLMモデル名
+    prompt_version = Column(String(50), nullable=True)  # プロンプトのバージョン
+    input_tokens = Column(Integer, nullable=True)  # 入力トークン数
+    output_tokens = Column(Integer, nullable=True)  # 出力トークン数
+    cost_yen = Column(Numeric(10, 2), nullable=True)  # コスト（円）
+    request_id = Column(String(255), nullable=True)  # 同一LLM呼び出しの重複計上防止用
+    
+    # リレーションシップ
+    thread = relationship("Thread", back_populates="messages")
+    
+    __table_args__ = (
+        CheckConstraint("role IN ('user', 'assistant', 'system')", name="ck_message_role"),
+        
+        # スレッド表示を高速化するインデックス
+        Index('idx_messages_thread_created', 'thread_id', 'created_at'),
+        # コスト集計用インデックス
+        Index('idx_messages_thread_cost', 'thread_id', 'cost_yen'),
+    )
+
+
+# ============================================================================
+# 既存のモデル（後方互換性のため保持）
+# ============================================================================
 
 # 新しい問題管理モデル（改善版）
 class ProblemMetadata(Base):
@@ -99,25 +390,13 @@ class Submission(Base):
     problem = relationship("Problem", foreign_keys=[problem_id], back_populates="old_submissions")  # 既存の参照
     problem_metadata = relationship("ProblemMetadata", back_populates="submissions")  # 新しいメタデータ参照
     problem_details = relationship("ProblemDetails", back_populates="submissions")  # 新しい詳細参照
-    review = relationship("Review", back_populates="submission", uselist=False)
+    # 注意: 新しいReviewクラスはSubmissionとは直接関係がないため、リレーションシップを削除
+    # 新しいReviewはuser_idとofficial_question_id/custom_question_textで管理される
     
     __table_args__ = (
         Index('idx_user_created_at', 'user_id', 'created_at'),
         Index('idx_metadata_details', 'problem_metadata_id', 'problem_details_id'),
     )
-
-class Review(Base):
-    __tablename__ = "reviews"
-    id = Column(Integer, primary_key=True, index=True)
-    submission_id = Column(Integer, ForeignKey("submissions.id"), nullable=False, unique=True)
-
-    review_markdown = Column(Text, nullable=False)
-    review_json = Column(Text, nullable=False)  # まずはJSON文字列で保存（簡単）
-    model = Column(String(100), nullable=True)
-    prompt_version = Column(String(50), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    submission = relationship("Submission", back_populates="review")
 
 # 短答式問題関連のモデル
 class ShortAnswerProblem(Base):

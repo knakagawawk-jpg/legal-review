@@ -197,3 +197,39 @@ export interface NotePage {
 export interface NotebookDetail extends Notebook {
   sections: Array<NoteSection & { pages: NotePage[] }>
 }
+
+// フリーチャット用の型定義（threads/messagesベース）
+export interface Thread {
+  id: number
+  user_id: number
+  type: string
+  title?: string | null
+  created_at: string
+  last_message_at?: string | null
+  is_archived: boolean
+  pinned: boolean
+}
+
+export interface ThreadListResponse {
+  threads: Thread[]
+  total: number
+}
+
+export interface Message {
+  id: number
+  thread_id: number
+  role: "user" | "assistant" | "system"
+  content: string
+  created_at: string
+  model?: string | null
+  prompt_version?: string | null
+  input_tokens?: number | null
+  output_tokens?: number | null
+  cost_yen?: number | null
+  request_id?: string | null
+}
+
+export interface MessageListResponse {
+  messages: Message[]
+  total: number
+}

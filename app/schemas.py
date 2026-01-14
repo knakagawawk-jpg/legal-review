@@ -312,3 +312,57 @@ class ShortAnswerHistoryResponse(BaseModel):
     total_problems: int
     correct_count: int
     accuracy: float
+
+# フリーチャット用スキーマ（threads/messagesベース）
+class ThreadCreate(BaseModel):
+    """スレッド作成用スキーマ"""
+    title: Optional[str] = None
+
+class ThreadResponse(BaseModel):
+    """スレッドレスポンス"""
+    id: int
+    user_id: int
+    type: str
+    title: Optional[str] = None
+    created_at: datetime
+    last_message_at: Optional[datetime] = None
+    is_archived: bool
+    pinned: bool
+
+    class Config:
+        from_attributes = True
+
+class ThreadListResponse(BaseModel):
+    """スレッド一覧レスポンス"""
+    threads: List[ThreadResponse]
+    total: int
+
+class MessageCreate(BaseModel):
+    """メッセージ作成用スキーマ"""
+    content: str
+
+class MessageResponse(BaseModel):
+    """メッセージレスポンス"""
+    id: int
+    thread_id: int
+    role: str
+    content: str
+    created_at: datetime
+    model: Optional[str] = None
+    prompt_version: Optional[str] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    cost_yen: Optional[float] = None
+    request_id: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class MessageListResponse(BaseModel):
+    """メッセージ一覧レスポンス"""
+    messages: List[MessageResponse]
+    total: int
+
+class ThreadMessageCreate(BaseModel):
+    """スレッドにメッセージを送信する用スキーマ"""
+    content: str

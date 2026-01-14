@@ -5,6 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { FileText, BookOpen, MessageCircle, ScrollText, Wrench, Menu, ChevronLeft, Scale } from "lucide-react"
+import { SidebarContentSection } from "./sidebar-sections"
 
 // サイドバーの状態を共有するContext
 type SidebarContextType = {
@@ -25,20 +26,6 @@ export function useSidebar() {
 
 const navigation = [
   {
-    name: "講評生成",
-    href: "/review",
-    icon: FileText,
-    description: "過去問の答案をAIがレビュー",
-    color: "from-blue-500 to-cyan-500",
-  },
-  {
-    name: "短答チャレンジ",
-    href: "/short-answer",
-    icon: BookOpen,
-    description: "AIに尋ねながら学習する",
-    color: "from-violet-500 to-purple-500",
-  },
-  {
     name: "Your Page",
     href: "/your-page",
     icon: ScrollText,
@@ -46,11 +33,25 @@ const navigation = [
     color: "from-amber-500 to-orange-500",
   },
   {
+    name: "講評生成",
+    href: "/review",
+    icon: FileText,
+    description: "過去問の答案をAIがレビュー",
+    color: "from-blue-500 to-cyan-500",
+  },
+  {
     name: "フリーチャット",
     href: "/free-chat",
     icon: MessageCircle,
     description: "最新LLMに質問できる",
     color: "from-emerald-500 to-teal-500",
+  },
+  {
+    name: "短答チャレンジ",
+    href: "/short-answer",
+    icon: BookOpen,
+    description: "開発中",
+    color: "from-violet-500 to-purple-500",
   },
   {
     name: "開発用",
@@ -101,48 +102,56 @@ export function Sidebar() {
             </div>
           </div>
 
-          <nav className="flex-1 p-3 overflow-y-auto bg-gradient-to-b from-blue-50/30 to-transparent">
-            <p className="px-2 mb-2 text-[10px] font-semibold uppercase tracking-wider text-blue-400/70">メニュー</p>
-            <div className="space-y-0.5">
-              {navigation.map((item) => {
-                const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
-                const Icon = item.icon
+          <nav className="flex-1 p-3 overflow-hidden bg-gradient-to-b from-blue-50/30 to-transparent flex flex-col">
+            {/* 上部: 共通メニュー */}
+            <div className="flex-shrink-0">
+              <p className="px-2 mb-2 text-[10px] font-semibold uppercase tracking-wider text-blue-400/70">メニュー</p>
+              <div className="space-y-0.5">
+                {navigation.map((item) => {
+                  const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
+                  const Icon = item.icon
 
-                return (
-                  <Link key={item.href} href={item.href}>
-                    <div
-                      className={cn(
-                        "group flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all duration-200",
-                        isActive ? "bg-white/80 shadow-sm ring-1 ring-blue-100/50" : "hover:bg-white/60",
-                      )}
-                    >
+                  return (
+                    <Link key={item.href} href={item.href}>
                       <div
                         className={cn(
-                          "flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gradient-to-br shadow-sm transition-transform duration-200",
-                          item.color,
-                          isActive ? "scale-105" : "group-hover:scale-105",
+                          "group flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all duration-200",
+                          isActive ? "bg-white/80 shadow-sm ring-1 ring-blue-100/50" : "hover:bg-white/60",
                         )}
                       >
-                        <Icon className="h-3.5 w-3.5 text-white" />
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        <span
+                        <div
                           className={cn(
-                            "text-xs font-medium truncate transition-colors",
-                            isActive ? "text-slate-800" : "text-slate-600 group-hover:text-slate-800",
+                            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gradient-to-br shadow-sm transition-transform duration-200",
+                            item.color,
+                            isActive ? "scale-105" : "group-hover:scale-105",
                           )}
                         >
-                          {item.name}
-                        </span>
-                        <span className="text-[10px] text-slate-400 truncate">{item.description}</span>
+                          <Icon className="h-3.5 w-3.5 text-white" />
+                        </div>
+                        <div className="flex flex-col min-w-0">
+                          <span
+                            className={cn(
+                              "text-xs font-medium truncate transition-colors",
+                              isActive ? "text-slate-800" : "text-slate-600 group-hover:text-slate-800",
+                            )}
+                          >
+                            {item.name}
+                          </span>
+                          <span className="text-[10px] text-slate-400 truncate">{item.description}</span>
+                        </div>
+                        {isActive && (
+                          <div className="ml-auto h-1.5 w-1.5 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500" />
+                        )}
                       </div>
-                      {isActive && (
-                        <div className="ml-auto h-1.5 w-1.5 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500" />
-                      )}
-                    </div>
-                  </Link>
-                )
-              })}
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* 下部: 機能ごとの独自領域 */}
+            <div className="flex-1 mt-4 min-h-0 overflow-y-auto">
+              <SidebarContentSection />
             </div>
           </nav>
 
