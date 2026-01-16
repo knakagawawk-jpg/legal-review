@@ -89,6 +89,7 @@ function SortableRow({
   } = useSortable({ id: item.id.toString() })
   const [showMenu, setShowMenu] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const clickStartPos = useRef<{ x: number; y: number } | null>(null)
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -111,6 +112,26 @@ function SortableRow({
     }
   }, [showMenu])
 
+  // Handle mouse down to track click position
+  const handleMouseDown = (e: React.MouseEvent) => {
+    clickStartPos.current = { x: e.clientX, y: e.clientY }
+  }
+
+  // Handle click on drag handle
+  const handleClick = (e: React.MouseEvent) => {
+    // マウスが動いていない場合（クリック）のみメニューを表示
+    if (clickStartPos.current) {
+      const deltaX = Math.abs(e.clientX - clickStartPos.current.x)
+      const deltaY = Math.abs(e.clientY - clickStartPos.current.y)
+      if (deltaX < 5 && deltaY < 5) {
+        e.stopPropagation()
+        e.preventDefault()
+        setShowMenu(true)
+      }
+      clickStartPos.current = null
+    }
+  }
+
   return (
     <TableRow
       ref={setNodeRef}
@@ -118,29 +139,15 @@ function SortableRow({
       className={`border-b border-border/50 hover:bg-amber-50/30 transition-colors ${isDragging ? "opacity-50 bg-amber-50" : ""}`}
     >
       <TableCell className="py-1.5 px-1 w-6 relative">
-        {!showMenu ? (
-          <button
-            {...attributes}
-            {...listeners}
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowMenu(true)
-            }}
-            className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-muted rounded"
-          >
-            <GripVertical className="h-3 w-3 text-muted-foreground" />
-          </button>
-        ) : (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowMenu(false)
-            }}
-            className="p-0.5 hover:bg-muted rounded"
-          >
-            <GripVertical className="h-3 w-3 text-muted-foreground" />
-          </button>
-        )}
+        <button
+          {...attributes}
+          {...listeners}
+          onMouseDown={handleMouseDown}
+          onClick={handleClick}
+          className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-muted rounded"
+        >
+          <GripVertical className="h-3 w-3 text-muted-foreground" />
+        </button>
         {showMenu && (
           <div 
             ref={menuRef}
@@ -151,6 +158,7 @@ function SortableRow({
               size="icon"
               onClick={(e) => {
                 e.stopPropagation()
+                e.preventDefault()
                 onDelete(item.id)
                 setShowMenu(false)
               }}
@@ -165,6 +173,7 @@ function SortableRow({
                 size="icon"
                 onClick={(e) => {
                   e.stopPropagation()
+                  e.preventDefault()
                   onEditCreatedDate(item.id)
                   setShowMenu(false)
                 }}
@@ -432,7 +441,11 @@ function YourPageDashboard() {
 
   // Sensors for drag and drop
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5, // 5px移動するまでドラッグを開始しない（クリックと区別するため）
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -1012,7 +1025,7 @@ function YourPageDashboard() {
 
   return (
     <div className={cn("min-h-screen bg-gradient-to-b from-amber-50/80 to-background transition-all duration-300", isOpen && "ml-52")}>
-      <div className="container mx-auto px-3 py-3 max-w-6xl">
+      <div className="container mx-auto px-6 py-3 max-w-6xl">
         {/* Header */}
         <header className="mb-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -1122,7 +1135,7 @@ function YourPageDashboard() {
             </Card>
 
             {/* Tasks Card */}
-            <Card className="shadow-sm">
+            <Card className="shadow-sm mt-6">
               <CardHeader className="py-1.5 px-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-xs font-medium flex items-center gap-1.5">
@@ -1256,7 +1269,7 @@ function YourPageDashboard() {
 
           {/* Right Column - Calendar (only on xl screens and above) */}
           <div className="hidden xl:block xl:col-span-1">
-            <Card className="shadow-sm sticky top-3">
+            <Card className="shadow-sm sticky top-3 mt-6">
               <CardHeader className="py-1.5 px-3">
                 <CardTitle className="text-xs font-medium flex items-center gap-1.5">
                   <CalendarIcon className="h-3.5 w-3.5 text-amber-600" />
