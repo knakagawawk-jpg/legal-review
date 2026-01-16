@@ -99,7 +99,13 @@ def get_db():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "auth_enabled": AUTH_ENABLED}
+    from config.settings import GOOGLE_CLIENT_ID
+    return {
+        "status": "ok",
+        "auth_enabled": AUTH_ENABLED,
+        "google_client_id_set": bool(GOOGLE_CLIENT_ID),
+        "google_client_id_preview": f"{GOOGLE_CLIENT_ID[:20]}..." if GOOGLE_CLIENT_ID else None
+    }
 
 @app.get("/debug/llm-config")
 def debug_llm_config():
