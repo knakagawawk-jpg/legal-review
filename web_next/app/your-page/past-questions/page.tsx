@@ -201,7 +201,7 @@ function PastExamsPage() {
     <div className={cn("min-h-screen bg-gradient-to-b from-amber-50/80 to-orange-50/30 transition-all duration-300", isOpen && "ml-52")}>
       {/* Fixed Header */}
       <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-amber-200/60 shadow-sm">
-        <div className="container mx-auto px-4 py-3 max-w-6xl">
+        <div className="container mx-auto px-20 py-3 max-w-6xl">
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <BookOpen className="h-4 w-4 text-amber-600" />
@@ -228,7 +228,7 @@ function PastExamsPage() {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-4 max-w-6xl">
+      <main className="container mx-auto px-20 py-4 max-w-6xl">
         <Card className="shadow-sm border-amber-200/60">
           <CardContent className="p-4 space-y-4">
             <ExamTable data={currentData.shihou} title="司法試験" />

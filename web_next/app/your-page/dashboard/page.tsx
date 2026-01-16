@@ -841,21 +841,10 @@ function YourPageDashboard() {
         if (newItem) {
           // Update the field immediately
           updateItemField(newItem, field as keyof DashboardItem, value)
-          // Remove the used empty row (don't add a new one - only button can add rows)
-          if (entryType === 1) {
-            setEmptyPointsRows(prev => {
-              const newSet = new Set(prev)
-              newSet.delete(index)
-              return newSet
-            })
-          } else {
-            setEmptyTasksRows(prev => {
-              const newSet = new Set(prev)
-              newSet.delete(index)
-              return newSet
-            })
-          }
+          // Keep the empty row - it will be replaced by the new item when data reloads
           creatingEmptyRowsRef.current.delete(rowKey)
+          // Reload items to show the new item in place of the empty row
+          await loadDashboardItems()
         }
       } catch (error) {
         console.error("Failed to create item from empty row:", error)
@@ -1015,7 +1004,7 @@ function YourPageDashboard() {
 
   return (
     <div className={cn("min-h-screen bg-gradient-to-b from-amber-50/80 to-background transition-all duration-300", isOpen && "ml-52")}>
-      <div className="container mx-auto px-10 py-3 max-w-6xl">
+      <div className="container mx-auto px-20 py-3 max-w-6xl">
         {/* Header */}
         <header className="mb-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
