@@ -13,6 +13,7 @@ declare global {
         id: {
           initialize: (config: {
             client_id: string
+            use_fedcm_for_prompt?: boolean
             callback: (response: { credential: string }) => void
           }) => void
           prompt: () => void
@@ -28,6 +29,12 @@ export function LoginButton() {
   const [isGoogleLoaded, setIsGoogleLoaded] = useState(false)
   const [isLoggingIn, setIsLoggingIn] = useState(false)
   const [loginError, setLoginError] = useState<string | null>(null)
+  const [mounted, setMounted] = useState(false)
+
+  // クライアント側でのみマウントされたことを確認（Hydrationエラーを防ぐ）
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
     // Google Identity Services スクリプトを読み込む
@@ -57,32 +64,112 @@ export function LoginButton() {
         return
       }
 
+      // 現在のオリジンを確認（デバッグ用）
+      const currentOrigin = window.location.origin
+      const currentHost = window.location.host
+      const currentProtocol = window.location.protocol
+      console.log("=== Google Auth Debug Info ===")
+      console.log("Current origin:", currentOrigin)
+      console.log("Current host:", currentHost)
+      console.log("Current protocol:", currentProtocol)
+      console.log("Full URL:", window.location.href)
+      console.log("Client ID:", clientId)
+      console.log("Expected origin: http://localhost:8080")
+      console.log("Origin match:", currentOrigin === "http://localhost:8080")
+      console.log("=============================")
+
       // Google Identity Services を初期化
       if (window.google?.accounts?.id) {
-        window.google.accounts.id.initialize({
-          client_id: clientId,
-          callback: async (response) => {
-            setIsLoggingIn(true)
-            setLoginError(null)
-            clearError()
-            try {
-              await login(response.credential)
-            } catch (error: any) {
-              console.error("Login failed:", error)
-              setLoginError(error.message || "ログインに失敗しました")
-            } finally {
-              setIsLoggingIn(false)
+        try {
+          // エラーハンドリングを追加
+          const originalConsoleError = console.error
+          console.error = (...args: any[]) => {
+            if (args.some(arg => typeof arg === 'string' && arg.includes('origin is not allowed'))) {
+              console.error("=== Google Auth Configuration Error ===")
+              console.error("Error:", args)
+              console.error("Client ID:", clientId)
+              console.error("Origin:", currentOrigin)
+              console.error("Please verify in Google Cloud Console:")
+              console.error("1. OAuth 2.0 Client ID:", clientId)
+              console.error("2. Authorized JavaScript origins includes:", currentOrigin)
+              console.error("3. Settings are saved and propagated (may take 5-10 minutes)")
+              console.error("========================================")
+              setLoginError(
+                `Google認証の設定エラー: オリジン ${currentOrigin} がクライアントID ${clientId} で許可されていません。Google Cloud Consoleの設定を確認してください。`
+              )
             }
-          },
-        })
+            originalConsoleError.apply(console, args)
+          }
+
+          window.google.accounts.id.initialize({
+            client_id: clientId,
+            // FedCM設定（一時的にfalseに設定して動作確認）
+            // 注意: 2024年10月以降、FedCMは必須になります
+            // 参考: https://developers.google.com/identity/gsi/web/guides/fedcm-migration
+            // FedCMが動作しない場合は、一時的にfalseに設定して従来の方法を使用
+            use_fedcm_for_prompt: false,
+            callback: async (response) => {
+              console.log("Google callback received")
+              setIsLoggingIn(true)
+              setLoginError(null)
+              clearError()
+              try {
+                await login(response.credential)
+              } catch (error: any) {
+                console.error("Login failed:", error)
+                setLoginError(error.message || "ログインに失敗しました")
+              } finally {
+                setIsLoggingIn(false)
+              }
+            },
+          })
+          console.log("Google Identity Services initialized successfully")
+          
+          // コンソールエラーハンドラーを元に戻す
+          setTimeout(() => {
+            console.error = originalConsoleError
+          }, 5000)
+        } catch (error: any) {
+          console.error("Failed to initialize Google Identity Services:", error)
+          setLoginError("Google Identity Servicesの初期化に失敗しました: " + error.message)
+        }
+      } else {
+        console.error("window.google.accounts.id is not available")
+        setLoginError("Google Identity Services APIが利用できません")
       }
     }
   }, [isGoogleLoaded, isAuthenticated, login, clearError])
 
   const handleLogin = () => {
-    if (window.google?.accounts?.id) {
-      window.google.accounts.id.prompt()
+    console.log("Login button clicked")
+    console.log("isGoogleLoaded:", isGoogleLoaded)
+    console.log("window.google:", window.google)
+    console.log("window.google?.accounts?.id:", window.google?.accounts?.id)
+    
+    if (!isGoogleLoaded) {
+      console.error("Google Identity Services is not loaded yet")
+      setLoginError("Google Identity Servicesが読み込まれていません。ページを再読み込みしてください。")
+      return
     }
+    
+    if (!window.google?.accounts?.id) {
+      console.error("Google Identity Services API is not available")
+      setLoginError("Google Identity Services APIが利用できません。")
+      return
+    }
+    
+    try {
+      window.google.accounts.id.prompt()
+      console.log("Prompt called successfully")
+    } catch (error: any) {
+      console.error("Error calling prompt:", error)
+      setLoginError(error.message || "ログインプロンプトの表示に失敗しました")
+    }
+  }
+
+  // サーバー側レンダリング時は何も表示しない（Hydrationエラーを防ぐ）
+  if (!mounted || isLoading) {
+    return null
   }
 
   if (isAuthenticated) {

@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { useAuth } from "@/contexts/auth-context"
 import { Button } from "@/components/ui/button"
 import {
@@ -14,18 +15,20 @@ import { LogOut, User, Loader2 } from "lucide-react"
 
 export function UserMenu() {
   const { user, logout, isLoading } = useAuth()
+  const [mounted, setMounted] = useState(false)
 
-  if (!user) {
+  // クライアント側でのみマウントされたことを確認（Hydrationエラーを防ぐ）
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  // サーバー側レンダリング時は何も表示しない（Hydrationエラーを防ぐ）
+  if (!mounted || isLoading) {
     return null
   }
 
-  if (isLoading) {
-    return (
-      <Button variant="ghost" size="sm" disabled className="gap-2">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        <span className="hidden sm:inline">読み込み中...</span>
-      </Button>
-    )
+  if (!user) {
+    return null
   }
 
   return (

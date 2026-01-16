@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
 import { Loader2 } from "lucide-react"
@@ -24,13 +24,24 @@ export function withAuth<P extends object>(
   return function AuthenticatedComponent(props: P) {
     const { isAuthenticated, isLoading } = useAuth()
     const router = useRouter()
+    const [mounted, setMounted] = useState(false)
+
+    // クライアント側でのみマウントされたことを確認（Hydrationエラーを防ぐ）
+    useEffect(() => {
+      setMounted(true)
+    }, [])
 
     useEffect(() => {
-      if (!isLoading && requireAuth && !isAuthenticated) {
+      if (mounted && !isLoading && requireAuth && !isAuthenticated) {
         router.push(redirectTo)
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isLoading, isAuthenticated, router])
+    }, [mounted, isLoading, isAuthenticated, router])
+
+    // サーバー側レンダリング時は何も表示しない（Hydrationエラーを防ぐ）
+    if (!mounted) {
+      return null
+    }
 
     // ローディング中
     if (isLoading) {

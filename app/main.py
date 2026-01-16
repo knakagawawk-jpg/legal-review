@@ -51,14 +51,26 @@ from config.settings import AUTH_ENABLED
 app = FastAPI(title="法律答案講評システム API", version="1.0.0")
 
 # CORS設定（Next.jsフロントエンドからのリクエストを許可）
+import os
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else []
+# デフォルトのオリジン（開発環境用）
+default_origins = [
+    "http://localhost:3000",  # 通常の開発環境（npm run dev）
+    "http://127.0.0.1:3000",
+    "http://localhost:8080",   # Docker Compose使用時
+    "http://127.0.0.1:8080",
+]
+# 本番環境のオリジン
+production_origins = [
+    "https://juristutor-ai.com",
+    "https://www.juristutor-ai.com",
+]
+# 環境変数で指定されたオリジンとデフォルトをマージ
+all_origins = list(set(default_origins + production_origins + [origin.strip() for origin in CORS_ORIGINS if origin.strip()]))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # 通常の開発環境（npm run dev）
-        "http://127.0.0.1:3000",
-        "http://localhost:8080",   # Docker Compose使用時
-        "http://127.0.0.1:8080",
-    ],
+    allow_origins=all_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

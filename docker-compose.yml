@@ -96,7 +96,7 @@ services:
     image: caddy:2-alpine
     container_name: law-review-proxy
     profiles:
-      - production  # 本番環境用プロファイル
+      - production  # 本番環境用プロファイル（ドメインでアクセス）
     ports:
       - "80:80"
       - "443:443"

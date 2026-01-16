@@ -67,24 +67,28 @@ const navigation = [
 
 // サイドバーの状態を管理するProviderコンポーネント
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
-  const [isOpen, setIsOpen] = useState(() => {
-    // クライアントサイドでのみパスをチェック
-    if (typeof window !== "undefined") {
-      // トップページの場合はデフォルトで閉じた状態
-      return window.location.pathname !== "/"
-    }
-    return true
-  })
+  // サーバー側とクライアント側で同じ初期値を返す（Hydrationエラーを防ぐ）
+  const [isOpen, setIsOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
   
   // パス変更時にサイドバーの状態を更新
   const pathname = usePathname()
+  
+  // クライアント側でのみマウントされたことを確認（Hydrationエラーを防ぐ）
   useEffect(() => {
-    if (pathname === "/") {
-      setIsOpen(false)
-    } else {
-      setIsOpen(true)
+    setMounted(true)
+  }, [])
+  
+  useEffect(() => {
+    if (mounted) {
+      // マウント後にパスに基づいて状態を設定
+      if (pathname === "/") {
+        setIsOpen(false)
+      } else {
+        setIsOpen(true)
+      }
     }
-  }, [pathname])
+  }, [pathname, mounted])
   
   return <SidebarContext.Provider value={{ isOpen, setIsOpen }}>{children}</SidebarContext.Provider>
 }
@@ -190,8 +194,15 @@ export function Sidebar() {
 // 認証セクション
 function AuthSection() {
   const { isAuthenticated, isLoading } = useAuth()
+  const [mounted, setMounted] = useState(false)
 
-  if (isLoading) {
+  // クライアント側でのみマウントされたことを確認（Hydrationエラーを防ぐ）
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  // サーバー側レンダリング時は何も表示しない（Hydrationエラーを防ぐ）
+  if (!mounted || isLoading) {
     return null
   }
 
