@@ -841,27 +841,17 @@ function YourPageDashboard() {
         if (newItem) {
           // Update the field immediately
           updateItemField(newItem, field as keyof DashboardItem, value)
-          // Keep exactly 2 empty rows (remove the used one, but don't add a new one)
+          // Remove the used empty row (don't add a new one - only button can add rows)
           if (entryType === 1) {
             setEmptyPointsRows(prev => {
               const newSet = new Set(prev)
               newSet.delete(index)
-              // If we have less than 2 empty rows, add one to maintain 2 rows
-              if (newSet.size < 2) {
-                const maxIndex = newSet.size > 0 ? Math.max(...Array.from(newSet)) : -1
-                newSet.add(maxIndex + 1)
-              }
               return newSet
             })
           } else {
             setEmptyTasksRows(prev => {
               const newSet = new Set(prev)
               newSet.delete(index)
-              // If we have less than 2 empty rows, add one to maintain 2 rows
-              if (newSet.size < 2) {
-                const maxIndex = newSet.size > 0 ? Math.max(...Array.from(newSet)) : -1
-                newSet.add(maxIndex + 1)
-              }
               return newSet
             })
           }
@@ -1256,34 +1246,30 @@ function YourPageDashboard() {
             </Card>
 
             {/* Calendar - Default position (below review section) */}
-            <Card className="shadow-sm xl:hidden">
+            <Card className="shadow-sm xl:hidden scale-[0.7] origin-top">
               <CardHeader className="py-1.5 px-3">
                 <CardTitle className="text-xs font-medium flex items-center gap-1.5">
                   <CalendarIcon className="h-3.5 w-3.5 text-amber-600" />
                   カレンダー
                 </CardTitle>
               </CardHeader>
-              <CardContent className="px-2 pb-2">
-                <div className="scale-[0.7] origin-top-left">
-                  <Calendar />
-                </div>
+              <CardContent className="px-2 pb-2 flex justify-center">
+                <Calendar />
               </CardContent>
             </Card>
           </div>
 
           {/* Right Column - Calendar (only on xl screens and above) */}
-          <div className="hidden xl:block xl:col-span-1">
-            <Card className="shadow-sm sticky top-3 mt-6">
+          <div className="hidden xl:block xl:col-span-1 flex justify-center">
+            <Card className="shadow-sm sticky top-3 mt-6 scale-[0.7] origin-top">
               <CardHeader className="py-1.5 px-3">
                 <CardTitle className="text-xs font-medium flex items-center gap-1.5">
                   <CalendarIcon className="h-3.5 w-3.5 text-amber-600" />
                   カレンダー
                 </CardTitle>
               </CardHeader>
-              <CardContent className="px-2 pb-2">
-                <div className="scale-[0.7] origin-top-left">
-                  <Calendar />
-                </div>
+              <CardContent className="px-2 pb-2 flex justify-center">
+                <Calendar />
               </CardContent>
             </Card>
           </div>
