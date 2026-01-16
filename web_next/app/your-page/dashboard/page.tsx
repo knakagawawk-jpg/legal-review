@@ -58,6 +58,20 @@ interface DashboardItem {
   deleted_at: string | null
 }
 
+interface TimerSession {
+  id: string
+  started_at: string  // ISO datetime string
+  ended_at: string | null  // ISO datetime string or null
+  status: "running" | "stopped"
+  stop_reason?: string
+}
+
+interface TimerDailyStats {
+  study_date: string  // YYYY-MM-DD
+  total_seconds: number
+  sessions_count: number
+}
+
 const STATUS_OPTIONS = [
   { value: 1, label: "未了", color: "bg-slate-100 text-slate-700" },
   { value: 2, label: "作業中", color: "bg-amber-100 text-amber-700" },
@@ -199,15 +213,19 @@ function YourPageDashboard() {
   const [elapsedTime, setElapsedTime] = useState(0)
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
   
+  // Timer session state
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  const [activeSessionStartTime, setActiveSessionStartTime] = useState<Date | null>(null)
+  const [timerSessions, setTimerSessions] = useState<TimerSession[]>([])
+  const [timerDailyStats, setTimerDailyStats] = useState<TimerDailyStats | null>(null)
+  
   // Dashboard items
   const [points, setPoints] = useState<DashboardItem[]>([])
   const [tasks, setTasks] = useState<DashboardItem[]>([])
   const [leftItems, setLeftItems] = useState<DashboardItem[]>([])
   
-  // Empty rows state (for tracking which empty rows are being edited)
-  // Always keep exactly 2 empty rows
-  const [emptyPointsRows, setEmptyPointsRows] = useState<Set<number>>(new Set([0, 1]))
-  const [emptyTasksRows, setEmptyTasksRows] = useState<Set<number>>(new Set([0, 1]))
+  // Draft state for empty rows (key: rowKey, value: draft data)
+  const [draftRows, setDraftRows] = useState<Record<string, Partial<DashboardItem>>>({})
   
   // Popover open state for date pickers (key: itemId, value: boolean)
   const [datePickerOpen, setDatePickerOpen] = useState<Record<number, boolean>>({})
@@ -215,8 +233,20 @@ function YourPageDashboard() {
   // Popover open state for created date pickers (key: itemId, value: boolean)
   const [createdDatePickerOpen, setCreatedDatePickerOpen] = useState<Record<number, boolean>>({})
   
-  // Track which empty rows are currently creating items
-  const creatingEmptyRowsRef = useRef<Set<string>>(new Set())
+  // Calculate empty rows count based on data length
+  const getEmptyRowsCount = (dataLength: number) => {
+    if (dataLength === 0) return 2
+    if (dataLength === 1) return 1
+    return 0
+  }
+  
+  // Get empty rows for Points
+  const emptyPointsRowsCount = getEmptyRowsCount(points.length)
+  const emptyPointsRows = Array.from({ length: emptyPointsRowsCount }, (_, i) => i)
+  
+  // Get empty rows for Tasks
+  const emptyTasksRowsCount = getEmptyRowsCount(tasks.length)
+  const emptyTasksRows = Array.from({ length: emptyTasksRowsCount }, (_, i) => i)
   
   // Subjects
   const [subjects, setSubjects] = useState<Subject[]>([])
@@ -256,6 +286,51 @@ function YourPageDashboard() {
     const hrs = Math.floor(seconds / 3600)
     const mins = Math.floor((seconds % 3600) / 60)
     return `${hrs}時間${mins}分`
+  }
+
+  // Get study date (4:00 boundary)
+  const getStudyDate = (date: Date = new Date()): string => {
+    const jstDate = new Date(date.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }))
+    const hours = jstDate.getHours()
+    const studyDate = new Date(jstDate)
+    if (hours < 4) {
+      studyDate.setDate(studyDate.getDate() - 1)
+    }
+    return studyDate.toISOString().split("T")[0]
+  }
+
+  // Calculate running seconds for today (4:00 boundary)
+  const calculateRunningSeconds = (): number => {
+    if (!activeSessionStartTime) return 0
+    
+    const now = new Date()
+    const studyDate = getStudyDate()
+    const todayStart = new Date(`${studyDate}T04:00:00+09:00`)
+    const todayEnd = new Date(todayStart)
+    todayEnd.setDate(todayEnd.getDate() + 1)
+    
+    const sessionStart = new Date(activeSessionStartTime)
+    const sessionEnd = now
+    
+    const overlapStart = sessionStart > todayStart ? sessionStart : todayStart
+    const overlapEnd = sessionEnd < todayEnd ? sessionEnd : todayEnd
+    
+    if (overlapStart >= overlapEnd) return 0
+    
+    return Math.floor((overlapEnd.getTime() - overlapStart.getTime()) / 1000)
+  }
+
+  // Calculate total display seconds
+  const calculateTotalDisplaySeconds = (): number => {
+    const confirmedSeconds = timerDailyStats?.total_seconds || 0
+    const runningSeconds = timerEnabled && activeSessionStartTime ? calculateRunningSeconds() : 0
+    return confirmedSeconds + runningSeconds
+  }
+
+  // Format time in minutes (floor)
+  const formatTimeInMinutes = (seconds: number): string => {
+    const minutes = Math.floor(seconds / 60)
+    return `${minutes}分`
   }
 
   // Get greeting based on time
@@ -315,6 +390,83 @@ function YourPageDashboard() {
     loadSubjects()
   }, [])
 
+  // Load timer data
+  const loadTimerData = useCallback(async () => {
+    try {
+      const studyDate = getStudyDate()
+      const stats = await apiClient.get<TimerDailyStats>(`/api/timer/daily-stats?study_date=${studyDate}`)
+      const sessions = await apiClient.get<TimerSession[]>(`/api/timer/sessions?study_date=${studyDate}`)
+      setTimerDailyStats(stats)
+      setTimerSessions(sessions)
+    } catch (error) {
+      console.error("Failed to load timer data:", error)
+      // エラー時は空のデータを設定
+      const studyDate = getStudyDate()
+      setTimerDailyStats({ study_date: studyDate, total_seconds: 0, sessions_count: 0 })
+      setTimerSessions([])
+    }
+  }, [])
+
+  useEffect(() => {
+    loadTimerData()
+  }, [loadTimerData])
+
+  // Handle timer start
+  const handleTimerStart = async () => {
+    try {
+      const response = await apiClient.post<{
+        active_session_id: string
+        study_date: string
+        confirmed_total_seconds: number
+        active_started_at_utc: string
+        daily_stats: TimerDailyStats
+        sessions: TimerSession[]
+      }>("/api/timer/start", {})
+      
+      setActiveSessionId(response.active_session_id)
+      setActiveSessionStartTime(new Date(response.active_started_at_utc))
+      setTimerDailyStats(response.daily_stats)
+      setTimerSessions(response.sessions)
+      setTimerEnabled(true)
+      setElapsedTime(0)
+    } catch (error) {
+      console.error("Failed to start timer:", error)
+      setTimerEnabled(false)
+    }
+  }
+
+  // Handle timer stop
+  const handleTimerStop = async () => {
+    try {
+      if (!activeSessionId) return
+      
+      const response = await apiClient.post<{
+        study_date: string
+        confirmed_total_seconds: number
+        daily_stats: TimerDailyStats
+        sessions: TimerSession[]
+      }>(`/api/timer/stop/${activeSessionId}`, {})
+      
+      setTimerDailyStats(response.daily_stats)
+      setTimerSessions(response.sessions)
+      setActiveSessionId(null)
+      setActiveSessionStartTime(null)
+      setTimerEnabled(false)
+    } catch (error) {
+      console.error("Failed to stop timer:", error)
+      setTimerEnabled(false)
+    }
+  }
+
+  // Handle timer toggle
+  const handleTimerToggle = async (enabled: boolean) => {
+    if (enabled) {
+      await handleTimerStart()
+    } else {
+      await handleTimerStop()
+    }
+  }
+
   // Load dashboard items
   const loadDashboardItems = useCallback(async () => {
     try {
@@ -323,16 +475,12 @@ function YourPageDashboard() {
         `/api/dashboard/items?dashboard_date=${currentDate}&entry_type=1`
       )
       setPoints(pointsData.items)
-      // Always show 2 empty rows
-      setEmptyPointsRows(new Set([0, 1]))
 
       // Load Tasks
       const tasksData = await apiClient.get<{ items: DashboardItem[], total: number }>(
         `/api/dashboard/items?dashboard_date=${currentDate}&entry_type=2`
       )
       setTasks(tasksData.items)
-      // Always show 2 empty rows
-      setEmptyTasksRows(new Set([0, 1]))
 
       // Load Left items
       const leftData = await apiClient.get<{ items: DashboardItem[], total: number }>(
@@ -414,12 +562,6 @@ function YourPageDashboard() {
         position: null, // Auto-assign
         created_at: new Date().toISOString().split("T")[0], // Set created date
       })
-      // Keep exactly 2 empty rows when an item is created via button
-      if (entryType === 1) {
-        setEmptyPointsRows(new Set([0, 1]))
-      } else {
-        setEmptyTasksRows(new Set([0, 1]))
-      }
       // Reload items to get the new item
       await loadDashboardItems()
       return newItem
@@ -818,37 +960,79 @@ function YourPageDashboard() {
     )
   }
 
-  // Render empty row (for default 3 rows)
+  // Render empty row (draft row)
   const renderEmptyRow = (entryType: number, index: number) => {
     const rowKey = `${entryType}-${index}`
+    const draft = draftRows[rowKey] || {}
     
-    const handleEmptyRowChange = async (field: string, value: any) => {
-      // Only create item if value is not empty
-      if (!value || (typeof value === 'string' && value.trim() === '')) {
-        return
-      }
-      
-      // Prevent multiple creations for the same row
-      if (creatingEmptyRowsRef.current.has(rowKey)) {
-        return
-      }
-      
-      creatingEmptyRowsRef.current.add(rowKey)
-      
-      // Create item when user starts typing
-      try {
-        const newItem = await createItem(entryType)
-        if (newItem) {
-          // Update the field immediately
-          updateItemField(newItem, field as keyof DashboardItem, value)
-          // Keep the empty row - it will be replaced by the new item when data reloads
-          creatingEmptyRowsRef.current.delete(rowKey)
-          // Reload items to show the new item in place of the empty row
-          await loadDashboardItems()
+    // Update draft state
+    const updateDraft = (field: string, value: any) => {
+      setDraftRows(prev => ({
+        ...prev,
+        [rowKey]: {
+          ...prev[rowKey],
+          [field]: value,
         }
+      }))
+    }
+    
+    // Check if draft has valid data (item or memo is not empty)
+    const hasValidDraft = () => {
+      const item = draft.item
+      const memo = draft.memo
+      return (item && item.trim() !== '') || (memo && memo.trim() !== '')
+    }
+    
+    // Confirm draft and create item
+    const confirmDraft = async () => {
+      if (!hasValidDraft()) {
+        // Cancel draft if empty
+        setDraftRows(prev => {
+          const newDraft = { ...prev }
+          delete newDraft[rowKey]
+          return newDraft
+        })
+        return
+      }
+      
+      try {
+        const newItem = await apiClient.post<DashboardItem>("/api/dashboard/items", {
+          dashboard_date: currentDate,
+          entry_type: entryType,
+          item: draft.item || "",
+          subject: draft.subject || null,
+          status: draft.status || 1,
+          memo: draft.memo || null,
+          due_date: draft.due_date || null,
+          position: null,
+          created_at: new Date().toISOString().split("T")[0],
+        })
+        
+        // Remove draft
+        setDraftRows(prev => {
+          const newDraft = { ...prev }
+          delete newDraft[rowKey]
+          return newDraft
+        })
+        
+        // Reload items
+        await loadDashboardItems()
       } catch (error) {
-        console.error("Failed to create item from empty row:", error)
-        creatingEmptyRowsRef.current.delete(rowKey)
+        console.error("Failed to create item from draft:", error)
+        // Keep draft on error for retry
+      }
+    }
+    
+    // Handle blur (focus out)
+    const handleBlur = () => {
+      confirmDraft()
+    }
+    
+    // Handle Enter key
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        confirmDraft()
       }
     }
 
@@ -859,8 +1043,14 @@ function YourPageDashboard() {
           <TableCell className="py-1.5 px-1 w-6"></TableCell>
           <TableCell className="py-1.5 px-0.5 w-14">
             <Select
-              value={undefined}
-              onValueChange={(value) => handleEmptyRowChange("subject", value ? parseInt(value) : null)}
+              value={draft.subject?.toString() || undefined}
+              onValueChange={(value) => updateDraft("subject", value ? parseInt(value) : null)}
+              onOpenChange={(open) => {
+                if (!open) {
+                  // Blur when select closes
+                  setTimeout(handleBlur, 100)
+                }
+              }}
             >
               <SelectTrigger className="h-7 text-xs border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
                 <SelectValue placeholder="--" />
@@ -876,22 +1066,22 @@ function YourPageDashboard() {
           </TableCell>
           <TableCell className="py-1.5 px-1 w-60">
             <Input
-              value=""
-              onChange={(e) => {
-                if (e.target.value) {
-                  handleEmptyRowChange("item", e.target.value)
-                }
-              }}
+              value={draft.item || ""}
+              onChange={(e) => updateDraft("item", e.target.value)}
+              onBlur={handleBlur}
+              onKeyDown={handleKeyDown}
               placeholder="項目を入力..."
               className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
             />
           </TableCell>
           <TableCell className="py-1.5 px-0 w-14">
             <Select
-              value={undefined}
-              onValueChange={(value) => {
-                if (value) {
-                  handleEmptyRowChange("status", parseInt(value))
+              value={draft.status?.toString() || undefined}
+              onValueChange={(value) => updateDraft("status", parseInt(value))}
+              onOpenChange={(open) => {
+                if (!open) {
+                  // Blur when select closes
+                  setTimeout(handleBlur, 100)
                 }
               }}
             >
@@ -909,12 +1099,10 @@ function YourPageDashboard() {
           </TableCell>
           <TableCell className="py-1.5 px-1">
             <Input
-              value=""
-              onChange={(e) => {
-                if (e.target.value) {
-                  handleEmptyRowChange("memo", e.target.value)
-                }
-              }}
+              value={draft.memo || ""}
+              onChange={(e) => updateDraft("memo", e.target.value)}
+              onBlur={handleBlur}
+              onKeyDown={handleKeyDown}
               className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
             />
           </TableCell>
@@ -927,8 +1115,14 @@ function YourPageDashboard() {
           <TableCell className="py-1.5 px-1 w-6"></TableCell>
           <TableCell className="py-1.5 px-0.5 w-14">
             <Select
-              value={undefined}
-              onValueChange={(value) => handleEmptyRowChange("subject", value ? parseInt(value) : null)}
+              value={draft.subject?.toString() || undefined}
+              onValueChange={(value) => updateDraft("subject", value ? parseInt(value) : null)}
+              onOpenChange={(open) => {
+                if (!open) {
+                  // Blur when select closes
+                  setTimeout(handleBlur, 100)
+                }
+              }}
             >
               <SelectTrigger className="h-7 text-xs border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
                 <SelectValue placeholder="--" />
@@ -944,12 +1138,10 @@ function YourPageDashboard() {
           </TableCell>
           <TableCell className="py-1.5 px-1">
             <Input
-              value=""
-              onChange={(e) => {
-                if (e.target.value) {
-                  handleEmptyRowChange("item", e.target.value)
-                }
-              }}
+              value={draft.item || ""}
+              onChange={(e) => updateDraft("item", e.target.value)}
+              onBlur={handleBlur}
+              onKeyDown={handleKeyDown}
               placeholder="項目を入力..."
               className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
             />
@@ -958,19 +1150,38 @@ function YourPageDashboard() {
             {getFormattedCreatedDate()}
           </TableCell>
           <TableCell className="py-1.5 px-0 w-14">
-            <Button
-              variant="ghost"
-              className="h-7 w-full justify-start text-xs px-1 font-normal border-0 hover:bg-muted/50 text-muted-foreground"
-            >
-              --
-            </Button>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  className="h-7 w-full justify-start text-xs px-1 font-normal border-0 hover:bg-muted/50 text-muted-foreground"
+                >
+                  {draft.due_date ? formatDueDate(draft.due_date) : "--"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-3" align="start">
+                <DatePickerCalendar
+                  selectedDate={draft.due_date ? new Date(draft.due_date) : null}
+                  onSelect={(date) => {
+                    if (date) {
+                      const dateStr = date.toISOString().split("T")[0]
+                      updateDraft("due_date", dateStr)
+                    } else {
+                      updateDraft("due_date", null)
+                    }
+                  }}
+                />
+              </PopoverContent>
+            </Popover>
           </TableCell>
           <TableCell className="py-1.5 px-0 w-14">
             <Select
-              value={undefined}
-              onValueChange={(value) => {
-                if (value) {
-                  handleEmptyRowChange("status", parseInt(value))
+              value={draft.status?.toString() || undefined}
+              onValueChange={(value) => updateDraft("status", parseInt(value))}
+              onOpenChange={(open) => {
+                if (!open) {
+                  // Blur when select closes
+                  setTimeout(handleBlur, 100)
                 }
               }}
             >
@@ -988,12 +1199,10 @@ function YourPageDashboard() {
           </TableCell>
           <TableCell className="py-1.5 px-1">
             <Input
-              value=""
-              onChange={(e) => {
-                if (e.target.value) {
-                  handleEmptyRowChange("memo", e.target.value)
-                }
-              }}
+              value={draft.memo || ""}
+              onChange={(e) => updateDraft("memo", e.target.value)}
+              onBlur={handleBlur}
+              onKeyDown={handleKeyDown}
               className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
             />
           </TableCell>
@@ -1035,11 +1244,11 @@ function YourPageDashboard() {
                 <Switch
                   id="timer-switch"
                   checked={timerEnabled}
-                  onCheckedChange={setTimerEnabled}
+                  onCheckedChange={handleTimerToggle}
                   className="scale-90"
                 />
                 <span className="text-xs font-medium min-w-[60px] text-right">
-                  {formatTimeDisplay(elapsedTime)}
+                  {formatTimeDisplay(calculateTotalDisplaySeconds())}
                 </span>
                 {timerEnabled ? (
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">勉強中</span>
@@ -1055,7 +1264,37 @@ function YourPageDashboard() {
                 </CollapsibleTrigger>
                 <CollapsibleContent className="mt-1">
                   <div className="bg-card border rounded px-3 py-2 shadow-sm">
-                    <p className="text-lg font-mono font-medium text-center">{formatTime(elapsedTime)}</p>
+                    <div className="mb-2">
+                      <p className="text-lg font-mono font-medium text-center">{formatTime(calculateTotalDisplaySeconds())}</p>
+                      <p className="text-xs text-muted-foreground text-center mt-1">
+                        今日の合計: {formatTimeInMinutes(calculateTotalDisplaySeconds())}
+                      </p>
+                    </div>
+                    <div className="border-t pt-2 mt-2">
+                      <p className="text-[10px] font-medium text-muted-foreground mb-1">今日のログ</p>
+                      <div className="max-h-[120px] overflow-y-auto space-y-1">
+                        {timerSessions.length === 0 ? (
+                          <p className="text-[10px] text-muted-foreground text-center py-2">ログがありません</p>
+                        ) : (
+                          timerSessions.slice(0, 5).map((session) => {
+                            const startTime = new Date(session.started_at)
+                            const endTime = session.ended_at ? new Date(session.ended_at) : null
+                            const duration = endTime 
+                              ? Math.floor((endTime.getTime() - startTime.getTime()) / 1000)
+                              : (timerEnabled && session.id === activeSessionId ? calculateRunningSeconds() : 0)
+                            
+                            return (
+                              <div key={session.id} className="text-[10px] text-muted-foreground flex justify-between items-center">
+                                <span>
+                                  {startTime.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })} - {endTime ? endTime.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "進行中"}
+                                </span>
+                                <span className="font-medium">{formatTimeInMinutes(duration)}</span>
+                              </div>
+                            )
+                          })
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </CollapsibleContent>
               </Collapsible>
@@ -1106,7 +1345,7 @@ function YourPageDashboard() {
                       <SortableContext items={points.map(p => p.id.toString())} strategy={verticalListSortingStrategy}>
                         <tbody>
                           {points.map(renderPointRow)}
-                          {Array.from(emptyPointsRows).map((index) => renderEmptyRow(1, index))}
+                          {emptyPointsRows.map((index) => renderEmptyRow(1, index))}
                         </tbody>
                       </SortableContext>
                     </table>
@@ -1155,16 +1394,8 @@ function YourPageDashboard() {
                       </thead>
                       <SortableContext items={tasks.map(t => t.id.toString())} strategy={verticalListSortingStrategy}>
                         <tbody>
-                          {tasks.length === 0 ? (
-                            <>
-                              {[0, 1].map((index) => renderEmptyRow(2, index))}
-                            </>
-                          ) : (
-                            <>
-                              {tasks.map(renderTaskRow)}
-                              {Array.from(emptyTasksRows).map((index) => renderEmptyRow(2, index))}
-                            </>
-                          )}
+                          {tasks.map(renderTaskRow)}
+                          {emptyTasksRows.map((index) => renderEmptyRow(2, index))}
                         </tbody>
                       </SortableContext>
                     </table>

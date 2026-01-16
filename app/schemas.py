@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, Any, Dict, List
 from datetime import datetime
+import uuid
 
 # Problem関連のスキーマ（改善版）
 class ProblemMetadataResponse(BaseModel):
@@ -434,3 +435,53 @@ class DashboardItemListResponse(BaseModel):
     """ダッシュボード項目リストレスポンス"""
     items: List[DashboardItemResponse]
     total: int
+
+
+# ============================================================================
+# タイマー関連スキーマ
+# ============================================================================
+
+class TimerSessionResponse(BaseModel):
+    """タイマーセッションレスポンス"""
+    id: str
+    user_id: int
+    device_id: Optional[str]
+    started_at_utc: datetime
+    ended_at_utc: Optional[datetime]
+    status: str
+    stop_reason: Optional[str]
+    created_at_utc: datetime
+    updated_at_utc: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TimerDailyStatsResponse(BaseModel):
+    """日次統計レスポンス"""
+    user_id: int
+    study_date: str
+    total_seconds: int
+    sessions_count: int
+    updated_at_utc: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TimerStartResponse(BaseModel):
+    """タイマー開始レスポンス"""
+    active_session_id: str
+    study_date: str
+    confirmed_total_seconds: int
+    active_started_at_utc: datetime
+    daily_stats: TimerDailyStatsResponse
+    sessions: List[TimerSessionResponse]
+
+
+class TimerStopResponse(BaseModel):
+    """タイマー停止レスポンス"""
+    study_date: str
+    confirmed_total_seconds: int
+    daily_stats: TimerDailyStatsResponse
+    sessions: List[TimerSessionResponse]

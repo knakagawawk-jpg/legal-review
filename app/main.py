@@ -6,6 +6,9 @@ from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import Optional, List
+from datetime import datetime, timedelta
+import uuid
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +21,8 @@ from .models import (
     Notebook, NoteSection, NotePage,
     Thread, Message,
     UserPreference, UserDashboard, UserDashboardHistory, UserReviewHistory,
-    DashboardItem, Subject
+    DashboardItem, Subject,
+    TimerSession, TimerDailyChunk, TimerDailyStats
 )
 from config.constants import FIXED_SUBJECTS
 from .schemas import (
@@ -38,12 +42,14 @@ from .schemas import (
     ThreadCreate, ThreadResponse, ThreadListResponse,
     MessageCreate, MessageResponse, MessageListResponse, ThreadMessageCreate,
     UserUpdate, UserResponse,
-    DashboardItemCreate, DashboardItemUpdate, DashboardItemResponse, DashboardItemListResponse
+    DashboardItemCreate, DashboardItemUpdate, DashboardItemResponse, DashboardItemListResponse,
+    TimerSessionResponse, TimerDailyStatsResponse, TimerStartResponse, TimerStopResponse
 )
 from pydantic import BaseModel
 from .llm_service import generate_review, chat_about_review, free_chat
 from .auth import get_current_user, get_current_user_required, verify_google_token, get_or_create_user
 from config.settings import AUTH_ENABLED
+from .timer_api import register_timer_routes
 
 # テーブル作成はエントリーポイントスクリプト（app/init_db.py）で実行されるため、ここでは削除
 # Base.metadata.create_all(bind=engine)
@@ -75,6 +81,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# タイマー関連のルートを登録
+register_timer_routes(app)
 
 # グローバルエラーハンドラーを追加（HTTPExceptionは除外）
 @app.exception_handler(Exception)

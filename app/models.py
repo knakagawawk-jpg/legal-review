@@ -492,6 +492,9 @@ class User(Base):
     dashboard_history = relationship("UserDashboardHistory", back_populates="user", order_by="desc(UserDashboardHistory.date)")
     review_history = relationship("UserReviewHistory", back_populates="user", order_by="desc(UserReviewHistory.created_at)")
     dashboard_items = relationship("DashboardItem", back_populates="user", order_by="DashboardItem.position")
+    timer_sessions = relationship("TimerSession", back_populates="user", order_by="desc(TimerSession.started_at_utc)")
+    timer_daily_chunks = relationship("TimerDailyChunk", back_populates="user")
+    timer_daily_stats = relationship("TimerDailyStats", back_populates="user")
 
 class SubscriptionPlan(Base):
     __tablename__ = "subscription_plans"
@@ -819,4 +822,98 @@ class DashboardItem(Base):
         Index('idx_dashboard_items_user_date_status', 'user_id', 'dashboard_date', 'status'),
         Index('idx_dashboard_items_user_date_deleted', 'user_id', 'dashboard_date', 'deleted_at'),
         Index('idx_dashboard_items_position', 'user_id', 'dashboard_date', 'entry_type', 'position'),
+    )
+
+
+# ============================================================================
+# タイマー管理
+# ============================================================================
+
+class TimerSession(Base):
+    """
+    タイマーセッション（生ログ）
+    
+    設計のポイント:
+    - タイマーの開始・終了時刻を保持
+    - 複数デバイス対応（device_id）
+    - status: running / stopped
+    - stop_reason: user_stop / auto_replaced_by_new_start / auto_timeout など
+    """
+    __tablename__ = "timer_sessions"
+    
+    id = Column(String(36), primary_key=True)  # UUID
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    device_id = Column(String(255), nullable=True)  # デバイス識別子（任意）
+    
+    started_at_utc = Column(DateTime(timezone=True), nullable=False, index=True)
+    ended_at_utc = Column(DateTime(timezone=True), nullable=True)
+    status = Column(String(20), nullable=False)  # running / stopped
+    stop_reason = Column(String(50), nullable=True)  # user_stop / auto_replaced_by_new_start / auto_timeout
+    
+    created_at_utc = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at_utc = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # リレーションシップ
+    user = relationship("User", back_populates="timer_sessions")
+    daily_chunks = relationship("TimerDailyChunk", back_populates="session", cascade="all, delete-orphan")
+    
+    __table_args__ = (
+        Index('idx_timer_sessions_user_status', 'user_id', 'status'),
+        Index('idx_timer_sessions_user_started', 'user_id', 'started_at_utc'),
+    )
+
+
+class TimerDailyChunk(Base):
+    """
+    日次内訳（4:00区切りへ配分）
+    
+    設計のポイント:
+    - セッションが4:00を跨いだら複数行になる
+    - study_dateはユーザーTZ基準（4:00開始の「学習日」）
+    - secondsはそのstudy_dateに属する秒数
+    """
+    __tablename__ = "timer_daily_chunks"
+    
+    id = Column(String(36), primary_key=True)  # UUID
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    session_id = Column(String(36), ForeignKey("timer_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    study_date = Column(String(10), nullable=False)  # 'YYYY-MM-DD'（ユーザーTZ基準、4:00開始）
+    seconds = Column(Integer, nullable=False)  # そのstudy_dateに属する秒数
+    
+    created_at_utc = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # リレーションシップ
+    user = relationship("User", back_populates="timer_daily_chunks")
+    session = relationship("TimerSession", back_populates="daily_chunks")
+    
+    __table_args__ = (
+        Index('idx_timer_daily_chunks_user_date', 'user_id', 'study_date'),
+        Index('idx_timer_daily_chunks_session', 'session_id'),
+    )
+
+
+class TimerDailyStats(Base):
+    """
+    日次サマリ（高速表示用キャッシュ）
+    
+    設計のポイント:
+    - 秒で持つ（分は表示用に切り捨て計算）
+    - total_secondsが本体、total_minutesは計算で求める
+    """
+    __tablename__ = "timer_daily_stats"
+    
+    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, primary_key=True)
+    study_date = Column(String(10), nullable=False, primary_key=True)  # 'YYYY-MM-DD'
+    
+    total_seconds = Column(Integer, nullable=False, default=0)  # 確定分の合計秒
+    sessions_count = Column(Integer, nullable=False, default=0)  # セッション数
+    
+    updated_at_utc = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # リレーションシップ
+    user = relationship("User", back_populates="timer_daily_stats")
+    
+    __table_args__ = (
+        Index('idx_timer_daily_stats_user_date', 'user_id', 'study_date'),
     )
