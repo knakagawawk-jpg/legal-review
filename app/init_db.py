@@ -24,6 +24,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from app.db import SessionLocal, engine, Base
 from app.models import Problem, ProblemMetadata, ProblemDetails, Submission, Review, User
+from sqlalchemy import text
 
 def year_to_int(year_str: str) -> int:
     """年度文字列を整数に変換
@@ -199,12 +200,40 @@ def run_migration():
         logger.error(f"Error running migration: {str(e)}", exc_info=True)
         raise
 
+def create_dashboard_items_trigger():
+    """dashboard_itemsテーブルのupdated_at自動更新トリガーを作成"""
+    db = SessionLocal()
+    try:
+        # SQLiteのトリガーを作成
+        trigger_sql = """
+        CREATE TRIGGER IF NOT EXISTS trg_dashboard_items_updated_at
+        AFTER UPDATE ON dashboard_items
+        FOR EACH ROW
+        WHEN NEW.updated_at = OLD.updated_at
+        BEGIN
+            UPDATE dashboard_items
+            SET updated_at = datetime('now')
+            WHERE id = NEW.id;
+        END;
+        """
+        db.execute(text(trigger_sql))
+        db.commit()
+        logger.info("✓ Dashboard items trigger created")
+    except Exception as e:
+        logger.warning(f"Failed to create dashboard items trigger (may already exist): {str(e)}")
+        db.rollback()
+    finally:
+        db.close()
+
 if __name__ == "__main__":
     try:
         # データベーステーブルを作成
         logger.info("Creating database tables...")
         Base.metadata.create_all(bind=engine)
         logger.info("✓ Database tables created")
+        
+        # Dashboard items triggerを作成
+        create_dashboard_items_trigger()
         
         # ProblemMetadataテーブルが空かチェック
         if check_needs_import():

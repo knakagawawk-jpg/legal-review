@@ -17,7 +17,8 @@ from .models import (
     User, UserSubscription, SubscriptionPlan,
     Notebook, NoteSection, NotePage,
     Thread, Message,
-    UserPreference, UserDashboard, UserDashboardHistory, UserReviewHistory
+    UserPreference, UserDashboard, UserDashboardHistory, UserReviewHistory,
+    DashboardItem, Subject
 )
 from config.constants import FIXED_SUBJECTS
 from .schemas import (
@@ -36,7 +37,8 @@ from .schemas import (
     SubmissionHistoryResponse, ShortAnswerHistoryResponse,
     ThreadCreate, ThreadResponse, ThreadListResponse,
     MessageCreate, MessageResponse, MessageListResponse, ThreadMessageCreate,
-    UserUpdate, UserResponse
+    UserUpdate, UserResponse,
+    DashboardItemCreate, DashboardItemUpdate, DashboardItemResponse, DashboardItemListResponse
 )
 from pydantic import BaseModel
 from .llm_service import generate_review, chat_about_review, free_chat
@@ -1417,3 +1419,250 @@ async def create_message(
         # エラーが発生した場合もユーザーメッセージは保存済み
         db.rollback()
         raise HTTPException(status_code=500, detail=f"LLM呼び出しエラー: {str(e)}")
+
+
+# ============================================================================
+# ダッシュボード項目管理API
+# ============================================================================
+
+def get_next_position(db: Session, user_id: int, dashboard_date: str, entry_type: int) -> int:
+    """次のpositionを取得（間隔方式：10,20,30...）"""
+    last_item = db.query(DashboardItem).filter(
+        DashboardItem.user_id == user_id,
+        DashboardItem.dashboard_date == dashboard_date,
+        DashboardItem.entry_type == entry_type,
+        DashboardItem.deleted_at.is_(None)
+    ).order_by(DashboardItem.position.desc()).first()
+    
+    if last_item:
+        return last_item.position + 10
+    return 10
+
+def recalculate_positions(db: Session, user_id: int, dashboard_date: str, entry_type: int):
+    """positionを再採番（10,20,30...）"""
+    items = db.query(DashboardItem).filter(
+        DashboardItem.user_id == user_id,
+        DashboardItem.dashboard_date == dashboard_date,
+        DashboardItem.entry_type == entry_type,
+        DashboardItem.deleted_at.is_(None)
+    ).order_by(DashboardItem.position.asc()).all()
+    
+    for idx, item in enumerate(items):
+        item.position = (idx + 1) * 10
+    db.commit()
+
+@app.get("/v1/subjects", response_model=List[dict])
+def get_subjects(db: Session = Depends(get_db)):
+    """科目一覧を取得（IDと名前）"""
+    subjects = db.query(Subject).order_by(Subject.display_order).all()
+    return [{"id": s.id, "name": s.name} for s in subjects]
+
+@app.get("/v1/dashboard/items", response_model=DashboardItemListResponse)
+async def get_dashboard_items(
+    dashboard_date: str = Query(..., description="表示日（YYYY-MM-DD）"),
+    entry_type: Optional[int] = Query(None, description="種別（1=Point, 2=Task）"),
+    current_user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """ダッシュボード項目を取得"""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="認証が必要です")
+    
+    query = db.query(DashboardItem).filter(
+        DashboardItem.user_id == current_user.id,
+        DashboardItem.dashboard_date == dashboard_date,
+        DashboardItem.deleted_at.is_(None)
+    )
+    
+    if entry_type:
+        query = query.filter(DashboardItem.entry_type == entry_type)
+    
+    items = query.order_by(DashboardItem.position.asc()).all()
+    
+    return DashboardItemListResponse(
+        items=[DashboardItemResponse.model_validate(item) for item in items],
+        total=len(items)
+    )
+
+@app.get("/v1/dashboard/items/left", response_model=DashboardItemListResponse)
+async def get_dashboard_items_left(
+    dashboard_date: str = Query(..., description="表示日（YYYY-MM-DD）"),
+    period: str = Query("whole", description="期間（7days or whole）"),
+    current_user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Left欄（持ち越しTask）を取得"""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="認証が必要です")
+    
+    from datetime import datetime, timedelta
+    
+    query = db.query(DashboardItem).filter(
+        DashboardItem.user_id == current_user.id,
+        DashboardItem.dashboard_date < dashboard_date,
+        DashboardItem.entry_type == 2,  # Taskのみ
+        DashboardItem.status != 3,  # 完了以外
+        DashboardItem.deleted_at.is_(None)
+    )
+    
+    # 7daysの場合は過去7日間のみ
+    if period == "7days":
+        date_obj = datetime.strptime(dashboard_date, "%Y-%m-%d")
+        seven_days_ago = (date_obj - timedelta(days=7)).strftime("%Y-%m-%d")
+        query = query.filter(DashboardItem.dashboard_date >= seven_days_ago)
+    
+    items = query.order_by(DashboardItem.dashboard_date.asc(), DashboardItem.position.asc()).all()
+    
+    return DashboardItemListResponse(
+        items=[DashboardItemResponse.model_validate(item) for item in items],
+        total=len(items)
+    )
+
+@app.post("/v1/dashboard/items", response_model=DashboardItemResponse)
+async def create_dashboard_item(
+    item: DashboardItemCreate,
+    current_user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """ダッシュボード項目を作成"""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="認証が必要です")
+    
+    # Pointの場合はdue_dateをNULLに強制
+    if item.entry_type == 1:
+        item.due_date = None
+    
+    # positionが指定されていない場合は自動採番
+    position = item.position
+    if position is None:
+        position = get_next_position(db, current_user.id, item.dashboard_date, item.entry_type)
+    
+    db_item = DashboardItem(
+        user_id=current_user.id,
+        dashboard_date=item.dashboard_date,
+        entry_type=item.entry_type,
+        subject=item.subject,
+        item=item.item,
+        due_date=item.due_date,
+        status=item.status,
+        memo=item.memo,
+        position=position
+    )
+    
+    db.add(db_item)
+    db.commit()
+    db.refresh(db_item)
+    
+    return DashboardItemResponse.model_validate(db_item)
+
+@app.put("/v1/dashboard/items/{item_id}", response_model=DashboardItemResponse)
+async def update_dashboard_item(
+    item_id: int,
+    item_update: DashboardItemUpdate,
+    current_user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """ダッシュボード項目を更新"""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="認証が必要です")
+    
+    db_item = db.query(DashboardItem).filter(
+        DashboardItem.id == item_id,
+        DashboardItem.user_id == current_user.id,
+        DashboardItem.deleted_at.is_(None)
+    ).first()
+    
+    if not db_item:
+        raise HTTPException(status_code=404, detail="項目が見つかりません")
+    
+    # Pointの場合はdue_dateをNULLに強制
+    entry_type = item_update.entry_type if item_update.entry_type is not None else db_item.entry_type
+    if entry_type == 1:
+        item_update.due_date = None
+    
+    # 更新
+    update_data = item_update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_item, key, value)
+    
+    # updated_atはトリガーで自動更新される
+    db.commit()
+    db.refresh(db_item)
+    
+    return DashboardItemResponse.model_validate(db_item)
+
+@app.delete("/v1/dashboard/items/{item_id}")
+async def delete_dashboard_item(
+    item_id: int,
+    current_user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """ダッシュボード項目を削除（ソフト削除）"""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="認証が必要です")
+    
+    db_item = db.query(DashboardItem).filter(
+        DashboardItem.id == item_id,
+        DashboardItem.user_id == current_user.id,
+        DashboardItem.deleted_at.is_(None)
+    ).first()
+    
+    if not db_item:
+        raise HTTPException(status_code=404, detail="項目が見つかりません")
+    
+    from datetime import datetime
+    db_item.deleted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    db.commit()
+    
+    return {"message": "削除しました"}
+
+@app.post("/v1/dashboard/items/{item_id}/reorder")
+async def reorder_dashboard_item(
+    item_id: int,
+    new_position: int = Query(..., description="新しいposition"),
+    current_user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """ダッシュボード項目の並び順を変更"""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="認証が必要です")
+    
+    db_item = db.query(DashboardItem).filter(
+        DashboardItem.id == item_id,
+        DashboardItem.user_id == current_user.id,
+        DashboardItem.deleted_at.is_(None)
+    ).first()
+    
+    if not db_item:
+        raise HTTPException(status_code=404, detail="項目が見つかりません")
+    
+    # 同じ日付・種別の他の項目を取得
+    other_items = db.query(DashboardItem).filter(
+        DashboardItem.user_id == current_user.id,
+        DashboardItem.dashboard_date == db_item.dashboard_date,
+        DashboardItem.entry_type == db_item.entry_type,
+        DashboardItem.id != item_id,
+        DashboardItem.deleted_at.is_(None)
+    ).order_by(DashboardItem.position.asc()).all()
+    
+    # 新しい位置に挿入
+    if new_position < db_item.position:
+        # 前に移動
+        for item in other_items:
+            if item.position >= new_position and item.position < db_item.position:
+                item.position += 10
+    else:
+        # 後ろに移動
+        for item in other_items:
+            if item.position > db_item.position and item.position <= new_position:
+                item.position -= 10
+    
+    db_item.position = new_position
+    db.commit()
+    
+    # positionが詰まった場合は再採番
+    all_positions = [db_item.position] + [item.position for item in other_items]
+    if max(all_positions) - min(all_positions) > len(all_positions) * 20:
+        recalculate_positions(db, current_user.id, db_item.dashboard_date, db_item.entry_type)
+    
+    return {"message": "並び順を更新しました"}

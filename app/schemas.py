@@ -383,3 +383,54 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ============================================================================
+# ダッシュボード項目関連のスキーマ
+# ============================================================================
+
+class DashboardItemCreate(BaseModel):
+    """ダッシュボード項目作成用スキーマ"""
+    dashboard_date: str  # 'YYYY-MM-DD'
+    entry_type: int  # 1=Point, 2=Task
+    subject: Optional[int] = None  # 1〜18、NULL可
+    item: str  # 項目本文
+    due_date: Optional[str] = None  # 'YYYY-MM-DD'、PointはNULL強制
+    status: int = 1  # 1=未了, 2=作業中, 3=完了, 4=後で
+    memo: Optional[str] = None
+    position: Optional[int] = None  # 指定しない場合は自動採番
+
+class DashboardItemUpdate(BaseModel):
+    """ダッシュボード項目更新用スキーマ"""
+    dashboard_date: Optional[str] = None
+    entry_type: Optional[int] = None
+    subject: Optional[int] = None
+    item: Optional[str] = None
+    due_date: Optional[str] = None
+    status: Optional[int] = None
+    memo: Optional[str] = None
+    position: Optional[int] = None
+
+class DashboardItemResponse(BaseModel):
+    """ダッシュボード項目レスポンス"""
+    id: int
+    user_id: int
+    dashboard_date: str
+    entry_type: int
+    subject: Optional[int]
+    item: str
+    due_date: Optional[str]
+    status: int
+    memo: Optional[str]
+    position: int
+    created_at: str
+    updated_at: str
+    deleted_at: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+class DashboardItemListResponse(BaseModel):
+    """ダッシュボード項目リストレスポンス"""
+    items: List[DashboardItemResponse]
+    total: int

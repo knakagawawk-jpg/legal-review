@@ -491,6 +491,7 @@ class User(Base):
     dashboard = relationship("UserDashboard", back_populates="user", uselist=False, cascade="all, delete-orphan")
     dashboard_history = relationship("UserDashboardHistory", back_populates="user", order_by="desc(UserDashboardHistory.date)")
     review_history = relationship("UserReviewHistory", back_populates="user", order_by="desc(UserReviewHistory.created_at)")
+    dashboard_items = relationship("DashboardItem", back_populates="user", order_by="DashboardItem.position")
 
 class SubscriptionPlan(Base):
     __tablename__ = "subscription_plans"
@@ -766,4 +767,56 @@ class UserReviewHistory(Base):
         Index('idx_user_review_history_created', 'user_id', 'created_at'),
         Index('idx_user_review_history_review', 'review_id'),
         Index('idx_user_review_history_subject', 'user_id', 'subject', 'created_at'),
+    )
+
+
+# ============================================================================
+# ダッシュボード項目管理
+# ============================================================================
+
+class DashboardItem(Base):
+    """
+    ダッシュボード項目テーブル
+    
+    設計のポイント:
+    - Point（Today'sメモ）とTask（Today's Goals & Topics）を1テーブルで管理
+    - Left（Topics to Revisit）は表示条件で生成（DB上の種別ではない）
+    - entry_type: 1=Point, 2=Task
+    - status: 1=未了, 2=作業中, 3=完了, 4=後で
+    - positionは間隔方式（10,20,30...）で管理
+    - ソフト削除対応（deleted_at）
+    """
+    __tablename__ = "dashboard_items"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    dashboard_date = Column(String(10), nullable=False)  # 'YYYY-MM-DD'
+    
+    entry_type = Column(Integer, nullable=False)  # 1=Point, 2=Task
+    subject = Column(Integer, nullable=True)  # 1〜18、NULL可
+    item = Column(Text, nullable=False)  # 項目本文
+    
+    due_date = Column(String(10), nullable=True)  # 'YYYY-MM-DD'、PointはNULL強制
+    status = Column(Integer, nullable=False)  # 1=未了, 2=作業中, 3=完了, 4=後で
+    memo = Column(Text, nullable=True)  # メモ（自由記述）
+    position = Column(Integer, nullable=False)  # 並び順（間隔方式：10,20,30...）
+    
+    created_at = Column(String(30), nullable=False, server_default=text("datetime('now')"))
+    updated_at = Column(String(30), nullable=False, server_default=text("datetime('now')"))
+    deleted_at = Column(String(30), nullable=True)  # ソフト削除日時
+    
+    # リレーションシップ
+    user = relationship("User", back_populates="dashboard_items")
+    
+    __table_args__ = (
+        CheckConstraint("entry_type IN (1, 2)", name="ck_entry_type"),
+        CheckConstraint("subject IS NULL OR (subject BETWEEN 1 AND 18)", name="ck_subject"),
+        CheckConstraint("status BETWEEN 1 AND 4", name="ck_status"),
+        CheckConstraint("entry_type != 1 OR due_date IS NULL", name="ck_point_no_due_date"),
+        
+        # インデックス
+        Index('idx_dashboard_items_user_date_type', 'user_id', 'dashboard_date', 'entry_type'),
+        Index('idx_dashboard_items_user_date_status', 'user_id', 'dashboard_date', 'status'),
+        Index('idx_dashboard_items_user_date_deleted', 'user_id', 'dashboard_date', 'deleted_at'),
+        Index('idx_dashboard_items_position', 'user_id', 'dashboard_date', 'entry_type', 'position'),
     )
