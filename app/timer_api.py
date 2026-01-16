@@ -50,7 +50,6 @@ def update_daily_stats(db: Session, user_id: int, study_date: str, additional_se
 def register_timer_routes(app):
     """タイマー関連のルートをアプリケーションに登録"""
     from fastapi import Depends
-    from .db import get_db
     
     @app.post("/api/timer/start", response_model=TimerStartResponse)
     async def start_timer(
