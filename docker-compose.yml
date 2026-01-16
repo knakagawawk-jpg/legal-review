@@ -33,6 +33,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.nextjs
+      args:
+        - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+        - BACKEND_INTERNAL_URL=${BACKEND_INTERNAL_URL:-http://backend:8000}
     container_name: law-review-web
     environment:
       - BACKEND_INTERNAL_URL=${BACKEND_INTERNAL_URL:-http://backend:8000}

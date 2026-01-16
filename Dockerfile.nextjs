@@ -14,8 +14,14 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY web_next ./
 
+# ビルド時に必要な環境変数をARGとして受け取る
+ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID
+ARG BACKEND_INTERNAL_URL
+
 # 環境変数を設定（ビルド時に必要）
 ENV NEXT_TELEMETRY_DISABLED 1
+ENV NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+ENV BACKEND_INTERNAL_URL=${BACKEND_INTERNAL_URL}
 
 RUN npm run build
 
