@@ -75,7 +75,9 @@ export default function ReviewPage() {
         const res = await fetch("/api/problems/subjects")
         if (!res.ok) throw new Error("科目の取得に失敗しました")
         const data = await res.json()
-        const fetchedSubjects = data.subjects || []
+        const fetchedSubjects = (data.subjects || []).filter(
+          (subject: unknown): subject is string => typeof subject === "string" && subject.trim() !== "",
+        )
         // 固定順序で並べ替え
         const sortedSubjects = sortSubjectsByFixedOrder(fetchedSubjects)
         setSubjects(sortedSubjects)
@@ -99,7 +101,9 @@ export default function ReviewPage() {
         const res = await fetch("/api/problems/years")
         if (!res.ok) throw new Error("年度の取得に失敗しました")
         const data = await res.json()
-        const fetchedYears = data.years || []
+        const fetchedYears = (data.years || []).filter(
+          (year: unknown): year is number => typeof year === "number" && Number.isFinite(year),
+        )
         setYears(fetchedYears)
         // デバッグ: 取得した年度をログに出力
         console.log("年度データ取得:", { years: fetchedYears, count: fetchedYears.length })
