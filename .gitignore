@@ -78,11 +78,3 @@ web_next/.env*.local
 web_next/.vercel
 # Next.js libディレクトリは含める（utils.tsなど）
 !web_next/lib/
-
-# ============================================================================
-# 認証設定（追加）
-# ============================================================================
-AUTH_ENABLED=true
-GOOGLE_CLIENT_ID=1093021444246-rv37t7gccj4so0jnu5ulben0l85v5l4h.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=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
-SECRET_KEY=dev-secret-key-lfmaslkfaeiofnicnaicawni
