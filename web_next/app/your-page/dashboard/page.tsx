@@ -10,12 +10,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Lightbulb, ListTodo, RotateCcw, Clock, ChevronDown, Sparkles, Calendar as CalendarIcon, GripVertical, Trash2, Plus } from "lucide-react"
+import { Lightbulb, ListTodo, RotateCcw, Clock, ChevronDown, Sparkles, Calendar as CalendarIcon, GripVertical, Trash2, Plus, CalendarDays } from "lucide-react"
 import { SidebarToggle } from "@/components/sidebar"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { withAuth } from "@/components/auth/with-auth"
-import { Calendar } from "@/components/ui/calendar"
+import { Calendar, DatePickerCalendar } from "@/components/ui/calendar"
 import { apiClient } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -71,11 +71,13 @@ function SortableRow({
   children,
   entryType,
   onDelete,
+  onEditCreatedDate,
 }: {
   item: DashboardItem
   children: React.ReactNode
   entryType: number
   onDelete: (id: number) => void
+  onEditCreatedDate?: (id: number) => void
 }) {
   const {
     attributes,
@@ -85,12 +87,29 @@ function SortableRow({
     transition,
     isDragging,
   } = useSortable({ id: item.id.toString() })
-  const [showDelete, setShowDelete] = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
   }
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowMenu(false)
+      }
+    }
+
+    if (showMenu) {
+      document.addEventListener("mousedown", handleClickOutside)
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutside)
+      }
+    }
+  }, [showMenu])
 
   return (
     <TableRow
@@ -99,24 +118,62 @@ function SortableRow({
       className={`border-b border-border/50 hover:bg-amber-50/30 transition-colors ${isDragging ? "opacity-50 bg-amber-50" : ""}`}
     >
       <TableCell className="py-1.5 px-1 w-6 relative">
-        <button
-          {...attributes}
-          {...listeners}
-          onClick={() => setShowDelete(!showDelete)}
-          className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-muted rounded"
-        >
-          <GripVertical className="h-3 w-3 text-muted-foreground" />
-        </button>
-        {showDelete && (
-          <div className="absolute left-6 top-1/2 -translate-y-1/2 z-10">
+        {!showMenu ? (
+          <button
+            {...attributes}
+            {...listeners}
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowMenu(true)
+            }}
+            className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-muted rounded"
+          >
+            <GripVertical className="h-3 w-3 text-muted-foreground" />
+          </button>
+        ) : (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowMenu(false)
+            }}
+            className="p-0.5 hover:bg-muted rounded"
+          >
+            <GripVertical className="h-3 w-3 text-muted-foreground" />
+          </button>
+        )}
+        {showMenu && (
+          <div 
+            ref={menuRef}
+            className="absolute left-6 top-1/2 -translate-y-1/2 z-10 flex gap-1 bg-card border rounded shadow-lg p-1"
+          >
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => onDelete(item.id)}
-              className="h-5 w-5 bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete(item.id)
+                setShowMenu(false)
+              }}
+              className="h-6 w-6 bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+              title="削除"
             >
               <Trash2 className="h-3 w-3" />
             </Button>
+            {onEditCreatedDate && entryType === 2 && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onEditCreatedDate(item.id)
+                  setShowMenu(false)
+                }}
+                className="h-6 w-6 bg-muted hover:bg-muted/80"
+                title="作成日の編集"
+              >
+                <CalendarDays className="h-3 w-3" />
+              </Button>
+            )}
           </div>
         )}
       </TableCell>
@@ -139,8 +196,15 @@ function YourPageDashboard() {
   const [leftItems, setLeftItems] = useState<DashboardItem[]>([])
   
   // Empty rows state (for tracking which empty rows are being edited)
+  // Always keep exactly 2 empty rows
   const [emptyPointsRows, setEmptyPointsRows] = useState<Set<number>>(new Set([0, 1]))
   const [emptyTasksRows, setEmptyTasksRows] = useState<Set<number>>(new Set([0, 1]))
+  
+  // Popover open state for date pickers (key: itemId, value: boolean)
+  const [datePickerOpen, setDatePickerOpen] = useState<Record<number, boolean>>({})
+  
+  // Popover open state for created date pickers (key: itemId, value: boolean)
+  const [createdDatePickerOpen, setCreatedDatePickerOpen] = useState<Record<number, boolean>>({})
   
   // Track which empty rows are currently creating items
   const creatingEmptyRowsRef = useRef<Set<string>>(new Set())
@@ -341,21 +405,11 @@ function YourPageDashboard() {
         position: null, // Auto-assign
         created_at: new Date().toISOString().split("T")[0], // Set created date
       })
-      // Add a new empty row when an item is created via button
+      // Keep exactly 2 empty rows when an item is created via button
       if (entryType === 1) {
-        setEmptyPointsRows(prev => {
-          const newSet = new Set(prev)
-          const maxIndex = newSet.size > 0 ? Math.max(...Array.from(newSet)) : -1
-          newSet.add(maxIndex + 1)
-          return newSet
-        })
+        setEmptyPointsRows(new Set([0, 1]))
       } else {
-        setEmptyTasksRows(prev => {
-          const newSet = new Set(prev)
-          const maxIndex = newSet.size > 0 ? Math.max(...Array.from(newSet)) : -1
-          newSet.add(maxIndex + 1)
-          return newSet
-        })
+        setEmptyTasksRows(new Set([0, 1]))
       }
       // Reload items to get the new item
       await loadDashboardItems()
@@ -500,7 +554,7 @@ function YourPageDashboard() {
             </SelectContent>
           </Select>
         </TableCell>
-        <TableCell className="py-1.5 px-1 w-40">
+        <TableCell className="py-1.5 px-1 w-60">
           <Input
             value={item.item}
             onChange={(e) => updateItemField(item, "item", e.target.value)}
@@ -529,7 +583,6 @@ function YourPageDashboard() {
           <Input
             value={item.memo || ""}
             onChange={(e) => updateItemField(item, "memo", e.target.value)}
-            placeholder="メモ..."
             className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
           />
         </TableCell>
@@ -542,7 +595,15 @@ function YourPageDashboard() {
     const statusOption = STATUS_OPTIONS.find((s) => s.value === item.status)
     const createdDate = item.created_at ? formatDueDate(item.created_at) : getFormattedCreatedDate()
     return (
-      <SortableRow key={item.id} item={item} entryType={2} onDelete={deleteItem}>
+      <SortableRow 
+        key={item.id} 
+        item={item} 
+        entryType={2} 
+        onDelete={deleteItem}
+        onEditCreatedDate={(id) => {
+          setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
+        }}
+      >
         <TableCell className="py-1.5 px-0.5 w-14">
           <Select
             value={item.subject?.toString() || undefined}
@@ -568,11 +629,32 @@ function YourPageDashboard() {
             className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
           />
         </TableCell>
-        <TableCell className="py-1.5 px-1 w-12 text-xs text-muted-foreground text-center">
-          {createdDate}
+        <TableCell className="py-1.5 px-1 w-12 text-xs text-muted-foreground text-center relative">
+          <Popover 
+            open={createdDatePickerOpen[item.id] || false} 
+            onOpenChange={(open) => setCreatedDatePickerOpen(prev => ({ ...prev, [item.id]: open }))}
+          >
+            <PopoverTrigger asChild>
+              <button className="w-full h-full hover:bg-muted/50 rounded px-1">
+                {createdDate}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-3" align="start">
+              <DatePickerCalendar
+                selectedDate={item.created_at ? new Date(item.created_at) : null}
+                onSelect={(date) => {
+                  if (date) {
+                    const dateStr = date.toISOString().split("T")[0]
+                    updateItemField(item, "created_at", dateStr)
+                  }
+                  setCreatedDatePickerOpen(prev => ({ ...prev, [item.id]: false }))
+                }}
+              />
+            </PopoverContent>
+          </Popover>
         </TableCell>
         <TableCell className="py-1.5 px-0 w-14">
-          <Popover>
+          <Popover open={datePickerOpen[item.id] || false} onOpenChange={(open) => setDatePickerOpen(prev => ({ ...prev, [item.id]: open }))}>
             <PopoverTrigger asChild>
               <Button
                 variant="ghost"
@@ -581,12 +663,18 @@ function YourPageDashboard() {
                 {item.due_date ? formatDueDate(item.due_date) : <span className="text-muted-foreground">--</span>}
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Input
-                type="date"
-                value={item.due_date || ""}
-                onChange={(e) => updateItemField(item, "due_date", e.target.value || null)}
-                className="border-0"
+            <PopoverContent className="w-auto p-3" align="start">
+              <DatePickerCalendar
+                selectedDate={item.due_date ? new Date(item.due_date) : null}
+                onSelect={(date) => {
+                  if (date) {
+                    const dateStr = date.toISOString().split("T")[0]
+                    updateItemField(item, "due_date", dateStr)
+                  } else {
+                    updateItemField(item, "due_date", null)
+                  }
+                  setDatePickerOpen(prev => ({ ...prev, [item.id]: false }))
+                }}
               />
             </PopoverContent>
           </Popover>
@@ -612,7 +700,6 @@ function YourPageDashboard() {
           <Input
             value={item.memo || ""}
             onChange={(e) => updateItemField(item, "memo", e.target.value)}
-            placeholder="メモ..."
             className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
           />
         </TableCell>
@@ -655,7 +742,7 @@ function YourPageDashboard() {
           {createdDate}
         </TableCell>
         <TableCell className="py-1.5 px-0 w-14">
-          <Popover>
+          <Popover open={datePickerOpen[item.id] || false} onOpenChange={(open) => setDatePickerOpen(prev => ({ ...prev, [item.id]: open }))}>
             <PopoverTrigger asChild>
               <Button
                 variant="ghost"
@@ -664,12 +751,18 @@ function YourPageDashboard() {
                 {item.due_date ? formatDueDate(item.due_date) : <span className="text-muted-foreground">--</span>}
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Input
-                type="date"
-                value={item.due_date || ""}
-                onChange={(e) => updateItemField(item, "due_date", e.target.value || null)}
-                className="border-0"
+            <PopoverContent className="w-auto p-3" align="start">
+              <DatePickerCalendar
+                selectedDate={item.due_date ? new Date(item.due_date) : null}
+                onSelect={(date) => {
+                  if (date) {
+                    const dateStr = date.toISOString().split("T")[0]
+                    updateItemField(item, "due_date", dateStr)
+                  } else {
+                    updateItemField(item, "due_date", null)
+                  }
+                  setDatePickerOpen(prev => ({ ...prev, [item.id]: false }))
+                }}
               />
             </PopoverContent>
           </Popover>
@@ -695,7 +788,6 @@ function YourPageDashboard() {
           <Input
             value={item.memo || ""}
             onChange={(e) => updateItemField(item, "memo", e.target.value)}
-            placeholder="メモ..."
             className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
           />
         </TableCell>
@@ -736,23 +828,27 @@ function YourPageDashboard() {
         if (newItem) {
           // Update the field immediately
           updateItemField(newItem, field as keyof DashboardItem, value)
-          // Keep 2 empty rows (remove the used one and add a new one)
+          // Keep exactly 2 empty rows (remove the used one, but don't add a new one)
           if (entryType === 1) {
             setEmptyPointsRows(prev => {
               const newSet = new Set(prev)
               newSet.delete(index)
-              // Add a new empty row index
-              const maxIndex = newSet.size > 0 ? Math.max(...Array.from(newSet)) : -1
-              newSet.add(maxIndex + 1)
+              // If we have less than 2 empty rows, add one to maintain 2 rows
+              if (newSet.size < 2) {
+                const maxIndex = newSet.size > 0 ? Math.max(...Array.from(newSet)) : -1
+                newSet.add(maxIndex + 1)
+              }
               return newSet
             })
           } else {
             setEmptyTasksRows(prev => {
               const newSet = new Set(prev)
               newSet.delete(index)
-              // Add a new empty row index
-              const maxIndex = newSet.size > 0 ? Math.max(...Array.from(newSet)) : -1
-              newSet.add(maxIndex + 1)
+              // If we have less than 2 empty rows, add one to maintain 2 rows
+              if (newSet.size < 2) {
+                const maxIndex = newSet.size > 0 ? Math.max(...Array.from(newSet)) : -1
+                newSet.add(maxIndex + 1)
+              }
               return newSet
             })
           }
@@ -786,7 +882,7 @@ function YourPageDashboard() {
               </SelectContent>
             </Select>
           </TableCell>
-          <TableCell className="py-1.5 px-1 w-40">
+          <TableCell className="py-1.5 px-1 w-60">
             <Input
               value=""
               onChange={(e) => {
@@ -827,7 +923,6 @@ function YourPageDashboard() {
                   handleEmptyRowChange("memo", e.target.value)
                 }
               }}
-              placeholder="メモ..."
               className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
             />
           </TableCell>
@@ -907,7 +1002,6 @@ function YourPageDashboard() {
                   handleEmptyRowChange("memo", e.target.value)
                 }
               }}
-              placeholder="メモ..."
               className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
             />
           </TableCell>
@@ -976,9 +1070,9 @@ function YourPageDashboard() {
         </header>
 
         {/* Main Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-3">
           {/* Left Column - Main Content */}
-          <div className="lg:col-span-3 space-y-3">
+          <div className="xl:col-span-3 space-y-3">
             {/* Point Card */}
             <Card className="shadow-sm">
               <CardHeader className="py-1.5 px-3">
@@ -1010,7 +1104,7 @@ function YourPageDashboard() {
                         <tr className="border-b border-border text-xs text-muted-foreground">
                           <th className="py-1 px-1 w-6"></th>
                           <th className="py-1 px-0.5 w-14 text-left font-medium">科目</th>
-                          <th className="py-1 px-1 w-40 text-left font-medium">項目</th>
+                          <th className="py-1 px-1 w-60 text-left font-medium">項目</th>
                           <th className="py-1 px-0 w-14 text-left font-medium">状態</th>
                           <th className="py-1 px-1 text-left font-medium">メモ</th>
                         </tr>
@@ -1125,7 +1219,7 @@ function YourPageDashboard() {
                   </div>
                 ) : (
                   <div className="flex items-center justify-center py-6 bg-muted/20 rounded border border-dashed">
-                    <p className="text-xs text-muted-foreground">未完了のタスクはありません</p>
+                    <p className="text-xs text-muted-foreground">未完了のトピックはありません</p>
                   </div>
                 )}
               </CardContent>
@@ -1145,10 +1239,23 @@ function YourPageDashboard() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Calendar - Default position (below review section) */}
+            <Card className="shadow-sm xl:hidden">
+              <CardHeader className="py-1.5 px-3">
+                <CardTitle className="text-xs font-medium flex items-center gap-1.5">
+                  <CalendarIcon className="h-3.5 w-3.5 text-amber-600" />
+                  カレンダー
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-2 pb-2">
+                <Calendar />
+              </CardContent>
+            </Card>
           </div>
 
-          {/* Right Column - Calendar */}
-          <div className="lg:col-span-1">
+          {/* Right Column - Calendar (only on xl screens and above) */}
+          <div className="hidden xl:block xl:col-span-1">
             <Card className="shadow-sm sticky top-3">
               <CardHeader className="py-1.5 px-3">
                 <CardTitle className="text-xs font-medium flex items-center gap-1.5">
