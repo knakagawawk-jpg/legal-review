@@ -28,7 +28,7 @@ services:
       start_period: 40s
     # ports公開しない（内部ネットワークのみアクセス可能）
 
-  # Next.js（フロントエンド）
+  # Next.js（フロントエンド）- 本番用
   web:
     build:
       context: .
@@ -53,6 +53,41 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    profiles:
+      - production  # 本番環境用プロファイル
+    # ports公開しない（proxy経由のみアクセス可能）
+
+  # Next.js（フロントエンド）- 開発用（ホットリロード対応）
+  web-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.nextjs.dev
+    container_name: law-review-web-dev
+    environment:
+      - BACKEND_INTERNAL_URL=${BACKEND_INTERNAL_URL:-http://backend:8000}
+      - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+      - REVIEW_TIMEOUT_MS=${REVIEW_TIMEOUT_MS:-600000}
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true  # ファイル変更検知のため
+    volumes:
+      # ソースコードをマウント（ホットリロード対応）
+      - ./web_next:/app
+      - /app/node_modules  # node_modulesはボリュームで上書きしない
+      - /app/.next  # .nextもボリュームで上書きしない
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - law-review-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    profiles:
+      - local  # ローカル開発用プロファイル
     # ports公開しない（proxy経由のみアクセス可能）
 
   proxy:
@@ -96,7 +131,7 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      web:
+      web-dev:
         condition: service_healthy
     networks:
       - law-review-network

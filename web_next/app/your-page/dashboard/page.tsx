@@ -6,17 +6,22 @@ import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { Target, FileText, RotateCcw, Clock, ChevronDown, Sparkles } from "lucide-react"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Target, FileText, RotateCcw, Clock, ChevronDown, Sparkles, Calendar as CalendarIcon } from "lucide-react"
 import { SidebarToggle } from "@/components/sidebar"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { withAuth } from "@/components/auth/with-auth"
+import { Calendar } from "@/components/ui/calendar"
 
 function YourPageDashboard() {
   const { isOpen } = useSidebar()
   const [todayGoal, setTodayGoal] = useState("")
   const [focusMemo, setFocusMemo] = useState("")
   const [studyItems, setStudyItems] = useState("")
+  const [topicsToRevisit7Days, setTopicsToRevisit7Days] = useState("")
+  const [topicsToRevisitWholeTerm, setTopicsToRevisitWholeTerm] = useState("")
+  const [revisitTab, setRevisitTab] = useState("7days")
   const [timerEnabled, setTimerEnabled] = useState(false)
   const [timerDetailsOpen, setTimerDetailsOpen] = useState(false)
   const [elapsedTime, setElapsedTime] = useState(0)
@@ -84,7 +89,7 @@ function YourPageDashboard() {
               <SidebarToggle />
               <div>
                 <h1 className="text-2xl font-semibold text-foreground tracking-tight flex items-center gap-2">
-                  Your Page
+                  Dash Board
                   <Sparkles className="h-5 w-5 text-amber-500" />
                 </h1>
                 <p className="text-sm text-muted-foreground mt-0.5">
@@ -129,20 +134,20 @@ function YourPageDashboard() {
         </header>
 
         {/* Main Content */}
-        <main className="space-y-3">
+        <main className="space-y-[1.125rem]">
           {/* Today's Goal Card */}
-          <Card className="shadow-sm">
+          <Card className="shadow-sm mb-10">
             <CardHeader className="py-2 px-4">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <Target className="h-4 w-4 text-amber-600" />
-                今日の目標
+                Today&apos;s メモ
               </CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-3">
               <Textarea
                 value={todayGoal}
                 onChange={(e) => setTodayGoal(e.target.value)}
-                placeholder="今日の勉強予定を入力..."
+                placeholder="後日振返れるように、今日の学習のポイントを入力..."
                 className="min-h-[120px] resize-none border-muted"
               />
             </CardContent>
@@ -153,33 +158,55 @@ function YourPageDashboard() {
             <CardHeader className="py-2 px-4">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <FileText className="h-4 w-4 text-amber-600" />
-                Today&apos;s メモ
+                Today&apos;s Topics
               </CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-3 space-y-2">
               <div>
                 <Label htmlFor="focus-memo" className="text-xs text-muted-foreground mb-1.5 block">
-                  Today&apos;s Point
+                  Today&apos;s Goals & Topics
                 </Label>
                 <Textarea
                   id="focus-memo"
                   value={focusMemo}
                   onChange={(e) => setFocusMemo(e.target.value)}
-                  placeholder="今日考えたことを残しておこう..."
+                  placeholder="今日のゴールや勉強する/したことを管理..."
                   className="min-h-[100px] resize-none border-muted"
                 />
               </div>
               <div>
-                <Label htmlFor="study-items" className="text-xs text-muted-foreground mb-1.5 block">
-                  Today&apos;s Study
-                </Label>
-                <Textarea
-                  id="study-items"
-                  value={studyItems}
-                  onChange={(e) => setStudyItems(e.target.value)}
-                  placeholder="今日勉強した項目をメモ..."
-                  className="min-h-[100px] resize-none border-muted"
-                />
+                <div className="flex items-center justify-between mb-1.5">
+                  <Label htmlFor="topics-to-revisit" className="text-xs text-muted-foreground">
+                    Topics to Revisit
+                  </Label>
+                  <Tabs value={revisitTab} onValueChange={setRevisitTab} className="w-auto">
+                    <TabsList className="h-7 p-0.5">
+                      <TabsTrigger value="7days" className="text-xs px-2 py-1">
+                        this 7days
+                      </TabsTrigger>
+                      <TabsTrigger value="whole" className="text-xs px-2 py-1">
+                        whole term
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </div>
+                {revisitTab === "7days" ? (
+                  <Textarea
+                    id="topics-to-revisit-7days"
+                    value={topicsToRevisit7Days}
+                    onChange={(e) => setTopicsToRevisit7Days(e.target.value)}
+                    placeholder="ここ数日のやり残し"
+                    className="min-h-[100px] resize-none border-muted"
+                  />
+                ) : (
+                  <Textarea
+                    id="topics-to-revisit-whole"
+                    value={topicsToRevisitWholeTerm}
+                    onChange={(e) => setTopicsToRevisitWholeTerm(e.target.value)}
+                    placeholder="全期間のやり残し"
+                    className="min-h-[100px] resize-none border-muted"
+                  />
+                )}
               </div>
             </CardContent>
           </Card>
@@ -196,6 +223,19 @@ function YourPageDashboard() {
               <div className="flex items-center justify-center py-8 bg-muted/30 rounded-lg border border-dashed">
                 <p className="text-sm text-muted-foreground">復習問題は今後実装予定です。前回のあなたの学習記録から、AIが復習問題を生成してくれます。</p>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Calendar Card */}
+          <Card className="shadow-sm mb-6 mt-8">
+            <CardHeader className="py-2 px-4">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <CalendarIcon className="h-4 w-4 text-amber-600" />
+                カレンダー
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-3">
+              <Calendar />
             </CardContent>
           </Card>
         </main>

@@ -1,8 +1,8 @@
 # ローカル開発用（ドメインなし、HTTPのみ）
 # docker-compose.ymlで profiles: local を使用する場合
 :80 {
-    # Next.js（新UI）にリバースプロキシ
-    reverse_proxy web:3000 {
+    # Next.js（新UI）にリバースプロキシ（開発用サービス）
+    reverse_proxy web-dev:3000 {
         transport http {
             dial_timeout 10s
             response_header_timeout 30s  # ヘルスチェック用に少し長めに設定

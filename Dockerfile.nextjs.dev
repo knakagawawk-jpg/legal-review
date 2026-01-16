@@ -1,0 +1,16 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# package.jsonとpackage-lock.jsonをコピーして依存関係をインストール
+COPY web_next/package.json web_next/package-lock.json* ./
+RUN npm ci
+
+# 開発モードで実行
+ENV NODE_ENV development
+ENV NEXT_TELEMETRY_DISABLED 1
+
+EXPOSE 3000
+
+# 開発サーバーを起動（ボリュームマウントでコードがマウントされる）
+CMD ["npm", "run", "dev"]

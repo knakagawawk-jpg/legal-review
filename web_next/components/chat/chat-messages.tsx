@@ -105,24 +105,13 @@ function EmptyState() {
       <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/20 to-sky-500/20 mb-6">
         <Sparkles className="h-8 w-8 text-indigo-600" />
       </div>
-      <h3 className="text-xl font-semibold text-foreground mb-2">チャットを始めましょう</h3>
+      <h3 className="text-xl font-semibold text-foreground mb-2">AIとチャットで勉強を捗らせよう</h3>
       <p className="text-center text-sm text-muted-foreground max-w-md mb-8 leading-relaxed">
-        勉強中に気になったことを自由に聞くことができます。但し、回答はAIが生成したものであり正確性は担保されません。また、あくまでも司法試験受験勉強用の補助ツールであり法的なアドバイスを行うものではありません。
+        勉強中に気になったことを自由に聞くことができます。
+        <br />
+        <br />
+        *注：回答はAIが生成したものであり正確性は担保されません。また、あくまでも司法試験受験勉強用の補助ツールであり法的なアドバイスを行うものではありません。
       </p>
-      <div className="grid gap-3 w-full max-w-md">
-        <SuggestionCard
-          icon={<Lightbulb className="h-4 w-4" />}
-          title="民法の基礎"
-          description="契約や物権について学ぶ"
-          color="indigo"
-        />
-        <SuggestionCard
-          icon={<Lightbulb className="h-4 w-4" />}
-          title="憲法の人権"
-          description="基本的人権について質問する"
-          color="sky"
-        />
-      </div>
     </div>
   )
 }

@@ -51,6 +51,8 @@ docs/
 
 # Scripts (一部のみ必要、必要に応じて調整)
 scripts/
+!scripts/import_json_to_db.py
+!scripts/migrate_to_new_problem_structure.py
 
 # PDF files (必要に応じて含める)
 data/pdfs/**/*.pdf

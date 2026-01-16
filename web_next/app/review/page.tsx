@@ -12,7 +12,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { CheckCircle2, AlertCircle, Loader2, Copy, Check, ChevronDown, ChevronRight, BookOpen, PenLine, Sparkles, Scale, FileText } from "lucide-react"
+import { CheckCircle2, AlertCircle, Loader2, Copy, Check, ChevronDown, ChevronRight, BookOpen, PenLine, Sparkles, Scale, FileText, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { ReviewRequest, ProblemMetadata, ProblemMetadataWithDetails } from "@/types/api"
 import { formatYearToEra, formatYearToShortEra } from "@/lib/utils"
@@ -489,6 +489,20 @@ export default function ReviewPage() {
                     {charCount.toLocaleString()}字
                   </span>
                   {charCount < 100 && <span className="text-xs text-red-400">(100字以上)</span>}
+                  {answerText && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setAnswerText("")
+                        localStorage.removeItem("review_answer_text")
+                      }}
+                      className="h-5 gap-1 px-1.5 text-xs text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="h-3 w-3" />
+                      クリア
+                    </Button>
+                  )}
                 </div>
               </div>
 
