@@ -74,8 +74,7 @@ export function LoginButton() {
       console.log("Current protocol:", currentProtocol)
       console.log("Full URL:", window.location.href)
       console.log("Client ID:", clientId)
-      console.log("Expected origin: http://localhost:8080")
-      console.log("Origin match:", currentOrigin === "http://localhost:8080")
+      console.log("Note: Make sure", currentOrigin, "is added to 'Authorized JavaScript origins' in Google Cloud Console")
       console.log("=============================")
 
       // Google Identity Services を初期化
