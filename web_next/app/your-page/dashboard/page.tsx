@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Target, FileText, RotateCcw, Clock, ChevronDown, Sparkles, Calendar as CalendarIcon, GripVertical, Trash2 } from "lucide-react"
+import { Lightbulb, ListTodo, RotateCcw, Clock, ChevronDown, Sparkles, Calendar as CalendarIcon, GripVertical, Trash2, Plus } from "lucide-react"
 import { SidebarToggle } from "@/components/sidebar"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
@@ -18,6 +18,7 @@ import { withAuth } from "@/components/auth/with-auth"
 import { Calendar } from "@/components/ui/calendar"
 import { apiClient } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
   DndContext,
   closestCenter,
@@ -58,10 +59,10 @@ interface DashboardItem {
 }
 
 const STATUS_OPTIONS = [
-  { value: 1, label: "未了" },
-  { value: 2, label: "作業中" },
-  { value: 3, label: "完了" },
-  { value: 4, label: "後で" },
+  { value: 1, label: "未了", color: "bg-slate-100 text-slate-700" },
+  { value: 2, label: "作業中", color: "bg-amber-100 text-amber-700" },
+  { value: 3, label: "完了", color: "bg-blue-100 text-blue-700" },
+  { value: 4, label: "後で", color: "bg-emerald-50 text-emerald-600" },
 ]
 
 // Sortable Row Component
@@ -69,10 +70,12 @@ function SortableRow({
   item,
   children,
   entryType,
+  onDelete,
 }: {
   item: DashboardItem
   children: React.ReactNode
   entryType: number
+  onDelete: (id: number) => void
 }) {
   const {
     attributes,
@@ -82,17 +85,40 @@ function SortableRow({
     transition,
     isDragging,
   } = useSortable({ id: item.id.toString() })
+  const [showDelete, setShowDelete] = useState(false)
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
   }
 
   return (
-    <TableRow ref={setNodeRef} style={style}>
-      <TableCell className="w-8 cursor-move" {...attributes} {...listeners}>
-        <GripVertical className="h-4 w-4 text-muted-foreground" />
+    <TableRow
+      ref={setNodeRef}
+      style={style}
+      className={`border-b border-border/50 hover:bg-amber-50/30 transition-colors ${isDragging ? "opacity-50 bg-amber-50" : ""}`}
+    >
+      <TableCell className="py-1.5 px-1 w-6 relative">
+        <button
+          {...attributes}
+          {...listeners}
+          onClick={() => setShowDelete(!showDelete)}
+          className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-muted rounded"
+        >
+          <GripVertical className="h-3 w-3 text-muted-foreground" />
+        </button>
+        {showDelete && (
+          <div className="absolute left-6 top-1/2 -translate-y-1/2 z-10">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onDelete(item.id)}
+              className="h-5 w-5 bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
+          </div>
+        )}
       </TableCell>
       {children}
     </TableRow>
@@ -105,6 +131,7 @@ function YourPageDashboard() {
   const [timerEnabled, setTimerEnabled] = useState(false)
   const [timerDetailsOpen, setTimerDetailsOpen] = useState(false)
   const [elapsedTime, setElapsedTime] = useState(0)
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date())
   
   // Dashboard items
   const [points, setPoints] = useState<DashboardItem[]>([])
@@ -112,8 +139,8 @@ function YourPageDashboard() {
   const [leftItems, setLeftItems] = useState<DashboardItem[]>([])
   
   // Empty rows state (for tracking which empty rows are being edited)
-  const [emptyPointsRows, setEmptyPointsRows] = useState<Set<number>>(new Set([0, 1, 2]))
-  const [emptyTasksRows, setEmptyTasksRows] = useState<Set<number>>(new Set([0, 1, 2]))
+  const [emptyPointsRows, setEmptyPointsRows] = useState<Set<number>>(new Set([0, 1]))
+  const [emptyTasksRows, setEmptyTasksRows] = useState<Set<number>>(new Set([0, 1]))
   
   // Track which empty rows are currently creating items
   const creatingEmptyRowsRef = useRef<Set<string>>(new Set())
@@ -183,6 +210,25 @@ function YourPageDashboard() {
     return `${date}（${weekday}）`
   }
 
+  // Format date for display (M/D)
+  const formatDate = (date: Date) => {
+    const days = ["日", "月", "火", "水", "木", "金", "土"]
+    return `${date.getMonth() + 1}/${date.getDate()}（${days[date.getDay()]}）`
+  }
+
+  // Format due date for display (M/D)
+  const formatDueDate = (dateStr: string | null) => {
+    if (!dateStr) return "--"
+    const date = new Date(dateStr)
+    return `${date.getMonth() + 1}/${date.getDate()}`
+  }
+
+  // Get formatted created date (M/D)
+  const getFormattedCreatedDate = () => {
+    const now = new Date()
+    return `${now.getMonth() + 1}/${now.getDate()}`
+  }
+
   // Load subjects
   useEffect(() => {
     const loadSubjects = async () => {
@@ -204,16 +250,16 @@ function YourPageDashboard() {
         `/api/dashboard/items?dashboard_date=${currentDate}&entry_type=1`
       )
       setPoints(pointsData.items)
-      // Always show 3 empty rows
-      setEmptyPointsRows(new Set([0, 1, 2]))
+      // Always show 2 empty rows
+      setEmptyPointsRows(new Set([0, 1]))
 
       // Load Tasks
       const tasksData = await apiClient.get<{ items: DashboardItem[], total: number }>(
         `/api/dashboard/items?dashboard_date=${currentDate}&entry_type=2`
       )
       setTasks(tasksData.items)
-      // Always show 3 empty rows
-      setEmptyTasksRows(new Set([0, 1, 2]))
+      // Always show 2 empty rows
+      setEmptyTasksRows(new Set([0, 1]))
 
       // Load Left items
       const leftData = await apiClient.get<{ items: DashboardItem[], total: number }>(
@@ -293,6 +339,7 @@ function YourPageDashboard() {
         item: "",
         status: 1,
         position: null, // Auto-assign
+        created_at: new Date().toISOString().split("T")[0], // Set created date
       })
       // Add a new empty row when an item is created via button
       if (entryType === 1) {
@@ -432,224 +479,239 @@ function YourPageDashboard() {
   }
 
   // Render table row for Point
-  const renderPointRow = (item: DashboardItem) => (
-    <SortableRow key={item.id} item={item} entryType={1}>
-      <TableCell className="w-32">
-        <Select
-          value={item.subject?.toString() || undefined}
-          onValueChange={(value) => updateItemField(item, "subject", value ? parseInt(value) : null)}
-        >
-          <SelectTrigger className="h-8">
-            <SelectValue placeholder="未選択" />
-          </SelectTrigger>
-          <SelectContent>
-            {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => (
-              <SelectItem key={s.id} value={s.id.toString()}>
-                {s.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </TableCell>
-      <TableCell>
-        <Input
-          value={item.item}
-          onChange={(e) => updateItemField(item, "item", e.target.value)}
-          className="h-8"
-          placeholder="項目を入力..."
-        />
-      </TableCell>
-      <TableCell className="w-32">
-        <Select
-          value={item.status.toString()}
-          onValueChange={(value) => updateItemField(item, "status", parseInt(value))}
-        >
-          <SelectTrigger className="h-8">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {STATUS_OPTIONS.filter(opt => opt.value != null && opt.value.toString() !== "").map((opt) => (
-              <SelectItem key={opt.value} value={opt.value.toString()}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </TableCell>
-      <TableCell className="w-32">
-        <Textarea
-          value={item.memo || ""}
-          onChange={(e) => updateItemField(item, "memo", e.target.value)}
-          className="min-h-[60px] resize-none"
-          placeholder="メモ..."
-        />
-      </TableCell>
-      <TableCell className="w-10">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => deleteItem(item.id)}
-          className="h-8 w-8 p-0"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </TableCell>
-    </SortableRow>
-  )
+  const renderPointRow = (item: DashboardItem) => {
+    const statusOption = STATUS_OPTIONS.find((s) => s.value === item.status)
+    return (
+      <SortableRow key={item.id} item={item} entryType={1} onDelete={deleteItem}>
+        <TableCell className="py-1.5 px-0.5 w-14">
+          <Select
+            value={item.subject?.toString() || undefined}
+            onValueChange={(value) => updateItemField(item, "subject", value ? parseInt(value) : null)}
+          >
+            <SelectTrigger className="h-7 text-xs border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
+              <SelectValue placeholder="--" />
+            </SelectTrigger>
+            <SelectContent>
+              {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => (
+                <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </TableCell>
+        <TableCell className="py-1.5 px-1 w-40">
+          <Input
+            value={item.item}
+            onChange={(e) => updateItemField(item, "item", e.target.value)}
+            placeholder="項目を入力..."
+            className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
+          />
+        </TableCell>
+        <TableCell className="py-1.5 px-0 w-14">
+          <Select
+            value={item.status.toString()}
+            onValueChange={(value) => updateItemField(item, "status", parseInt(value))}
+          >
+            <SelectTrigger className={`h-7 text-[10px] border-0 px-1 w-14 ${statusOption?.color || ""}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_OPTIONS.filter(opt => opt.value != null && opt.value.toString() !== "").map((opt) => (
+                <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                  <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </TableCell>
+        <TableCell className="py-1.5 px-1">
+          <Input
+            value={item.memo || ""}
+            onChange={(e) => updateItemField(item, "memo", e.target.value)}
+            placeholder="メモ..."
+            className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
+          />
+        </TableCell>
+      </SortableRow>
+    )
+  }
 
   // Render table row for Task
-  const renderTaskRow = (item: DashboardItem) => (
-    <SortableRow key={item.id} item={item} entryType={2}>
-      <TableCell className="w-32">
-        <Select
-          value={item.subject?.toString() || undefined}
-          onValueChange={(value) => updateItemField(item, "subject", value ? parseInt(value) : null)}
-        >
-          <SelectTrigger className="h-8">
-            <SelectValue placeholder="未選択" />
-          </SelectTrigger>
-          <SelectContent>
-            {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => (
-              <SelectItem key={s.id} value={s.id.toString()}>
-                {s.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </TableCell>
-      <TableCell>
-        <Input
-          value={item.item}
-          onChange={(e) => updateItemField(item, "item", e.target.value)}
-          className="h-8"
-          placeholder="項目を入力..."
-        />
-      </TableCell>
-      <TableCell className="w-32 text-xs text-muted-foreground">
-        {item.dashboard_date}
-      </TableCell>
-      <TableCell className="w-32">
-        <Input
-          type="date"
-          value={item.due_date || ""}
-          onChange={(e) => updateItemField(item, "due_date", e.target.value || null)}
-          className="h-8"
-        />
-      </TableCell>
-      <TableCell className="w-32">
-        <Select
-          value={item.status.toString()}
-          onValueChange={(value) => updateItemField(item, "status", parseInt(value))}
-        >
-          <SelectTrigger className="h-8">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {STATUS_OPTIONS.filter(opt => opt.value != null && opt.value.toString() !== "").map((opt) => (
-              <SelectItem key={opt.value} value={opt.value.toString()}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </TableCell>
-      <TableCell className="w-32">
-        <Textarea
-          value={item.memo || ""}
-          onChange={(e) => updateItemField(item, "memo", e.target.value)}
-          className="min-h-[60px] resize-none"
-          placeholder="メモ..."
-        />
-      </TableCell>
-      <TableCell className="w-10">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => deleteItem(item.id)}
-          className="h-8 w-8 p-0"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </TableCell>
-    </SortableRow>
-  )
+  const renderTaskRow = (item: DashboardItem) => {
+    const statusOption = STATUS_OPTIONS.find((s) => s.value === item.status)
+    const createdDate = item.created_at ? formatDueDate(item.created_at) : getFormattedCreatedDate()
+    return (
+      <SortableRow key={item.id} item={item} entryType={2} onDelete={deleteItem}>
+        <TableCell className="py-1.5 px-0.5 w-14">
+          <Select
+            value={item.subject?.toString() || undefined}
+            onValueChange={(value) => updateItemField(item, "subject", value ? parseInt(value) : null)}
+          >
+            <SelectTrigger className="h-7 text-xs border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
+              <SelectValue placeholder="--" />
+            </SelectTrigger>
+            <SelectContent>
+              {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => (
+                <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </TableCell>
+        <TableCell className="py-1.5 px-1">
+          <Input
+            value={item.item}
+            onChange={(e) => updateItemField(item, "item", e.target.value)}
+            placeholder="項目を入力..."
+            className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
+          />
+        </TableCell>
+        <TableCell className="py-1.5 px-1 w-12 text-xs text-muted-foreground text-center">
+          {createdDate}
+        </TableCell>
+        <TableCell className="py-1.5 px-0 w-14">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                className="h-7 w-full justify-start text-xs px-1 font-normal border-0 hover:bg-muted/50"
+              >
+                {item.due_date ? formatDueDate(item.due_date) : <span className="text-muted-foreground">--</span>}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Input
+                type="date"
+                value={item.due_date || ""}
+                onChange={(e) => updateItemField(item, "due_date", e.target.value || null)}
+                className="border-0"
+              />
+            </PopoverContent>
+          </Popover>
+        </TableCell>
+        <TableCell className="py-1.5 px-0 w-14">
+          <Select
+            value={item.status.toString()}
+            onValueChange={(value) => updateItemField(item, "status", parseInt(value))}
+          >
+            <SelectTrigger className={`h-7 text-[10px] border-0 px-1 w-14 ${statusOption?.color || ""}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_OPTIONS.filter(opt => opt.value != null && opt.value.toString() !== "").map((opt) => (
+                <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                  <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </TableCell>
+        <TableCell className="py-1.5 px-1">
+          <Input
+            value={item.memo || ""}
+            onChange={(e) => updateItemField(item, "memo", e.target.value)}
+            placeholder="メモ..."
+            className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
+          />
+        </TableCell>
+      </SortableRow>
+    )
+  }
 
   // Render table row for Left item
-  const renderLeftRow = (item: DashboardItem) => (
-    <TableRow key={item.id}>
-      <TableCell className="w-32">
-        <Select
-          value={item.subject?.toString() || undefined}
-          onValueChange={(value) => updateItemField(item, "subject", value ? parseInt(value) : null)}
-        >
-          <SelectTrigger className="h-8">
-            <SelectValue placeholder="未選択" />
-          </SelectTrigger>
-          <SelectContent>
-            {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => (
-              <SelectItem key={s.id} value={s.id.toString()}>
-                {s.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </TableCell>
-      <TableCell>
-        <Input
-          value={item.item}
-          onChange={(e) => updateItemField(item, "item", e.target.value)}
-          className="h-8"
-          placeholder="項目を入力..."
-        />
-      </TableCell>
-      <TableCell className="w-32 text-xs text-muted-foreground">
-        {item.dashboard_date}
-      </TableCell>
-      <TableCell className="w-32">
-        <Input
-          type="date"
-          value={item.due_date || ""}
-          onChange={(e) => updateItemField(item, "due_date", e.target.value || null)}
-          className="h-8"
-        />
-      </TableCell>
-      <TableCell className="w-32">
-        <Select
-          value={item.status.toString()}
-          onValueChange={(value) => updateItemField(item, "status", parseInt(value))}
-        >
-          <SelectTrigger className="h-8">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {STATUS_OPTIONS.filter(opt => opt.value != null && opt.value.toString() !== "").map((opt) => (
-              <SelectItem key={opt.value} value={opt.value.toString()}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </TableCell>
-      <TableCell className="w-32">
-        <Textarea
-          value={item.memo || ""}
-          onChange={(e) => updateItemField(item, "memo", e.target.value)}
-          className="min-h-[60px] resize-none"
-          placeholder="メモ..."
-        />
-      </TableCell>
-      <TableCell className="w-10">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => deleteItem(item.id)}
-          className="h-8 w-8 p-0"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </TableCell>
-    </TableRow>
-  )
+  const renderLeftRow = (item: DashboardItem) => {
+    const statusOption = STATUS_OPTIONS.find((s) => s.value === item.status)
+    const createdDate = item.dashboard_date ? formatDueDate(item.dashboard_date) : "--"
+    return (
+      <TableRow key={item.id} className="border-b border-border/50 hover:bg-amber-50/30 transition-colors">
+        <TableCell className="py-1.5 px-0.5 w-14">
+          <Select
+            value={item.subject?.toString() || undefined}
+            onValueChange={(value) => updateItemField(item, "subject", value ? parseInt(value) : null)}
+          >
+            <SelectTrigger className="h-7 text-xs border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
+              <SelectValue placeholder="--" />
+            </SelectTrigger>
+            <SelectContent>
+              {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => (
+                <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </TableCell>
+        <TableCell className="py-1.5 px-1">
+          <Input
+            value={item.item}
+            onChange={(e) => updateItemField(item, "item", e.target.value)}
+            placeholder="項目を入力..."
+            className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
+          />
+        </TableCell>
+        <TableCell className="py-1.5 px-1 w-12 text-xs text-muted-foreground text-center">
+          {createdDate}
+        </TableCell>
+        <TableCell className="py-1.5 px-0 w-14">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                className="h-7 w-full justify-start text-xs px-1 font-normal border-0 hover:bg-muted/50"
+              >
+                {item.due_date ? formatDueDate(item.due_date) : <span className="text-muted-foreground">--</span>}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Input
+                type="date"
+                value={item.due_date || ""}
+                onChange={(e) => updateItemField(item, "due_date", e.target.value || null)}
+                className="border-0"
+              />
+            </PopoverContent>
+          </Popover>
+        </TableCell>
+        <TableCell className="py-1.5 px-0 w-14">
+          <Select
+            value={item.status.toString()}
+            onValueChange={(value) => updateItemField(item, "status", parseInt(value))}
+          >
+            <SelectTrigger className={`h-7 text-[10px] border-0 px-1 w-14 ${statusOption?.color || ""}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_OPTIONS.filter(opt => opt.value != null && opt.value.toString() !== "").map((opt) => (
+                <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                  <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </TableCell>
+        <TableCell className="py-1.5 px-1">
+          <Input
+            value={item.memo || ""}
+            onChange={(e) => updateItemField(item, "memo", e.target.value)}
+            placeholder="メモ..."
+            className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
+          />
+        </TableCell>
+        <TableCell className="py-1.5 px-1 w-10">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => deleteItem(item.id)}
+            className="h-5 w-5 bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </TableCell>
+      </TableRow>
+    )
+  }
 
   // Render empty row (for default 3 rows)
   const renderEmptyRow = (entryType: number, index: number) => {
@@ -674,7 +736,7 @@ function YourPageDashboard() {
         if (newItem) {
           // Update the field immediately
           updateItemField(newItem, field as keyof DashboardItem, value)
-          // Keep 3 empty rows (remove the used one and add a new one)
+          // Keep 2 empty rows (remove the used one and add a new one)
           if (entryType === 1) {
             setEmptyPointsRows(prev => {
               const newSet = new Set(prev)
@@ -706,25 +768,25 @@ function YourPageDashboard() {
       // Point empty row
       return (
         <TableRow key={`empty-point-${index}`}>
-          <TableCell className="w-8"></TableCell>
-          <TableCell className="w-32">
+          <TableCell className="py-1.5 px-1 w-6"></TableCell>
+          <TableCell className="py-1.5 px-0.5 w-14">
             <Select
               value={undefined}
               onValueChange={(value) => handleEmptyRowChange("subject", value ? parseInt(value) : null)}
             >
-              <SelectTrigger className="h-8">
-                <SelectValue placeholder="未選択" />
+              <SelectTrigger className="h-7 text-xs border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
+                <SelectValue placeholder="--" />
               </SelectTrigger>
               <SelectContent>
                 {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => (
-                  <SelectItem key={s.id} value={s.id.toString()}>
+                  <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
                     {s.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </TableCell>
-          <TableCell>
+          <TableCell className="py-1.5 px-1 w-40">
             <Input
               value=""
               onChange={(e) => {
@@ -732,11 +794,11 @@ function YourPageDashboard() {
                   handleEmptyRowChange("item", e.target.value)
                 }
               }}
-              className="h-8"
               placeholder="項目を入力..."
+              className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
             />
           </TableCell>
-          <TableCell className="w-32">
+          <TableCell className="py-1.5 px-0 w-14">
             <Select
               value={undefined}
               onValueChange={(value) => {
@@ -745,56 +807,55 @@ function YourPageDashboard() {
                 }
               }}
             >
-              <SelectTrigger className="h-8">
+              <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-14">
                 <SelectValue placeholder="未了" />
               </SelectTrigger>
               <SelectContent>
                 {STATUS_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value.toString()}>
-                    {opt.label}
+                  <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                    <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </TableCell>
-          <TableCell className="w-32">
-            <Textarea
+          <TableCell className="py-1.5 px-1">
+            <Input
               value=""
               onChange={(e) => {
                 if (e.target.value) {
                   handleEmptyRowChange("memo", e.target.value)
                 }
               }}
-              className="min-h-[60px] resize-none"
               placeholder="メモ..."
+              className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
             />
           </TableCell>
-          <TableCell className="w-10"></TableCell>
         </TableRow>
       )
     } else {
       // Task empty row
       return (
         <TableRow key={`empty-task-${index}`}>
-          <TableCell className="w-8"></TableCell>
-          <TableCell className="w-32">
+          <TableCell className="py-1.5 px-1 w-6"></TableCell>
+          <TableCell className="py-1.5 px-0.5 w-14">
             <Select
               value={undefined}
               onValueChange={(value) => handleEmptyRowChange("subject", value ? parseInt(value) : null)}
             >
-              <SelectTrigger className="h-8">
-                <SelectValue placeholder="未選択" />
+              <SelectTrigger className="h-7 text-xs border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
+                <SelectValue placeholder="--" />
               </SelectTrigger>
               <SelectContent>
                 {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => (
-                  <SelectItem key={s.id} value={s.id.toString()}>
+                  <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
                     {s.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </TableCell>
-          <TableCell>
+          <TableCell className="py-1.5 px-1">
             <Input
               value=""
               onChange={(e) => {
@@ -802,26 +863,22 @@ function YourPageDashboard() {
                   handleEmptyRowChange("item", e.target.value)
                 }
               }}
-              className="h-8"
               placeholder="項目を入力..."
+              className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
             />
           </TableCell>
-          <TableCell className="w-32 text-xs text-muted-foreground">
-            {currentDate}
+          <TableCell className="py-1.5 px-1 w-12 text-xs text-muted-foreground text-center">
+            {getFormattedCreatedDate()}
           </TableCell>
-          <TableCell className="w-32">
-            <Input
-              type="date"
-              value=""
-              onChange={(e) => {
-                if (e.target.value) {
-                  handleEmptyRowChange("due_date", e.target.value)
-                }
-              }}
-              className="h-8"
-            />
+          <TableCell className="py-1.5 px-0 w-14">
+            <Button
+              variant="ghost"
+              className="h-7 w-full justify-start text-xs px-1 font-normal border-0 hover:bg-muted/50 text-muted-foreground"
+            >
+              --
+            </Button>
           </TableCell>
-          <TableCell className="w-32">
+          <TableCell className="py-1.5 px-0 w-14">
             <Select
               value={undefined}
               onValueChange={(value) => {
@@ -830,31 +887,30 @@ function YourPageDashboard() {
                 }
               }}
             >
-              <SelectTrigger className="h-8">
+              <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-14">
                 <SelectValue placeholder="未了" />
               </SelectTrigger>
               <SelectContent>
                 {STATUS_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value.toString()}>
-                    {opt.label}
+                  <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                    <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </TableCell>
-          <TableCell className="w-32">
-            <Textarea
+          <TableCell className="py-1.5 px-1">
+            <Input
               value=""
               onChange={(e) => {
                 if (e.target.value) {
                   handleEmptyRowChange("memo", e.target.value)
                 }
               }}
-              className="min-h-[60px] resize-none"
               placeholder="メモ..."
+              className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
             />
           </TableCell>
-          <TableCell className="w-10"></TableCell>
         </TableRow>
       )
     }
@@ -862,52 +918,56 @@ function YourPageDashboard() {
 
   return (
     <div className={cn("min-h-screen bg-gradient-to-b from-amber-50/80 to-background transition-all duration-300", isOpen && "ml-52")}>
-      <div className="container mx-auto px-4 py-4 max-w-6xl">
+      <div className="container mx-auto px-3 py-3 max-w-6xl">
         {/* Header */}
-        <header className="mb-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <header className="mb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             {/* Left side - Title and greeting */}
-            <div className="flex items-center gap-3">
-              <SidebarToggle />
-              <div>
-                <h1 className="text-2xl font-semibold text-foreground tracking-tight flex items-center gap-2">
-                  Dash Board
-                  <Sparkles className="h-5 w-5 text-amber-500" />
-                </h1>
-                <p className="text-sm text-muted-foreground mt-0.5">
-                  {getGreeting()} for {getCurrentDate()}
-                </p>
+            <div>
+              <div className="flex items-center gap-3">
+                <SidebarToggle />
+                <div className="relative">
+                  <h1 className="text-3xl font-light tracking-wider text-foreground">
+                    <span className="font-bold">Dash</span>
+                    <span className="text-amber-500 font-medium">board</span>
+                  </h1>
+                  <div className="absolute -bottom-1 left-0 w-full h-0.5 bg-gradient-to-r from-amber-400 via-amber-500 to-transparent rounded-full" />
+                </div>
+                <Sparkles className="h-5 w-5 text-amber-500 animate-pulse" />
+              </div>
+              <div className="flex items-center gap-2 mt-1.5 ml-12">
+                <span className="text-xs text-muted-foreground font-light tracking-wide">{getGreeting()}</span>
+                <span className="text-xs text-muted-foreground">|</span>
+                <span className="text-xs font-medium text-foreground">{formatDate(selectedDate)}</span>
               </div>
             </div>
 
             {/* Right side - Timer control */}
-            <div className="flex flex-col items-start sm:items-end gap-2">
-              <div className="flex items-center gap-3 bg-card px-3 py-2 rounded-lg border shadow-sm">
-                <Clock className="h-4 w-4 text-muted-foreground" />
-                <Label htmlFor="timer-switch" className="text-sm cursor-pointer">
-                  Timer
-                </Label>
-                <Switch id="timer-switch" checked={timerEnabled} onCheckedChange={setTimerEnabled} />
-                <span className="text-sm font-medium min-w-[70px] text-right">
-                  {formatTimeDisplay(elapsedTime)}
+            <div className="flex flex-col items-start sm:items-end gap-1.5">
+              <div className="flex items-center gap-2 bg-card px-3 py-1.5 rounded-lg border shadow-sm">
+                <Clock className="h-3.5 w-3.5 text-amber-600" />
+                <Switch
+                  id="timer-switch"
+                  checked={timerEnabled}
+                  onCheckedChange={setTimerEnabled}
+                  className="scale-90"
+                />
+                <span className="text-xs font-medium min-w-[60px] text-right">
+                  {timerEnabled ? formatTimeDisplay(elapsedTime) : "OFF"}
                 </span>
+                {timerEnabled && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">勉強中</span>
+                )}
               </div>
 
               <Collapsible open={timerDetailsOpen} onOpenChange={setTimerDetailsOpen}>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">
-                    {timerEnabled ? "勉強中" : "休憩中"}
-                  </span>
-                  <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
-                    <span>詳細表示</span>
-                    <ChevronDown
-                      className={cn("h-3 w-3 transition-transform duration-200", timerDetailsOpen && "rotate-180")}
-                    />
-                  </CollapsibleTrigger>
-                </div>
-                <CollapsibleContent className="mt-2">
-                  <div className="bg-card border rounded-lg px-4 py-3 shadow-sm">
-                    <p className="text-2xl font-mono font-medium text-center">{formatTime(elapsedTime)}</p>
+                <CollapsibleTrigger className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+                  <span>詳細</span>
+                  <ChevronDown className={cn("h-3 w-3 transition-transform", timerDetailsOpen && "rotate-180")} />
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-1">
+                  <div className="bg-card border rounded px-3 py-2 shadow-sm">
+                    <p className="text-lg font-mono font-medium text-center">{formatTime(elapsedTime)}</p>
                   </div>
                 </CollapsibleContent>
               </Collapsible>
@@ -915,188 +975,193 @@ function YourPageDashboard() {
           </div>
         </header>
 
-        {/* Main Content */}
-        <main className="space-y-[1.125rem]">
-          {/* Point Card */}
-          <Card className="shadow-sm mb-10">
-            <CardHeader className="py-2 px-4">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-amber-600" />
-                  Point（Today&apos;s メモ）
-                </CardTitle>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => createItem(1)}
-                  className="h-7 text-xs"
-                >
-                  追加
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="px-4 pb-3">
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={handleDragEndPoints}
-              >
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-8"></TableHead>
-                      <TableHead className="w-32">科目</TableHead>
-                      <TableHead>項目</TableHead>
-                      <TableHead className="w-32">ステータス</TableHead>
-                      <TableHead className="w-32">メモ</TableHead>
-                      <TableHead className="w-10"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <SortableContext items={points.map(p => p.id.toString())} strategy={verticalListSortingStrategy}>
-                      {points.map(renderPointRow)}
-                      {Array.from(emptyPointsRows).map((index) => renderEmptyRow(1, index))}
-                    </SortableContext>
-                  </TableBody>
-                </Table>
-              </DndContext>
-            </CardContent>
-          </Card>
-
-          {/* Tasks Card */}
-          <Card className="shadow-sm">
-            <CardHeader className="py-2 px-4">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-amber-600" />
-                  Tasks（Today&apos;s Goals & Topics）
-                </CardTitle>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => createItem(2)}
-                  className="h-7 text-xs"
-                >
-                  追加
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="px-4 pb-3">
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={handleDragEndTasks}
-              >
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-8"></TableHead>
-                      <TableHead className="w-32">科目</TableHead>
-                      <TableHead>項目</TableHead>
-                      <TableHead className="w-32">期限</TableHead>
-                      <TableHead className="w-32">ステータス</TableHead>
-                      <TableHead className="w-32">メモ</TableHead>
-                      <TableHead className="w-10"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <SortableContext items={tasks.map(t => t.id.toString())} strategy={verticalListSortingStrategy}>
-                      {tasks.length === 0 ? (
-                        <>
-                          {[0, 1, 2].map((index) => renderEmptyRow(2, index))}
-                        </>
-                      ) : (
-                        tasks.map(renderTaskRow)
-                      )}
-                    </SortableContext>
-                  </TableBody>
-                </Table>
-              </DndContext>
-            </CardContent>
-          </Card>
-
-          {/* Left Card */}
-          <Card className="shadow-sm">
-            <CardHeader className="py-2 px-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <CardTitle className="text-sm font-medium flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-amber-600" />
-                    Topics to Revisit
+        {/* Main Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
+          {/* Left Column - Main Content */}
+          <div className="lg:col-span-3 space-y-3">
+            {/* Point Card */}
+            <Card className="shadow-sm">
+              <CardHeader className="py-1.5 px-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-xs font-medium flex items-center gap-1.5">
+                    <Lightbulb className="h-3.5 w-3.5 text-amber-600" />
+                    Point（Today&apos;s メモ）
                   </CardTitle>
-                  <Tabs value={revisitTab} onValueChange={(v) => setRevisitTab(v as "7days" | "whole")} className="w-auto">
-                    <TabsList className="h-7 p-0.5">
-                      <TabsTrigger value="7days" className="text-xs px-2 py-1">
-                        this 7days
-                      </TabsTrigger>
-                      <TabsTrigger value="whole" className="text-xs px-2 py-1">
-                        whole term
-                      </TabsTrigger>
-                    </TabsList>
-                  </Tabs>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => createItem(1)}
+                    className="h-6 text-xs gap-1 bg-transparent px-2"
+                  >
+                    <Plus className="h-3 w-3" />
+                    追加
+                  </Button>
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent className="px-4 pb-3">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-32">科目</TableHead>
-                    <TableHead>項目</TableHead>
-                    <TableHead className="w-32">作成日</TableHead>
-                    <TableHead className="w-32">期限</TableHead>
-                    <TableHead className="w-32">ステータス</TableHead>
-                    <TableHead className="w-32">メモ</TableHead>
-                    <TableHead className="w-10"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {leftItems.length === 0 ? (
-                    <>
-                      {[0, 1, 2].map((index) => (
-                        <TableRow key={`empty-left-${index}`}>
-                          <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                            項目がありません
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </>
-                  ) : (
-                    leftItems.map(renderLeftRow)
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+              </CardHeader>
+              <CardContent className="px-3 pb-2">
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEndPoints}
+                >
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-xs text-muted-foreground">
+                          <th className="py-1 px-1 w-6"></th>
+                          <th className="py-1 px-0.5 w-14 text-left font-medium">科目</th>
+                          <th className="py-1 px-1 w-40 text-left font-medium">項目</th>
+                          <th className="py-1 px-0 w-14 text-left font-medium">状態</th>
+                          <th className="py-1 px-1 text-left font-medium">メモ</th>
+                        </tr>
+                      </thead>
+                      <SortableContext items={points.map(p => p.id.toString())} strategy={verticalListSortingStrategy}>
+                        <tbody>
+                          {points.map(renderPointRow)}
+                          {Array.from(emptyPointsRows).map((index) => renderEmptyRow(1, index))}
+                        </tbody>
+                      </SortableContext>
+                    </table>
+                  </div>
+                </DndContext>
+              </CardContent>
+            </Card>
 
-          {/* Yesterday's Review Card */}
-          <Card className="shadow-sm">
-            <CardHeader className="py-2 px-4">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <RotateCcw className="h-4 w-4 text-amber-600" />
-                昨日の復習問題
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-4 pb-3">
-              <div className="flex items-center justify-center py-8 bg-muted/30 rounded-lg border border-dashed">
-                <p className="text-sm text-muted-foreground">復習問題は今後実装予定です。前回のあなたの学習記録から、AIが復習問題を生成してくれます。</p>
-              </div>
-            </CardContent>
-          </Card>
+            {/* Tasks Card */}
+            <Card className="shadow-sm">
+              <CardHeader className="py-1.5 px-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-xs font-medium flex items-center gap-1.5">
+                    <ListTodo className="h-3.5 w-3.5 text-amber-600" />
+                    Tasks（Today&apos;s Goals & Topics）
+                  </CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => createItem(2)}
+                    className="h-6 text-xs gap-1 bg-transparent px-2"
+                  >
+                    <Plus className="h-3 w-3" />
+                    追加
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="px-3 pb-2">
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEndTasks}
+                >
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-xs text-muted-foreground">
+                          <th className="py-1 px-1 w-6"></th>
+                          <th className="py-1 px-0.5 w-14 text-left font-medium">科目</th>
+                          <th className="py-1 px-1 text-left font-medium">項目</th>
+                          <th className="py-1 px-1 w-12 text-center font-medium">作成</th>
+                          <th className="py-1 px-0 w-14 text-left font-medium">期限</th>
+                          <th className="py-1 px-0 w-14 text-left font-medium">状態</th>
+                          <th className="py-1 px-1 text-left font-medium">メモ</th>
+                        </tr>
+                      </thead>
+                      <SortableContext items={tasks.map(t => t.id.toString())} strategy={verticalListSortingStrategy}>
+                        <tbody>
+                          {tasks.length === 0 ? (
+                            <>
+                              {[0, 1].map((index) => renderEmptyRow(2, index))}
+                            </>
+                          ) : (
+                            <>
+                              {tasks.map(renderTaskRow)}
+                              {Array.from(emptyTasksRows).map((index) => renderEmptyRow(2, index))}
+                            </>
+                          )}
+                        </tbody>
+                      </SortableContext>
+                    </table>
+                  </div>
+                </DndContext>
+              </CardContent>
+            </Card>
 
-          {/* Calendar Card */}
-          <Card className="shadow-sm mb-6 mt-8">
-            <CardHeader className="py-2 px-4">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <CalendarIcon className="h-4 w-4 text-amber-600" />
-                カレンダー
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-4 pb-3">
-              <Calendar />
-            </CardContent>
-          </Card>
-        </main>
+            {/* Topics to Revisit */}
+            <Card className="shadow-sm">
+              <CardHeader className="py-1.5 px-3 flex flex-row items-center justify-between">
+                <CardTitle className="text-xs font-medium flex items-center gap-1.5">
+                  <RotateCcw className="h-3.5 w-3.5 text-amber-600" />
+                  Topics to Revisit
+                </CardTitle>
+                <Tabs value={revisitTab} onValueChange={(v) => setRevisitTab(v as "7days" | "whole")}>
+                  <TabsList className="h-6">
+                    <TabsTrigger value="7days" className="text-[10px] px-2 h-5">
+                      this 7days
+                    </TabsTrigger>
+                    <TabsTrigger value="whole" className="text-[10px] px-2 h-5">
+                      whole term
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </CardHeader>
+              <CardContent className="px-3 pb-2">
+                {leftItems.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-xs text-muted-foreground">
+                          <th className="py-1 px-0.5 w-14 text-left font-medium">科目</th>
+                          <th className="py-1 px-1 text-left font-medium">項目</th>
+                          <th className="py-1 px-1 w-12 text-center font-medium">作成</th>
+                          <th className="py-1 px-0 w-14 text-left font-medium">期限</th>
+                          <th className="py-1 px-0 w-14 text-left font-medium">状態</th>
+                          <th className="py-1 px-1 text-left font-medium">メモ</th>
+                          <th className="py-1 px-1 w-10"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {leftItems.map(renderLeftRow)}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center py-6 bg-muted/20 rounded border border-dashed">
+                    <p className="text-xs text-muted-foreground">未完了のタスクはありません</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Yesterday's Review */}
+            <Card className="shadow-sm">
+              <CardHeader className="py-1.5 px-3">
+                <CardTitle className="text-xs font-medium flex items-center gap-1.5">
+                  <RotateCcw className="h-3.5 w-3.5 text-amber-600" />
+                  昨日の復習問題
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-3 pb-2">
+                <div className="flex items-center justify-center py-6 bg-muted/20 rounded border border-dashed">
+                  <p className="text-xs text-muted-foreground">復習問題は今後実装予定です...</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right Column - Calendar */}
+          <div className="lg:col-span-1">
+            <Card className="shadow-sm sticky top-3">
+              <CardHeader className="py-1.5 px-3">
+                <CardTitle className="text-xs font-medium flex items-center gap-1.5">
+                  <CalendarIcon className="h-3.5 w-3.5 text-amber-600" />
+                  カレンダー
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-2 pb-2">
+                <Calendar />
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </div>
     </div>
   )
