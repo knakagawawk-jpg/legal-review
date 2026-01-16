@@ -60,7 +60,7 @@ export function LoginButton() {
     if (isGoogleLoaded && !isAuthenticated) {
       const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
       if (!clientId) {
-        console.error("GOOGLE_CLIENT_ID is not set")
+        console.error("NEXT_PUBLIC_GOOGLE_CLIENT_ID is not set")
         return
       }
 
@@ -103,11 +103,9 @@ export function LoginButton() {
 
           window.google.accounts.id.initialize({
             client_id: clientId,
-            // FedCM設定（一時的にfalseに設定して動作確認）
-            // 注意: 2024年10月以降、FedCMは必須になります
+            // FedCM設定を有効化
             // 参考: https://developers.google.com/identity/gsi/web/guides/fedcm-migration
-            // FedCMが動作しない場合は、一時的にfalseに設定して従来の方法を使用
-            use_fedcm_for_prompt: false,
+            use_fedcm_for_prompt: true,
             callback: async (response) => {
               console.log("Google callback received")
               setIsLoggingIn(true)
