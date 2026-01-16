@@ -1025,7 +1025,7 @@ function YourPageDashboard() {
 
   return (
     <div className={cn("min-h-screen bg-gradient-to-b from-amber-50/80 to-background transition-all duration-300", isOpen && "ml-52")}>
-      <div className="container mx-auto px-6 py-3 max-w-6xl">
+      <div className="container mx-auto px-10 py-3 max-w-6xl">
         {/* Header */}
         <header className="mb-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -1060,10 +1060,12 @@ function YourPageDashboard() {
                   className="scale-90"
                 />
                 <span className="text-xs font-medium min-w-[60px] text-right">
-                  {timerEnabled ? formatTimeDisplay(elapsedTime) : "OFF"}
+                  {formatTimeDisplay(elapsedTime)}
                 </span>
-                {timerEnabled && (
+                {timerEnabled ? (
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">勉強中</span>
+                ) : (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">休憩中</span>
                 )}
               </div>
 
@@ -1085,7 +1087,7 @@ function YourPageDashboard() {
         {/* Main Grid */}
         <div className="grid grid-cols-1 xl:grid-cols-4 gap-3">
           {/* Left Column - Main Content */}
-          <div className="xl:col-span-3 space-y-3">
+          <div className="xl:col-span-3 space-y-6">
             {/* Point Card */}
             <Card className="shadow-sm">
               <CardHeader className="py-1.5 px-3">
@@ -1135,7 +1137,7 @@ function YourPageDashboard() {
             </Card>
 
             {/* Tasks Card */}
-            <Card className="shadow-sm mt-6">
+            <Card className="shadow-sm">
               <CardHeader className="py-1.5 px-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-xs font-medium flex items-center gap-1.5">
@@ -1262,7 +1264,9 @@ function YourPageDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-2 pb-2">
-                <Calendar />
+                <div className="scale-[0.7] origin-top-left">
+                  <Calendar />
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -1277,7 +1281,9 @@ function YourPageDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-2 pb-2">
-                <Calendar />
+                <div className="scale-[0.7] origin-top-left">
+                  <Calendar />
+                </div>
               </CardContent>
             </Card>
           </div>
