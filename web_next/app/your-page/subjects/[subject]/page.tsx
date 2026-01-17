@@ -142,6 +142,8 @@ function SubjectPage() {
       <main className="container mx-auto px-20 py-4 max-w-6xl">
         <Card className="shadow-sm border-amber-200/60">
           <CardContent className="p-4">
+            {/* My規範・My論点タブ */}
+            {mainTab === "study" && (
               <Tabs value={studyTab} onValueChange={(v) => setStudyTab(v as "norms" | "points")} className="w-full">
                 <TabsList className="mb-6">
                   <TabsTrigger value="norms" className="text-xs">
