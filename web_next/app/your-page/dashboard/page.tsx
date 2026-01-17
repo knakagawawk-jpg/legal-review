@@ -1364,7 +1364,7 @@ function YourPageDashboardInner() {
                 <SidebarToggle />
                 <div className="relative">
                   <h1 className="text-3xl font-light tracking-wider text-foreground">
-                    <span className="font-bold text-slate-900/80">Dash</span>
+                    <span className="font-bold text-amber-900">Dash</span>
                     <span className="text-amber-500 font-medium">board</span>
                   </h1>
                   <div className="absolute -bottom-1 left-0 w-full h-0.5 bg-gradient-to-r from-amber-400 via-amber-500 to-transparent rounded-full" />
@@ -1445,7 +1445,7 @@ function YourPageDashboardInner() {
             <Card className="shadow-sm">
               <CardHeader className="py-1.5 px-3">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-xs font-medium flex items-center gap-1.5">
+                  <CardTitle className="text-xs font-medium flex items-center gap-1.5 text-amber-900/80">
                     <Lightbulb className="h-3.5 w-3.5 text-amber-200/60" />
                     Today&apos;s MEMO
                   </CardTitle>
@@ -1493,7 +1493,7 @@ function YourPageDashboardInner() {
             <Card className="shadow-sm">
               <CardHeader className="py-1.5 px-3">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-xs font-medium flex items-center gap-1.5">
+                  <CardTitle className="text-xs font-medium flex items-center gap-1.5 text-amber-900/80">
                     <ListTodo className="h-3.5 w-3.5 text-amber-200/60" />
                     Today&apos;s Goals & Topics
                   </CardTitle>
@@ -1542,7 +1542,7 @@ function YourPageDashboardInner() {
             {/* Topics to Revisit */}
             <Card className="shadow-sm">
               <CardHeader className="py-1.5 px-3 flex flex-row items-center justify-between">
-                <CardTitle className="text-xs font-medium flex items-center gap-1.5">
+                <CardTitle className="text-xs font-medium flex items-center gap-1.5 text-amber-900/80">
                   <RotateCcw className="h-3.5 w-3.5 text-amber-200/60" />
                   Topics to Revisit
                 </CardTitle>
@@ -1596,7 +1596,7 @@ function YourPageDashboardInner() {
             {/* Yesterday's Review */}
             <Card className="shadow-sm">
               <CardHeader className="py-1.5 px-3">
-                <CardTitle className="text-xs font-medium flex items-center gap-1.5">
+                <CardTitle className="text-xs font-medium flex items-center gap-1.5 text-amber-900/80">
                   <RotateCcw className="h-3.5 w-3.5 text-amber-200/60" />
                   昨日の復習問題
                 </CardTitle>
