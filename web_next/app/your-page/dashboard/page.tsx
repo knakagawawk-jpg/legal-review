@@ -497,6 +497,8 @@ function YourPageDashboardInner() {
 
   // Handle timer toggle
   const handleTimerToggle = async (enabled: boolean) => {
+    // 楽観的更新: すぐに状態を更新
+    setTimerEnabled(enabled)
     try {
       if (enabled) {
         await handleTimerStart()

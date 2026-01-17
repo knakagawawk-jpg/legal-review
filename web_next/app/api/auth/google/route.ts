@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { cookies } from "next/headers"
 
 const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:8000"
 
@@ -36,6 +37,20 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await response.json()
+    
+    // バックエンドから返されたJWTトークン（またはGoogle IDトークン）をクッキーに設定
+    const authToken = data.access_token || token
+    const cookieStore = await cookies()
+    
+    // クッキーにトークンを設定（30日間有効）
+    cookieStore.set("auth_token", authToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 30, // 30日
+      path: "/",
+    })
+
     return NextResponse.json(data)
   } catch (error: any) {
     console.error("Auth error:", error)

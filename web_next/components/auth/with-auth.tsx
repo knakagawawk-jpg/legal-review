@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
 import { Loader2 } from "lucide-react"
+import { authStorage } from "@/lib/auth-storage"
 
 interface WithAuthOptions {
   redirectTo?: string
@@ -32,8 +33,13 @@ export function withAuth<P extends object>(
     }, [])
 
     useEffect(() => {
+      // 認証チェック: マウント済み、ローディング完了、認証が必要、かつ未認証の場合のみリダイレクト
       if (mounted && !isLoading && requireAuth && !isAuthenticated) {
-        router.push(redirectTo)
+        // ストレージから直接トークンを確認（認証コンテキストの更新を待つため）
+        const hasToken = authStorage.getToken()
+        if (!hasToken) {
+          router.push(redirectTo)
+        }
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mounted, isLoading, isAuthenticated, router])

@@ -70,10 +70,15 @@ export default function ReviewResultPage() {
   useEffect(() => {
     const fetchReview = async () => {
       try {
+        setLoading(true)
+        setError(null)
         const data = await apiClient.get<ReviewResponse>(`/api/reviews/${reviewId}`)
         setReview(data)
       } catch (err: any) {
-        setError(err.message || "講評の取得に失敗しました")
+        console.error("Review fetch error:", err)
+        // エラーの詳細を取得
+        const errorMessage = err?.error || err?.message || "講評の取得に失敗しました"
+        setError(errorMessage)
       } finally {
         setLoading(false)
       }
@@ -81,6 +86,9 @@ export default function ReviewResultPage() {
 
     if (reviewId) {
       fetchReview()
+    } else {
+      setError("review_idが指定されていません")
+      setLoading(false)
     }
   }, [reviewId])
 

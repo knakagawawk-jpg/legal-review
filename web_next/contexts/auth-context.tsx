@@ -79,11 +79,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [fetchUserInfo])
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
     setUser(null)
     setToken(null)
     setError(null)
     authStorage.clear()
+    
+    // サーバー側のクッキーも削除
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+      })
+    } catch (error) {
+      console.error("Failed to clear server-side cookie:", error)
+      // エラーが発生しても続行（クライアント側のストレージは既にクリア済み）
+    }
   }, [])
 
   const clearError = useCallback(() => {

@@ -3,8 +3,9 @@
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, FileText, BookOpen, StickyNote } from "lucide-react"
-import { useMemo, Suspense } from "react"
+import { LayoutDashboard, FileText, BookOpen, StickyNote, ChevronDown } from "lucide-react"
+import { useMemo, Suspense, useState } from "react"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
 const yourPageNav = [
   {
@@ -44,6 +45,7 @@ function YourPageSectionInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const isDashboardActive = pathname === "/your-page/dashboard" || pathname?.startsWith("/your-page/dashboard")
+  const [isDateListOpen, setIsDateListOpen] = useState(true)
 
   // 過去5日分の日付を計算
   const dateOptions = useMemo(() => {
@@ -95,25 +97,31 @@ function YourPageSectionInner() {
             
             {/* ダッシュボード選択中は日付選択を表示 */}
             {isDashboard && isDashboardActive && (
-              <div className="mt-1 ml-7 space-y-0.5">
-                {dateOptions.map((option) => {
-                  const isSelected = option.dateString === currentSelectedDate
-                  return (
-                    <button
-                      key={option.dateString}
-                      onClick={() => handleDateClick(option.dateString)}
-                      className={cn(
-                        "w-full text-left px-2 py-1 text-xs rounded transition-colors",
-                        isSelected
-                          ? "bg-blue-200/60 text-blue-800 font-medium"
-                          : "text-slate-500 hover:bg-blue-50/60 hover:text-slate-700"
-                      )}
-                    >
-                      {option.label}
-                    </button>
-                  )
-                })}
-              </div>
+              <Collapsible open={isDateListOpen} onOpenChange={setIsDateListOpen}>
+                <CollapsibleTrigger className="mt-1 ml-7 flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors w-full px-2 py-1 rounded">
+                  <ChevronDown className={cn("h-3 w-3 transition-transform", isDateListOpen && "rotate-180")} />
+                  <span>過去5日分</span>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-0.5 ml-7 space-y-0.5">
+                  {dateOptions.map((option) => {
+                    const isSelected = option.dateString === currentSelectedDate
+                    return (
+                      <button
+                        key={option.dateString}
+                        onClick={() => handleDateClick(option.dateString)}
+                        className={cn(
+                          "w-full text-left px-2 py-1 text-xs rounded transition-colors",
+                          isSelected
+                            ? "bg-blue-200/60 text-blue-800 font-medium"
+                            : "text-slate-500 hover:bg-blue-50/60 hover:text-slate-700"
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    )
+                  })}
+                </CollapsibleContent>
+              </Collapsible>
             )}
           </div>
         )

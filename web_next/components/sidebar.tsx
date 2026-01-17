@@ -81,12 +81,8 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   
   useEffect(() => {
     if (mounted) {
-      // マウント後にパスに基づいて状態を設定
-      if (pathname === "/") {
-        setIsOpen(false)
-      } else {
-        setIsOpen(true)
-      }
+      // すべてのページでデフォルトでサイドバーを開く
+      setIsOpen(true)
     }
   }, [pathname, mounted])
   
