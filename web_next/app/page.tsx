@@ -132,6 +132,9 @@ export default function HomePage() {
           <span className="text-xs text-slate-400 font-medium">v0.1.0 Beta</span>
           <div className="h-px w-12 bg-gradient-to-l from-transparent to-slate-200" />
         </div>
+        <p className="text-xs text-slate-400 text-center max-w-md mt-2">
+          あくまでも司法試験受験勉強を補助するツールであり法的なアドバイスを行うサービスではありません。
+        </p>
       </div>
     </div>
   )

@@ -221,6 +221,7 @@ function YourPageDashboardInner() {
   const [revisitTab, setRevisitTab] = useState<"7days" | "whole">("7days")
   const [timerEnabled, setTimerEnabled] = useState(false)
   const [isTimerToggling, setIsTimerToggling] = useState(false) // タイマー操作中のフラグ
+  const isTimerTogglingRef = useRef(false) // refで管理（useEffectの依存配列を避けるため）
   const [timerDetailsOpen, setTimerDetailsOpen] = useState(false)
   const [elapsedTime, setElapsedTime] = useState(0)
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
@@ -423,8 +424,8 @@ function YourPageDashboardInner() {
 
   // Load timer data
   const loadTimerData = useCallback(async (skipStateUpdate = false) => {
-    // タイマー操作中は状態を上書きしない
-    if (isTimerToggling) {
+    // タイマー操作中は状態を上書きしない（refでチェック）
+    if (isTimerTogglingRef.current) {
       return
     }
     
@@ -437,6 +438,11 @@ function YourPageDashboardInner() {
       
       // skipStateUpdateがtrueの場合は状態を更新しない（handleTimerStart/Stopで既に更新済み）
       if (skipStateUpdate) {
+        return
+      }
+      
+      // タイマー操作中でない場合のみ状態を更新
+      if (isTimerTogglingRef.current) {
         return
       }
       
@@ -454,7 +460,7 @@ function YourPageDashboardInner() {
     } catch (error) {
       console.error("Failed to load timer data:", error)
       // エラー時は空のデータを設定（操作中でない場合のみ）
-      if (!isTimerToggling && !skipStateUpdate) {
+      if (!isTimerTogglingRef.current && !skipStateUpdate) {
         const studyDate = getStudyDate()
         setTimerDailyStats({ study_date: studyDate, total_seconds: 0, sessions_count: 0 })
         setTimerSessions([])
@@ -463,7 +469,7 @@ function YourPageDashboardInner() {
         setTimerEnabled(false)
       }
     }
-  }, [isTimerToggling])
+  }, []) // 依存配列を空にして、再作成を防ぐ
 
   useEffect(() => {
     loadTimerData()
@@ -515,6 +521,7 @@ function YourPageDashboardInner() {
   // Handle timer toggle
   const handleTimerToggle = async (enabled: boolean) => {
     setIsTimerToggling(true)
+    isTimerTogglingRef.current = true // refも更新
     // 楽観的更新: すぐに状態を更新
     setTimerEnabled(enabled)
     try {
@@ -530,14 +537,17 @@ function YourPageDashboardInner() {
       // エラー時は状態を元に戻す
       setTimerEnabled(!enabled)
       // エラー時はloadTimerDataを呼んで最新の状態を取得
+      isTimerTogglingRef.current = false // エラー時はrefを解除してからloadTimerDataを呼ぶ
+      setIsTimerToggling(false)
       await loadTimerData(false)
-    } finally {
-      // 操作完了後、少し遅延してフラグを解除
-      // 成功時は既に状態が設定済みなので、loadTimerDataを再実行しない
-      setTimeout(() => {
-        setIsTimerToggling(false)
-      }, 1000) // 500msから1000msに延長して、確実に操作が完了するまで待つ
+      return // 早期リターンしてfinallyをスキップ
     }
+    // 成功時は、少し遅延してフラグを解除
+    // 成功時は既に状態が設定済みなので、loadTimerDataを再実行しない
+    setTimeout(() => {
+      setIsTimerToggling(false)
+      isTimerTogglingRef.current = false // refも解除
+    }, 2000) // 2000msに延長して、確実に操作が完了するまで待つ
   }
 
   // Load dashboard items
