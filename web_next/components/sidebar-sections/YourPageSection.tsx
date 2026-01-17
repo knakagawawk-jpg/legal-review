@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { LayoutDashboard, FileText, BookOpen, StickyNote } from "lucide-react"
-import { useMemo } from "react"
+import { useMemo, Suspense } from "react"
 
 const yourPageNav = [
   {
@@ -39,7 +39,7 @@ function getDateString(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
-export function YourPageSection() {
+function YourPageSectionInner() {
   const pathname = usePathname()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -119,5 +119,19 @@ export function YourPageSection() {
         )
       })}
     </div>
+  )
+}
+
+export function YourPageSection() {
+  return (
+    <Suspense fallback={
+      <div className="space-y-1 px-2">
+        <div className="h-10 bg-slate-100 rounded-lg animate-pulse" />
+        <div className="h-10 bg-slate-100 rounded-lg animate-pulse" />
+        <div className="h-10 bg-slate-100 rounded-lg animate-pulse" />
+      </div>
+    }>
+      <YourPageSectionInner />
+    </Suspense>
   )
 }
