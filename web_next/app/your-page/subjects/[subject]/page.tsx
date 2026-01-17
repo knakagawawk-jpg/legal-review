@@ -29,8 +29,12 @@ function SubjectPage() {
       const historyStr = localStorage.getItem('recent_subject_pages')
       if (historyStr) {
         const history: Array<{ subject: string; timestamp: number }> = JSON.parse(historyStr)
-        if (history.length > 0 && FIXED_SUBJECTS.includes(history[0].subject)) {
-          return history[0].subject
+        if (history.length > 0) {
+          const subject = history[0].subject
+          // 型ガード: FIXED_SUBJECTSに含まれるかチェック
+          if (FIXED_SUBJECTS.includes(subject as typeof FIXED_SUBJECTS[number])) {
+            return subject
+          }
         }
       }
     } catch (error) {
