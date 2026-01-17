@@ -169,98 +169,58 @@ function MemoField({
 }) {
   const [isFocused, setIsFocused] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  // 行数を計算（改行を考慮）
-  const lineCount = value ? value.split('\n').length : 1
+  const lineHeight = 24 // 1.5rem = 24px
   const inputHeight = 7.5 // 入力時高さ（5行分: 1.5rem * 5）
+  const maxHeight = inputHeight * 16 // 7.5rem = 120px (16px基準)
 
-  // フォーカス時にテキストエリアの高さを調整
-  useEffect(() => {
-    if (textareaRef.current) {
-      const lineHeight = 24 // 1.5rem = 24px
+  // 高さを調整する関数（統一ロジック）
+  const adjustHeight = useCallback(() => {
+    if (!textareaRef.current) return
 
-      if (isFocused) {
-        // 入力時：まず高さをリセットして正確なscrollHeightを取得
-        textareaRef.current.style.height = 'auto'
-        const scrollHeight = textareaRef.current.scrollHeight
-        // 入力時：5行分の高さに設定、それ以上はスクロール
-        const maxHeight = inputHeight * 16 // 7.5rem = 120px (16px基準)
-        textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
-        textareaRef.current.style.maxHeight = `${maxHeight}px`
-      } else {
-        // 表示時：デフォルトは1行、内容に応じて2行または3行
-        // まず高さをリセットして正確なscrollHeightを取得
-        textareaRef.current.style.height = '1.5rem' // まず1行分に設定
-        const scrollHeight = textareaRef.current.scrollHeight
+    if (isFocused) {
+      // 入力時：5行分の高さに設定、それ以上はスクロール
+      textareaRef.current.style.height = 'auto'
+      const scrollHeight = textareaRef.current.scrollHeight
+      textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
+      textareaRef.current.style.maxHeight = `${maxHeight}px`
+    } else {
+      // 表示時：空の場合は確実に1行
+      if (!value || value.trim() === '') {
+        textareaRef.current.style.height = '1.5rem'
+        textareaRef.current.style.maxHeight = '1.5rem'
+        return
+      }
 
-        const oneLineHeight = lineHeight // 1行分の高さ
-        const twoLineHeight = lineHeight * 2 // 2行分の高さ
-        const threeLineHeight = lineHeight * 3 // 3行分の高さ
+      // まず高さを1行に設定して正確なscrollHeightを取得
+      textareaRef.current.style.height = '1.5rem'
+      const scrollHeight = textareaRef.current.scrollHeight
 
-        let displayLines = 1 // デフォルトは1行
-
-        // scrollHeightに基づいて行数を判定
-        if (scrollHeight <= oneLineHeight) {
-          // 1行以下（空の場合も含む）
-          displayLines = 1
-        } else if (scrollHeight <= twoLineHeight) {
-          // 2行
+      // scrollHeightに基づいて行数を判定
+      let displayLines = 1
+      if (scrollHeight > lineHeight + 1) {
+        if (scrollHeight <= lineHeight * 2 + 1) {
           displayLines = 2
         } else {
-          // 3行以上
           displayLines = 3
         }
-
-        const displayHeight = displayLines * lineHeight
-        textareaRef.current.style.height = `${displayHeight}px`
-        textareaRef.current.style.maxHeight = `${displayHeight}px`
       }
+
+      const displayHeight = displayLines * lineHeight
+      textareaRef.current.style.height = `${displayHeight}px`
+      textareaRef.current.style.maxHeight = `${displayHeight}px`
     }
-  }, [isFocused, value, inputHeight])
+  }, [isFocused, value, lineHeight, maxHeight])
+
+  // フォーカス・値変更時に高さを調整
+  useEffect(() => {
+    adjustHeight()
+  }, [adjustHeight])
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onChange(e)
-    // onChangeの後に高さを再計算
+    // onChangeの後に高さを再計算（次のレンダリングサイクルで）
     setTimeout(() => {
-      if (textareaRef.current) {
-        const lineHeight = 24 // 1.5rem = 24px
-        const newValue = e.target.value
-
-        if (isFocused) {
-          // 入力時：まず高さをリセットして正確なscrollHeightを取得
-          textareaRef.current.style.height = 'auto'
-          const scrollHeight = textareaRef.current.scrollHeight
-          const maxHeight = inputHeight * 16
-          textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
-        } else {
-          // 表示時：デフォルトは1行、内容に応じて2行または3行
-          // まず高さを1行に設定して正確なscrollHeightを取得
-          textareaRef.current.style.height = '1.5rem' // まず1行分に設定
-          const scrollHeight = textareaRef.current.scrollHeight
-
-          const oneLineHeight = lineHeight
-          const twoLineHeight = lineHeight * 2
-          const threeLineHeight = lineHeight * 3
-
-          let displayLines = 1 // デフォルトは1行
-
-          // scrollHeightに基づいて行数を判定
-          if (scrollHeight <= oneLineHeight) {
-            // 1行以下（空の場合も含む）
-            displayLines = 1
-          } else if (scrollHeight <= twoLineHeight) {
-            // 2行
-            displayLines = 2
-          } else {
-            // 3行以上
-            displayLines = 3
-          }
-
-          const displayHeight = displayLines * lineHeight
-          textareaRef.current.style.height = `${displayHeight}px`
-          textareaRef.current.style.maxHeight = `${displayHeight}px`
-        }
-      }
+      adjustHeight()
     }, 0)
   }
 
@@ -301,7 +261,8 @@ function MemoField({
       )}
       style={{
         lineHeight: '1.5rem',
-        height: isFocused ? undefined : '1.5rem', // 表示時はデフォルト1行
+        height: (!value || value.trim() === '') && !isFocused ? '1.5rem' : undefined, // 空かつ非フォーカス時は確実に1行
+        minHeight: isFocused ? '7.5rem' : '1.5rem', // フォーカス時は5行、非フォーカス時は1行
       }}
     />
   )
@@ -690,9 +651,15 @@ function YourPageDashboardInner() {
     }
   }, []) // 依存配列を空にして、再作成を防ぐ
 
+  // 初期マウント時のみloadTimerDataを実行
   useEffect(() => {
+    // タイマー操作中はloadTimerDataを実行しない
+    if (isTimerTogglingRef.current) {
+      return
+    }
     loadTimerData()
-  }, [loadTimerData])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // 依存配列を空にして、マウント時のみ実行
 
   // Handle timer start
   const handleTimerStart = async () => {
@@ -739,18 +706,21 @@ function YourPageDashboardInner() {
 
   // Handle timer toggle
   const handleTimerToggle = async (enabled: boolean) => {
+    // まずrefを設定して、loadTimerDataが実行されないようにする（最優先）
+    isTimerTogglingRef.current = true
     setIsTimerToggling(true)
-    isTimerTogglingRef.current = true // refも更新
+
     // 楽観的更新: すぐに状態を更新
     setTimerEnabled(enabled)
+
     try {
       if (enabled) {
         await handleTimerStart()
       } else {
         await handleTimerStop()
       }
-      // 成功時は状態を確定（既に楽観的更新で設定済み）
-      // handleTimerStart/Stopで直接状態を設定しているため、loadTimerDataを呼ぶ必要はない
+      // 成功時は状態を確定（既に楽観的更新とhandleTimerStart/Stopで設定済み）
+      // loadTimerDataを呼ぶ必要はない
     } catch (error) {
       console.error("Failed to toggle timer:", error)
       // エラー時は状態を元に戻す
@@ -761,12 +731,13 @@ function YourPageDashboardInner() {
       await loadTimerData(false)
       return // 早期リターンしてfinallyをスキップ
     }
-    // 成功時は、少し遅延してフラグを解除
-    // 成功時は既に状態が設定済みなので、loadTimerDataを再実行しない
+
+    // 成功時は、十分な遅延後にフラグを解除
+    // この間、loadTimerDataはisTimerTogglingRef.currentでブロックされる
     setTimeout(() => {
+      isTimerTogglingRef.current = false
       setIsTimerToggling(false)
-      isTimerTogglingRef.current = false // refも解除
-    }, 2000) // 2000msに延長して、確実に操作が完了するまで待つ
+    }, 5000) // 5000msに延長して、確実に操作が完了し、loadTimerDataが実行されないようにする
   }
 
   // Load dashboard items
