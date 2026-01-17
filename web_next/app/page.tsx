@@ -56,10 +56,12 @@ export default function HomePage() {
   const { isOpen } = useSidebar()
   
   return (
-    <div className={cn(
-      "min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 flex flex-col items-center justify-center px-6 pt-24 pb-12 transition-all duration-300",
-      isOpen && "ml-52"
-    )}>
+    <div 
+      className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 flex flex-col items-center justify-center px-6 pt-24 pb-12 transition-all duration-300"
+      style={{
+        paddingLeft: isOpen ? '208px' : '0',
+      }}
+    >
       {/* サイドバーを開くボタン */}
       <div className="fixed top-4 left-4 z-50">
         <SidebarToggle />

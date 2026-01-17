@@ -184,7 +184,12 @@ function PastExamsPage() {
   }
 
   return (
-    <div className={cn("min-h-screen bg-gradient-to-b from-amber-50/80 to-orange-50/30 transition-all duration-300", isOpen && "ml-52")}>
+    <div 
+      className="min-h-screen bg-gradient-to-b from-amber-50/80 to-orange-50/30 transition-all duration-300"
+      style={{
+        paddingLeft: isOpen ? '208px' : '0',
+      }}
+    >
       {/* Fixed Header */}
       <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-amber-200/60 shadow-sm">
         <div className="container mx-auto px-20 py-3 max-w-6xl">

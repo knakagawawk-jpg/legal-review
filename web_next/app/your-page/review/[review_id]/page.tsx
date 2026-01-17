@@ -100,7 +100,12 @@ export default function ReviewResultPage() {
 
   if (loading) {
     return (
-      <div className={cn("h-screen bg-background flex flex-col overflow-hidden transition-all duration-300", isOpen && "ml-52")}>
+      <div 
+        className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
+        style={{
+          paddingLeft: isOpen ? '208px' : '0',
+        }}
+      >
         <div className="container mx-auto px-5 py-12">
           <div className="space-y-6">
             <Skeleton className="h-12 w-64" />
@@ -114,7 +119,12 @@ export default function ReviewResultPage() {
 
   if (error || !review) {
     return (
-      <div className={cn("h-screen bg-background flex flex-col overflow-hidden transition-all duration-300", isOpen && "ml-52")}>
+      <div 
+        className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
+        style={{
+          paddingLeft: isOpen ? '208px' : '0',
+        }}
+      >
         <div className="container mx-auto px-5 py-12">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
@@ -196,7 +206,10 @@ export default function ReviewResultPage() {
 
   return (
     <div 
-      className={cn("h-screen bg-background flex flex-col overflow-hidden transition-all duration-300", isOpen && "ml-52")}
+      className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
+      style={{
+        paddingLeft: isOpen ? '208px' : '0',
+      }}
     >
       <header className="border-b border-border shrink-0 bg-gradient-to-r from-primary/5 via-transparent to-accent/5">
         <div className="px-5 py-1.5 flex items-center justify-between">
