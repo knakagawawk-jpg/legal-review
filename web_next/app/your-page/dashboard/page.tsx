@@ -88,6 +88,110 @@ const POINT_STATUS_OPTIONS = [
   { value: 4, label: "その他", color: "bg-gray-100 text-gray-700" },
 ]
 
+// Memo Field Component
+function MemoField({
+  value,
+  onChange,
+  onBlur,
+  onKeyDown,
+  placeholder = "",
+}: {
+  value: string
+  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
+  onBlur?: () => void
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
+  placeholder?: string
+}) {
+  const [isFocused, setIsFocused] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // 行数を計算（改行を考慮）
+  const lineCount = value ? value.split('\n').length : 1
+  const minDisplayHeight = 1.5 // 最小表示高さ（1行分）
+  const maxDisplayHeight = 4.5 // 最大表示高さ（3行分: 1.5rem * 3）
+  const inputHeight = 7.5 // 入力時高さ（5行分: 1.5rem * 5）
+
+  // フォーカス時にテキストエリアの高さを調整
+  useEffect(() => {
+    if (textareaRef.current) {
+      // まず高さをリセットして正確なscrollHeightを取得
+      textareaRef.current.style.height = 'auto'
+      const scrollHeight = textareaRef.current.scrollHeight
+      
+      if (isFocused) {
+        // 入力時：5行分の高さに設定、それ以上はスクロール
+        const maxHeight = inputHeight * 16 // 7.5rem = 120px (16px基準)
+        textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
+        textareaRef.current.style.maxHeight = `${maxHeight}px`
+      } else {
+        // 表示時：3行まで表示（折り返し含む）
+        const maxHeight = maxDisplayHeight * 16 // 4.5rem = 72px
+        textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
+        textareaRef.current.style.maxHeight = `${maxHeight}px`
+      }
+    }
+  }, [isFocused, value, maxDisplayHeight, inputHeight])
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    onChange(e)
+    // onChangeの後に高さを再計算
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto'
+        const scrollHeight = textareaRef.current.scrollHeight
+        if (isFocused) {
+          const maxHeight = inputHeight * 16
+          textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
+        } else {
+          const maxHeight = maxDisplayHeight * 16
+          textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
+        }
+      }
+    }, 0)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Shift+Enterで改行、Enterのみで確定（デフォルト動作を防ぐ）
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      textareaRef.current?.blur()
+      if (onBlur) {
+        onBlur()
+      }
+      return
+    }
+    if (onKeyDown) {
+      onKeyDown(e)
+    }
+  }
+
+  return (
+    <Textarea
+      ref={textareaRef}
+      value={value}
+      onChange={handleChange}
+      onKeyDown={handleKeyDown}
+      onFocus={() => setIsFocused(true)}
+      onBlur={(e) => {
+        setIsFocused(false)
+        if (onBlur) {
+          onBlur()
+        }
+      }}
+      placeholder={placeholder || "メモを入力..."}
+      className={cn(
+        "text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0 resize-none whitespace-pre-wrap break-words py-1 px-0",
+        isFocused 
+          ? "overflow-y-auto min-h-[7.5rem]" // 入力時：5行分、スクロール可能
+          : "overflow-hidden min-h-[1.5rem]" // 表示時：3行まで、スクロールなし
+      )}
+      style={{
+        lineHeight: '1.5rem',
+      }}
+    />
+  )
+}
+
 // Sortable Row Component
 function SortableRow({
   item,
@@ -831,7 +935,7 @@ function YourPageDashboardInner() {
             </SelectContent>
           </Select>
         </TableCell>
-        <TableCell className="py-1.5 px-1 w-60">
+        <TableCell className="py-1.5 px-1 w-[120px]">
           <Input
             value={item.item}
             onChange={(e) => updateItemField(item, "item", e.target.value)}
@@ -856,11 +960,10 @@ function YourPageDashboardInner() {
             </SelectContent>
           </Select>
         </TableCell>
-        <TableCell className="py-1.5 px-1">
-          <Input
+        <TableCell className="py-1.5 px-1 align-top">
+          <MemoField
             value={item.memo || ""}
             onChange={(e) => updateItemField(item, "memo", e.target.value)}
-            className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
           />
         </TableCell>
       </SortableRow>
@@ -973,11 +1076,10 @@ function YourPageDashboardInner() {
             </SelectContent>
           </Select>
         </TableCell>
-        <TableCell className="py-1.5 px-1">
-          <Input
+        <TableCell className="py-1.5 px-1 align-top">
+          <MemoField
             value={item.memo || ""}
             onChange={(e) => updateItemField(item, "memo", e.target.value)}
-            className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
           />
         </TableCell>
       </SortableRow>
@@ -1090,11 +1192,10 @@ function YourPageDashboardInner() {
             </SelectContent>
           </Select>
         </TableCell>
-        <TableCell className="py-1.5 px-1">
-          <Input
+        <TableCell className="py-1.5 px-1 align-top">
+          <MemoField
             value={item.memo || ""}
             onChange={(e) => updateItemField(item, "memo", e.target.value)}
-            className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
           />
         </TableCell>
       </SortableRow>
@@ -1205,7 +1306,7 @@ function YourPageDashboardInner() {
               </SelectContent>
             </Select>
           </TableCell>
-          <TableCell className="py-1.5 px-1 w-60">
+          <TableCell className="py-1.5 px-1 w-[120px]">
             <Input
               value={draft.item || ""}
               onChange={(e) => updateDraft("item", e.target.value)}
@@ -1238,13 +1339,12 @@ function YourPageDashboardInner() {
               </SelectContent>
             </Select>
           </TableCell>
-          <TableCell className="py-1.5 px-1">
-            <Input
+          <TableCell className="py-1.5 px-1 align-top">
+            <MemoField
               value={draft.memo || ""}
               onChange={(e) => updateDraft("memo", e.target.value)}
               onBlur={handleBlur}
               onKeyDown={handleKeyDown}
-              className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
             />
           </TableCell>
         </TableRow>
@@ -1338,13 +1438,12 @@ function YourPageDashboardInner() {
               </SelectContent>
             </Select>
           </TableCell>
-          <TableCell className="py-1.5 px-1">
-            <Input
+          <TableCell className="py-1.5 px-1 align-top">
+            <MemoField
               value={draft.memo || ""}
               onChange={(e) => updateDraft("memo", e.target.value)}
               onBlur={handleBlur}
               onKeyDown={handleKeyDown}
-              className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
             />
           </TableCell>
         </TableRow>
@@ -1374,7 +1473,7 @@ function YourPageDashboardInner() {
               <div className="flex items-center gap-2 mt-1.5 ml-12">
                 <span className="text-xs text-muted-foreground font-light tracking-wide">{getGreeting()}</span>
                 <span className="text-xs text-muted-foreground">|</span>
-                <span className="text-xs font-medium text-amber-200/60">{formatDate(selectedDate)}</span>
+                <span className="text-xs font-medium text-amber-900/80">{formatDate(selectedDate)}</span>
               </div>
             </div>
 
@@ -1472,7 +1571,7 @@ function YourPageDashboardInner() {
                         <tr className="border-b border-border text-xs text-muted-foreground">
                           <th className="py-1 px-1 w-6"></th>
                           <th className="py-1 px-0.5 w-14 text-left font-medium">科目</th>
-                          <th className="py-1 px-1 w-60 text-left font-medium">項目</th>
+                          <th className="py-1 px-1 w-[120px] text-left font-medium">項目</th>
                           <th className="py-1 px-0 w-14 text-left font-medium">種類</th>
                           <th className="py-1 px-1 text-left font-medium">メモ</th>
                         </tr>
