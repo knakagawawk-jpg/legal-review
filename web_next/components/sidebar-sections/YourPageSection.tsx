@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { LayoutDashboard, FileText, BookOpen, StickyNote, ChevronDown } from "lucide-react"
-import { useMemo, Suspense, useState, useEffect } from "react"
+import { useMemo, Suspense, useState } from "react"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
 const yourPageNav = [
@@ -49,16 +49,8 @@ function YourPageSectionInner() {
   const isSubjectsActive = pathname?.startsWith("/your-page/subjects/")
   const isYourPageActive = isDashboardActive || isPastQuestionsActive || isSubjectsActive
   
-  // Dashboardの場合は展開、それ以外は折りたたみ
-  const [isDateListOpen, setIsDateListOpen] = useState(() => {
-    if (typeof window === 'undefined') return false
-    return isDashboardActive
-  })
-  
-  // パス変更時に折りたたみ状態を更新
-  useEffect(() => {
-    setIsDateListOpen(isDashboardActive)
-  }, [isDashboardActive])
+  // 過去5日分は常にデフォルトで閉じた状態
+  const [isDateListOpen, setIsDateListOpen] = useState(false)
 
   // 過去5日分の日付を計算
   const dateOptions = useMemo(() => {

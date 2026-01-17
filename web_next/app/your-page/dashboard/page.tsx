@@ -130,7 +130,7 @@ const SUBJECT_COLORS: Record<string, string> = {
   "憲法": "bg-red-100 text-red-700",
   "行政法": "bg-rose-100 text-rose-700",
   "国際関係法（公法系）": "bg-pink-100 text-pink-700",
-  
+
   // 民事系（青系）
   "民法": "bg-blue-100 text-blue-700",
   "商法": "bg-cyan-100 text-cyan-700",
@@ -141,12 +141,12 @@ const SUBJECT_COLORS: Record<string, string> = {
   "知的財産法": "bg-sky-200 text-sky-800",
   "労働法": "bg-indigo-200 text-indigo-800",
   "国際関係法（私法系）": "bg-blue-300 text-blue-900",
-  
+
   // 刑事系（緑系）
   "刑法": "bg-green-100 text-green-700",
   "刑事訴訟法": "bg-emerald-100 text-emerald-700",
   "実務基礎（刑事）": "bg-lime-100 text-lime-700",
-  
+
   // その他
   "経済法": "bg-yellow-100 text-yellow-700",
   "環境法": "bg-amber-100 text-amber-700",
@@ -178,7 +178,7 @@ function MemoField({
   useEffect(() => {
     if (textareaRef.current) {
       const lineHeight = 24 // 1.5rem = 24px
-      
+
       if (isFocused) {
         // 入力時：まず高さをリセットして正確なscrollHeightを取得
         textareaRef.current.style.height = 'auto'
@@ -190,15 +190,15 @@ function MemoField({
       } else {
         // 表示時：デフォルトは1行、内容に応じて2行または3行
         // まず高さをリセットして正確なscrollHeightを取得
-        textareaRef.current.style.height = 'auto'
+        textareaRef.current.style.height = '1.5rem' // まず1行分に設定
         const scrollHeight = textareaRef.current.scrollHeight
-        
+
         const oneLineHeight = lineHeight // 1行分の高さ
         const twoLineHeight = lineHeight * 2 // 2行分の高さ
         const threeLineHeight = lineHeight * 3 // 3行分の高さ
-        
+
         let displayLines = 1 // デフォルトは1行
-        
+
         // scrollHeightに基づいて行数を判定
         if (scrollHeight <= oneLineHeight) {
           // 1行以下（空の場合も含む）
@@ -210,7 +210,7 @@ function MemoField({
           // 3行以上
           displayLines = 3
         }
-        
+
         const displayHeight = displayLines * lineHeight
         textareaRef.current.style.height = `${displayHeight}px`
         textareaRef.current.style.maxHeight = `${displayHeight}px`
@@ -225,7 +225,7 @@ function MemoField({
       if (textareaRef.current) {
         const lineHeight = 24 // 1.5rem = 24px
         const newValue = e.target.value
-        
+
         if (isFocused) {
           // 入力時：まず高さをリセットして正確なscrollHeightを取得
           textareaRef.current.style.height = 'auto'
@@ -234,16 +234,16 @@ function MemoField({
           textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
         } else {
           // 表示時：デフォルトは1行、内容に応じて2行または3行
-          // まず高さをリセットして正確なscrollHeightを取得
-          textareaRef.current.style.height = 'auto'
+          // まず高さを1行に設定して正確なscrollHeightを取得
+          textareaRef.current.style.height = '1.5rem' // まず1行分に設定
           const scrollHeight = textareaRef.current.scrollHeight
-          
+
           const oneLineHeight = lineHeight
           const twoLineHeight = lineHeight * 2
           const threeLineHeight = lineHeight * 3
-          
+
           let displayLines = 1 // デフォルトは1行
-          
+
           // scrollHeightに基づいて行数を判定
           if (scrollHeight <= oneLineHeight) {
             // 1行以下（空の場合も含む）
@@ -255,7 +255,7 @@ function MemoField({
             // 3行以上
             displayLines = 3
           }
-          
+
           const displayHeight = displayLines * lineHeight
           textareaRef.current.style.height = `${displayHeight}px`
           textareaRef.current.style.maxHeight = `${displayHeight}px`
@@ -295,12 +295,13 @@ function MemoField({
       placeholder={placeholder || "メモを入力..."}
       className={cn(
         "text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0 resize-none whitespace-pre-wrap break-words py-1 px-0",
-        isFocused 
+        isFocused
           ? "overflow-y-auto min-h-[7.5rem]" // 入力時：5行分、スクロール可能
-          : "overflow-hidden min-h-[1.5rem]" // 表示時：デフォルト1行、内容に応じて2-3行
+          : "overflow-hidden" // 表示時：高さはuseEffectで制御（デフォルト1行）
       )}
       style={{
         lineHeight: '1.5rem',
+        height: isFocused ? undefined : '1.5rem', // 表示時はデフォルト1行
       }}
     />
   )
@@ -390,7 +391,7 @@ function SortableRow({
           <GripVertical className="h-3 w-3 text-muted-foreground" />
         </button>
         {showMenu && (
-          <div 
+          <div
             ref={menuRef}
             className="absolute left-6 top-1/2 -translate-y-1/2 z-10 flex gap-1 bg-card border rounded shadow-lg p-1"
           >
@@ -443,45 +444,45 @@ function YourPageDashboardInner() {
   const [timerDetailsOpen, setTimerDetailsOpen] = useState(false)
   const [elapsedTime, setElapsedTime] = useState(0)
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
-  
+
   // Timer session state
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [activeSessionStartTime, setActiveSessionStartTime] = useState<Date | null>(null)
   const [timerSessions, setTimerSessions] = useState<TimerSession[]>([])
   const [timerDailyStats, setTimerDailyStats] = useState<TimerDailyStats | null>(null)
-  
+
   // Dashboard items
   const [points, setPoints] = useState<DashboardItem[]>([])
   const [tasks, setTasks] = useState<DashboardItem[]>([])
   const [leftItems, setLeftItems] = useState<DashboardItem[]>([])
-  
+
   // Draft state for empty rows (key: rowKey, value: draft data)
   const [draftRows, setDraftRows] = useState<Record<string, Partial<DashboardItem>>>({})
-  
+
   // Popover open state for date pickers (key: itemId, value: boolean)
   const [datePickerOpen, setDatePickerOpen] = useState<Record<number, boolean>>({})
-  
+
   // Popover open state for created date pickers (key: itemId, value: boolean)
   const [createdDatePickerOpen, setCreatedDatePickerOpen] = useState<Record<number, boolean>>({})
-  
+
   // Calculate empty rows count based on data length
   const getEmptyRowsCount = (dataLength: number) => {
     if (dataLength === 0) return 2
     if (dataLength === 1) return 1
     return 0
   }
-  
+
   // Get empty rows for Points
   const emptyPointsRowsCount = getEmptyRowsCount(points.length)
   const emptyPointsRows = Array.from({ length: emptyPointsRowsCount }, (_, i) => i)
-  
+
   // Get empty rows for Tasks
   const emptyTasksRowsCount = getEmptyRowsCount(tasks.length)
   const emptyTasksRows = Array.from({ length: emptyTasksRowsCount }, (_, i) => i)
-  
+
   // Subjects
   const [subjects, setSubjects] = useState<Subject[]>([])
-  
+
   // Current date (YYYY-MM-DD) - URLクエリパラメータから取得、なければ今日の日付
   const [currentDate, setCurrentDate] = useState(() => {
     const dateParam = searchParams.get("date")
@@ -496,7 +497,7 @@ function YourPageDashboardInner() {
     const jstDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }))
     return jstDate.toISOString().split("T")[0]
   })
-  
+
   // URLクエリパラメータの変更を監視
   useEffect(() => {
     const dateParam = searchParams.get("date")
@@ -507,11 +508,11 @@ function YourPageDashboardInner() {
       }
     }
   }, [searchParams])
-  
+
   // Debounce save
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const pendingSaves = useRef<Set<number>>(new Set())
-  
+
   // Timer logic
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null
@@ -552,21 +553,21 @@ function YourPageDashboardInner() {
   // Calculate running seconds for today (4:00 boundary)
   const calculateRunningSeconds = (): number => {
     if (!activeSessionStartTime) return 0
-    
+
     const now = new Date()
     const studyDate = getStudyDate()
     const todayStart = new Date(`${studyDate}T04:00:00+09:00`)
     const todayEnd = new Date(todayStart)
     todayEnd.setDate(todayEnd.getDate() + 1)
-    
+
     const sessionStart = new Date(activeSessionStartTime)
     const sessionEnd = now
-    
+
     const overlapStart = sessionStart > todayStart ? sessionStart : todayStart
     const overlapEnd = sessionEnd < todayEnd ? sessionEnd : todayEnd
-    
+
     if (overlapStart >= overlapEnd) return 0
-    
+
     return Math.floor((overlapEnd.getTime() - overlapStart.getTime()) / 1000)
   }
 
@@ -646,24 +647,24 @@ function YourPageDashboardInner() {
     if (isTimerTogglingRef.current) {
       return
     }
-    
+
     try {
       const studyDate = getStudyDate()
       const stats = await apiClient.get<TimerDailyStats>(`/api/timer/daily-stats?study_date=${studyDate}`)
       const sessions = await apiClient.get<TimerSession[]>(`/api/timer/sessions?study_date=${studyDate}`)
       setTimerDailyStats(stats)
       setTimerSessions(sessions)
-      
+
       // skipStateUpdateがtrueの場合は状態を更新しない（handleTimerStart/Stopで既に更新済み）
       if (skipStateUpdate) {
         return
       }
-      
+
       // タイマー操作中でない場合のみ状態を更新
       if (isTimerTogglingRef.current) {
         return
       }
-      
+
       // runningセッションを検出して状態を設定
       const runningSession = sessions.find(s => s.status === "running")
       if (runningSession) {
@@ -703,7 +704,7 @@ function YourPageDashboardInner() {
       daily_stats: TimerDailyStats
       sessions: TimerSession[]
     }>("/api/timer/start", {})
-    
+
     // レスポンスから直接状態を設定（loadTimerDataを呼ばない）
     setActiveSessionId(response.active_session_id)
     setActiveSessionStartTime(new Date(response.active_started_at_utc))
@@ -719,14 +720,14 @@ function YourPageDashboardInner() {
     if (!activeSessionId) {
       throw new Error("アクティブなセッションがありません")
     }
-    
+
     const response = await apiClient.post<{
       study_date: string
       confirmed_total_seconds: number
       daily_stats: TimerDailyStats
       sessions: TimerSession[]
     }>(`/api/timer/stop/${activeSessionId}`, {})
-    
+
     // レスポンスから直接状態を設定（loadTimerDataを呼ばない）
     setTimerDailyStats(response.daily_stats)
     setTimerSessions(response.sessions)
@@ -800,11 +801,11 @@ function YourPageDashboardInner() {
   // Debounced save function
   const debouncedSave = useCallback((itemId: number, updateData: Partial<DashboardItem>) => {
     pendingSaves.current.add(itemId)
-    
+
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current)
     }
-    
+
     saveTimeoutRef.current = setTimeout(async () => {
       try {
         await apiClient.put(`/api/dashboard/items/${itemId}`, updateData)
@@ -825,7 +826,7 @@ function YourPageDashboardInner() {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current)
       }
-      
+
       // Force save all pending items
       const pendingIds = Array.from(pendingSaves.current)
       for (const itemId of pendingIds) {
@@ -1015,7 +1016,7 @@ function YourPageDashboardInner() {
   const updateItemField = (item: DashboardItem, field: keyof DashboardItem, value: any) => {
     const updateData = { [field]: value }
     debouncedSave(item.id, updateData)
-    
+
     // Optimistic update
     if (item.entry_type === 1) {
       setPoints(prev => prev.map(p => p.id === item.id ? { ...p, [field]: value } : p))
@@ -1096,10 +1097,10 @@ function YourPageDashboardInner() {
     const selectedSubject = subjects.find(s => s.id === item.subject)
     const subjectColor = selectedSubject ? SUBJECT_COLORS[selectedSubject.name] || "" : ""
     return (
-      <SortableRow 
-        key={item.id} 
-        item={item} 
-        entryType={2} 
+      <SortableRow
+        key={item.id}
+        item={item}
+        entryType={2}
         onDelete={deleteItem}
         onEditCreatedDate={(id) => {
           setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
@@ -1144,8 +1145,8 @@ function YourPageDashboardInner() {
           />
         </TableCell>
         <TableCell className="py-1.5 px-1 w-12 text-xs text-muted-foreground text-center relative align-top">
-          <Popover 
-            open={createdDatePickerOpen[item.id] || false} 
+          <Popover
+            open={createdDatePickerOpen[item.id] || false}
             onOpenChange={(open) => setCreatedDatePickerOpen(prev => ({ ...prev, [item.id]: open }))}
           >
             <PopoverTrigger asChild>
@@ -1227,10 +1228,10 @@ function YourPageDashboardInner() {
     const selectedSubject = subjects.find(s => s.id === item.subject)
     const subjectColor = selectedSubject ? SUBJECT_COLORS[selectedSubject.name] || "" : ""
     return (
-      <SortableRow 
-        key={item.id} 
-        item={item} 
-        entryType={3} 
+      <SortableRow
+        key={item.id}
+        item={item}
+        entryType={3}
         onDelete={deleteItem}
         onEditCreatedDate={(id) => {
           setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
@@ -1275,8 +1276,8 @@ function YourPageDashboardInner() {
           />
         </TableCell>
         <TableCell className="py-1.5 px-1 w-12 text-xs text-muted-foreground text-center relative align-top">
-          <Popover 
-            open={createdDatePickerOpen[item.id] || false} 
+          <Popover
+            open={createdDatePickerOpen[item.id] || false}
             onOpenChange={(open) => setCreatedDatePickerOpen(prev => ({ ...prev, [item.id]: open }))}
           >
             <PopoverTrigger asChild>
@@ -1355,7 +1356,7 @@ function YourPageDashboardInner() {
   const renderEmptyRow = (entryType: number, index: number) => {
     const rowKey = `${entryType}-${index}`
     const draft = draftRows[rowKey] || {}
-    
+
     // Update draft state
     const updateDraft = (field: string, value: any) => {
       setDraftRows(prev => ({
@@ -1366,14 +1367,14 @@ function YourPageDashboardInner() {
         }
       }))
     }
-    
+
     // Check if draft has valid data (item or memo is not empty)
     const hasValidDraft = () => {
       const item = draft.item
       const memo = draft.memo
       return (item && item.trim() !== '') || (memo && memo.trim() !== '')
     }
-    
+
     // Confirm draft and create item
     const confirmDraft = async () => {
       if (!hasValidDraft()) {
@@ -1385,7 +1386,7 @@ function YourPageDashboardInner() {
         })
         return
       }
-      
+
       try {
         const newItem = await apiClient.post<DashboardItem>("/api/dashboard/items", {
           dashboard_date: currentDate,
@@ -1398,14 +1399,14 @@ function YourPageDashboardInner() {
           position: null,
           created_at: new Date().toISOString().split("T")[0],
         })
-        
+
         // Remove draft
         setDraftRows(prev => {
           const newDraft = { ...prev }
           delete newDraft[rowKey]
           return newDraft
         })
-        
+
         // Reload items
         await loadDashboardItems()
       } catch (error) {
@@ -1413,12 +1414,12 @@ function YourPageDashboardInner() {
         // Keep draft on error for retry
       }
     }
-    
+
     // Handle blur (focus out)
     const handleBlur = () => {
       confirmDraft()
     }
-    
+
     // Handle Enter key
     const handleKeyDown = (e: React.KeyboardEvent) => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -1692,10 +1693,10 @@ function YourPageDashboardInner() {
                           timerSessions.slice(0, 5).map((session) => {
                             const startTime = new Date(session.started_at)
                             const endTime = session.ended_at ? new Date(session.ended_at) : null
-                            const duration = endTime 
+                            const duration = endTime
                               ? Math.floor((endTime.getTime() - startTime.getTime()) / 1000)
                               : (timerEnabled && session.id === activeSessionId ? calculateRunningSeconds() : 0)
-                            
+
                             return (
                               <div key={session.id} className="text-[10px] text-muted-foreground flex justify-between items-center">
                                 <span>

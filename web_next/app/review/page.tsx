@@ -16,7 +16,7 @@ import { CheckCircle2, AlertCircle, Loader2, Copy, Check, ChevronDown, ChevronRi
 import { cn } from "@/lib/utils"
 import type { ReviewRequest, ReviewResponse, ProblemMetadata, ProblemMetadataWithDetails } from "@/types/api"
 import { formatYearToEra, formatYearToShortEra } from "@/lib/utils"
-import { sortSubjectsByFixedOrder, getSubjectName, getSubjectId, FIXED_SUBJECTS } from "@/lib/subjects"
+import { getSubjectName, FIXED_SUBJECTS } from "@/lib/subjects"
 import { SidebarToggle, useSidebar } from "@/components/sidebar"
 import { apiClient } from "@/lib/api-client"
 
@@ -35,7 +35,7 @@ export default function ReviewPage() {
   // Step 1: 問題選択 + 答案入力
   const [examType, setExamType] = useState<string>("")
   const [year, setYear] = useState<number | null>(null)
-  const [subject, setSubject] = useState<string>("")  // 既存問題選択用
+  const [subject, setSubject] = useState<number | null>(null)  // 既存問題選択用（科目ID）
   const [newSubjectId, setNewSubjectId] = useState<number | null>(null)  // 新規問題用の科目ID
   const [selectedMetadata, setSelectedMetadata] = useState<ProblemMetadata | null>(null)
   const [selectedDetails, setSelectedDetails] = useState<ProblemMetadataWithDetails | null>(null)
@@ -45,10 +45,8 @@ export default function ReviewPage() {
   const [answerText, setAnswerText] = useState<string>("")
 
   // データ取得
-  const [subjects, setSubjects] = useState<string[]>([])
   const [years, setYears] = useState<number[]>([])
   const [metadataList, setMetadataList] = useState<ProblemMetadata[]>([])
-  const [loadingSubjects, setLoadingSubjects] = useState(false)
   const [loadingYears, setLoadingYears] = useState(false)
   const [loadingMetadata, setLoadingMetadata] = useState(false)
   const [accordionValue, setAccordionValue] = useState<string>("")
@@ -70,31 +68,6 @@ export default function ReviewPage() {
     }
   }, [answerText])
 
-  // 科目一覧を取得
-  useEffect(() => {
-    const fetchSubjects = async () => {
-      setLoadingSubjects(true)
-      try {
-        const res = await fetch("/api/problems/subjects")
-        if (!res.ok) throw new Error("科目の取得に失敗しました")
-        const data = await res.json()
-        const fetchedSubjects = (data.subjects || []).filter(
-          (subject: unknown): subject is string => typeof subject === "string" && subject.trim() !== "",
-        )
-        // 固定順序で並べ替え
-        const sortedSubjects = sortSubjectsByFixedOrder(fetchedSubjects)
-        setSubjects(sortedSubjects)
-        // デバッグ: 取得した科目をログに出力
-        console.log("科目データ取得:", { fetched: fetchedSubjects, sorted: sortedSubjects })
-      } catch (err: any) {
-        console.error("科目データ取得エラー:", err)
-        setError(err.message)
-      } finally {
-        setLoadingSubjects(false)
-      }
-    }
-    fetchSubjects()
-  }, [])
 
   // 年度一覧を取得
   useEffect(() => {
@@ -122,7 +95,7 @@ export default function ReviewPage() {
 
   // 問題メタデータを取得
   useEffect(() => {
-    if (mode === "existing" && (examType || year || subject)) {
+    if (mode === "existing" && (examType || year || subject !== null)) {
       const fetchMetadata = async () => {
         setLoadingMetadata(true)
         setError(null)
@@ -130,7 +103,10 @@ export default function ReviewPage() {
           const params = new URLSearchParams()
           if (examType) params.append("exam_type", examType)
           if (year) params.append("year", year.toString())
-          if (subject) params.append("subject", subject)
+          if (subject !== null) {
+            // 科目IDをそのまま使用
+            params.append("subject", subject.toString())
+          }
 
           const res = await fetch(`/api/problems/metadata?${params.toString()}`)
           if (!res.ok) {
@@ -142,7 +118,7 @@ export default function ReviewPage() {
           setMetadataList(metadataList)
 
           // 3つすべて選択されていて、問題が1件のみの場合は自動的に取得
-          if (examType && year && subject && metadataList.length === 1) {
+          if (examType && year && subject !== null && metadataList.length === 1) {
             const metadata = metadataList[0]
             setSelectedMetadata(metadata)
             try {
@@ -164,7 +140,7 @@ export default function ReviewPage() {
             } catch (err: any) {
               setError(err.message)
             }
-          } else if (!(examType && year && subject)) {
+          } else if (!(examType && year && subject !== null)) {
             // 3つすべて選択されていない場合は選択状態をクリア
             setSelectedMetadata(null)
             setSelectedDetails(null)
@@ -358,20 +334,40 @@ export default function ReviewPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                <Select value={subject} onValueChange={(value) => {
-                  setSubject(value)
-                  setSelectedMetadata(null)
-                  setSelectedDetails(null)
-                }}>
+                <Select 
+                  value={subject !== null ? subject.toString() : ""} 
+                  onValueChange={(value) => {
+                    if (value === "") {
+                      setSubject(null)
+                    } else {
+                      const subjectId = parseInt(value, 10)
+                      if (!isNaN(subjectId) && subjectId >= 1 && subjectId <= 18) {
+                        setSubject(subjectId)
+                      } else {
+                        console.error("Invalid subject ID:", value)
+                        setSubject(null)
+                      }
+                    }
+                    setSelectedMetadata(null)
+                    setSelectedDetails(null)
+                  }}
+                >
                   <SelectTrigger className="h-7 w-24 border-slate-200 bg-white text-xs shadow-sm">
-                    <SelectValue placeholder="科目" />
+                    {subject !== null ? (
+                      <span>{getSubjectName(subject)}</span>
+                    ) : (
+                      <SelectValue placeholder="科目" />
+                    )}
                   </SelectTrigger>
                   <SelectContent>
-                    {subjects.map((s) => (
-                      <SelectItem key={s} value={s} className="text-xs">
-                        {s}
-                      </SelectItem>
-                    ))}
+                    {FIXED_SUBJECTS.map((subjectName, index) => {
+                      const subjectId = index + 1
+                      return (
+                        <SelectItem key={subjectId} value={subjectId.toString()} className="text-xs">
+                          {subjectName}
+                        </SelectItem>
+                      )
+                    })}
                   </SelectContent>
                 </Select>
               </>
@@ -381,7 +377,7 @@ export default function ReviewPage() {
               onClick={() => {
                 try {
                   const newMode = mode === "existing" ? "new" : "existing"
-                  setMode(newMode)
+                  // 状態をリセット
                   setSelectedMetadata(null)
                   setSelectedDetails(null)
                   setQuestionTitle("")
@@ -389,9 +385,14 @@ export default function ReviewPage() {
                   setReferenceText("")
                   setNewSubjectId(null) // 新規問題モード用の科目IDもリセット
                   setError(null) // エラーもクリア
+                  setAccordionValue("") // Accordionもリセット
+                  setIsQuestionOpen(false) // Collapsibleもリセット
+                  setIsPurposeOpen(false)
+                  // 最後にモードを変更
+                  setMode(newMode)
                 } catch (err: any) {
                   console.error("Mode switch error:", err)
-                  setError(err.message || "モードの切り替えに失敗しました")
+                  setError(err?.message || err?.toString() || "モードの切り替えに失敗しました")
                 }
               }}
               className="ml-1 px-3 py-1.5 text-xs text-slate-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 hover:border-blue-300 transition-colors"
@@ -420,7 +421,7 @@ export default function ReviewPage() {
             <div className="shrink-0 rounded-lg border border-slate-200/80 bg-white shadow-sm flex-shrink-0">
               {mode === "existing" ? (
                 <>
-                  {examType && year && subject ? (
+                  {examType && year && subject !== null ? (
                     <>
                       {selectedDetails && questionText ? (
                         <div className="p-2.5">
@@ -535,39 +536,61 @@ export default function ReviewPage() {
                     <label className="mb-1 block text-xs font-medium text-slate-600">
                       科目 <span className="text-slate-400">(任意)</span>
                     </label>
-                    <Select
-                      value={newSubjectId !== null ? String(newSubjectId) : ""}
-                      onValueChange={(value) => {
-                        try {
-                          if (value === "") {
-                            setNewSubjectId(null)
-                          } else {
-                            const subjectId = parseInt(value, 10)
-                            if (!isNaN(subjectId) && subjectId >= 1 && subjectId <= 18) {
-                              setNewSubjectId(subjectId)
-                            } else {
-                              console.error("Invalid subject ID:", value)
-                              setNewSubjectId(null)
-                            }
-                          }
-                        } catch (err: any) {
-                          console.error("Subject selection error:", err)
-                          setNewSubjectId(null)
+                    {(() => {
+                      try {
+                        if (!FIXED_SUBJECTS || !Array.isArray(FIXED_SUBJECTS)) {
+                          console.error("FIXED_SUBJECTS is not available:", FIXED_SUBJECTS)
+                          return (
+                            <div className="text-xs text-red-500">
+                              科目データの読み込みに失敗しました
+                            </div>
+                          )
                         }
-                      }}
-                    >
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue placeholder="科目を選択（未選択可）" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="">未選択</SelectItem>
-                        {FIXED_SUBJECTS.map((subjectName, index) => (
-                          <SelectItem key={index + 1} value={String(index + 1)}>
-                            {subjectName}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                        return (
+                          <Select
+                            value={newSubjectId !== null ? String(newSubjectId) : ""}
+                            onValueChange={(value) => {
+                              try {
+                                if (value === "") {
+                                  setNewSubjectId(null)
+                                } else {
+                                  const subjectId = parseInt(value, 10)
+                                  if (!isNaN(subjectId) && subjectId >= 1 && subjectId <= 18) {
+                                    setNewSubjectId(subjectId)
+                                  } else {
+                                    console.error("Invalid subject ID:", value)
+                                    setNewSubjectId(null)
+                                  }
+                                }
+                              } catch (err: any) {
+                                console.error("Subject selection error:", err)
+                                setError(err?.message || "科目の選択に失敗しました")
+                                setNewSubjectId(null)
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue placeholder="科目を選択（未選択可）" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">未選択</SelectItem>
+                              {FIXED_SUBJECTS.map((subjectName, index) => (
+                                <SelectItem key={index + 1} value={String(index + 1)}>
+                                  {subjectName}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )
+                      } catch (err: any) {
+                        console.error("Subject select render error:", err)
+                        return (
+                          <div className="text-xs text-red-500">
+                            科目選択の表示に失敗しました: {err?.message || err?.toString() || "不明なエラー"}
+                          </div>
+                        )
+                      }
+                    })()}
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-slate-600">
