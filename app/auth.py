@@ -2,16 +2,18 @@
 import logging
 import hashlib
 import time
+from datetime import datetime, timedelta
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from typing import Optional, Dict, Tuple
+from jose import JWTError, jwt
 
 from .db import SessionLocal
 from .models import User
 from config.settings import (
     AUTH_ENABLED, GOOGLE_CLIENT_ID, SECRET_KEY, ALGORITHM,
-    TOKEN_CACHE_TTL, TOKEN_CACHE_MAX_SIZE
+    TOKEN_CACHE_TTL, TOKEN_CACHE_MAX_SIZE, JWT_ACCESS_TOKEN_EXPIRE_DAYS
 )
 
 logger = logging.getLogger(__name__)
@@ -172,6 +174,67 @@ def get_or_create_user(google_info: dict, db: Session) -> User:
     db.refresh(user)
     return user
 
+def create_access_token(user_id: int, email: str) -> str:
+    """
+    JWTアクセストークンを発行
+    
+    Args:
+        user_id: ユーザーID
+        email: ユーザーのメールアドレス
+    
+    Returns:
+        JWTトークン文字列
+    """
+    expire = datetime.utcnow() + timedelta(days=JWT_ACCESS_TOKEN_EXPIRE_DAYS)
+    to_encode = {
+        "sub": str(user_id),  # subject: ユーザーID
+        "email": email,
+        "exp": expire,  # 有効期限
+        "iat": datetime.utcnow(),  # 発行時刻
+    }
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    logger.debug(f"JWT token created for user_id: {user_id}, expires at: {expire}")
+    return encoded_jwt
+
+def verify_jwt_token(token: str) -> dict:
+    """
+    JWTトークンを検証
+    
+    Args:
+        token: JWTトークン文字列
+    
+    Returns:
+        デコードされたトークンペイロード（user_id, emailなど）
+    
+    Raises:
+        HTTPException: トークンが無効な場合
+    """
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id_str = payload.get("sub")
+        email = payload.get("email")
+        
+        if user_id_str is None or email is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload"
+            )
+        
+        user_id: int = int(user_id_str)
+        return {"user_id": user_id, "email": email}
+    except JWTError as e:
+        logger.warning(f"JWT token verification failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials"
+        )
+    except ValueError as e:
+        logger.warning(f"JWT token payload invalid: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token format"
+        )
+
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db)
@@ -179,6 +242,10 @@ async def get_current_user(
     """
     現在のユーザーを取得（認証オプション）
     認証がOFFの場合、またはトークンがない場合はNoneを返す
+    
+    トークンの種類を自動判定:
+    1. JWTトークンの場合: 直接検証してユーザーを取得
+    2. Google IDトークンの場合: Google APIで検証してからユーザーを取得または作成
     """
     if not AUTH_ENABLED:
         return None
@@ -186,10 +253,39 @@ async def get_current_user(
     if not credentials:
         return None
     
+    token = credentials.credentials
+    
     try:
-        token = credentials.credentials
+        # まずJWTトークンとして検証を試みる
+        try:
+            token_payload = verify_jwt_token(token)
+            user_id = token_payload["user_id"]
+            
+            # データベースからユーザーを取得
+            user = db.query(User).filter(User.id == user_id).first()
+            
+            if not user:
+                logger.warning(f"JWT token valid but user not found: user_id={user_id}")
+                return None
+            
+            if not user.is_active:
+                logger.warning(f"Authentication attempt by disabled user: {user.email}")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="User account is disabled"
+                )
+            
+            logger.debug(f"User authenticated via JWT: {user.email} (user_id: {user.id})")
+            return user
+            
+        except HTTPException:
+            # HTTPExceptionはそのまま再スロー
+            raise
+        except Exception:
+            # JWTトークンとして検証失敗 → Google IDトークンとして試す
+            pass
         
-        # Googleトークンを検証（キャッシュ付き）
+        # Google IDトークンとして検証（後方互換性のため）
         google_info = await verify_google_token(token)
         
         # ユーザーを取得または作成
@@ -202,7 +298,9 @@ async def get_current_user(
                 detail="User account is disabled"
             )
         
+        logger.debug(f"User authenticated via Google ID token: {user.email} (user_id: {user.id})")
         return user
+        
     except HTTPException:
         # HTTPExceptionはそのまま再スロー
         raise
@@ -218,6 +316,10 @@ async def get_current_user_required(
     """
     現在のユーザーを取得（認証必須）
     認証がOFFの場合、またはトークンがない場合はエラーを返す
+    
+    トークンの種類を自動判定:
+    1. JWTトークンの場合: 直接検証してユーザーを取得
+    2. Google IDトークンの場合: Google APIで検証してからユーザーを取得または作成
     
     最適化:
     - トークン検証結果のキャッシュ
@@ -240,7 +342,39 @@ async def get_current_user_required(
     token = credentials.credentials
     
     try:
-        # Googleトークンを検証（キャッシュ付き）
+        # まずJWTトークンとして検証を試みる
+        try:
+            token_payload = verify_jwt_token(token)
+            user_id = token_payload["user_id"]
+            
+            # データベースからユーザーを取得
+            user = db.query(User).filter(User.id == user_id).first()
+            
+            if not user:
+                logger.warning(f"JWT token valid but user not found: user_id={user_id}")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found"
+                )
+            
+            if not user.is_active:
+                logger.warning(f"Authentication attempt by disabled user: {user.email} (user_id: {user.id})")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="User account is disabled"
+                )
+            
+            logger.debug(f"User authenticated via JWT: {user.email} (user_id: {user.id})")
+            return user
+            
+        except HTTPException:
+            # HTTPExceptionはそのまま再スロー
+            raise
+        except Exception:
+            # JWTトークンとして検証失敗 → Google IDトークンとして試す
+            pass
+        
+        # Google IDトークンとして検証（後方互換性のため）
         google_info = await verify_google_token(token)
         
         # ユーザーを取得または作成
@@ -253,7 +387,7 @@ async def get_current_user_required(
                 detail="User account is disabled"
             )
         
-        logger.debug(f"User authenticated successfully: {user.email} (user_id: {user.id})")
+        logger.debug(f"User authenticated via Google ID token: {user.email} (user_id: {user.id})")
         return user
         
     except HTTPException:

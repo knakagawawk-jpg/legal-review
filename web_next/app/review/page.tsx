@@ -14,10 +14,11 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { CheckCircle2, AlertCircle, Loader2, Copy, Check, ChevronDown, ChevronRight, BookOpen, PenLine, Sparkles, Scale, FileText, X } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { ReviewRequest, ProblemMetadata, ProblemMetadataWithDetails } from "@/types/api"
+import type { ReviewRequest, ReviewResponse, ProblemMetadata, ProblemMetadataWithDetails } from "@/types/api"
 import { formatYearToEra, formatYearToShortEra } from "@/lib/utils"
-import { sortSubjectsByFixedOrder } from "@/lib/subjects"
+import { sortSubjectsByFixedOrder, getSubjectName, getSubjectId } from "@/lib/subjects"
 import { SidebarToggle, useSidebar } from "@/components/sidebar"
+import { apiClient } from "@/lib/api-client"
 
 type Step = 1 | 2
 type Mode = "existing" | "new"
@@ -37,8 +38,9 @@ export default function ReviewPage() {
   const [subject, setSubject] = useState<string>("")
   const [selectedMetadata, setSelectedMetadata] = useState<ProblemMetadata | null>(null)
   const [selectedDetails, setSelectedDetails] = useState<ProblemMetadataWithDetails | null>(null)
+  const [questionTitle, setQuestionTitle] = useState<string>("")
   const [questionText, setQuestionText] = useState<string>("")
-  const [purposeText, setPurposeText] = useState<string>("")
+  const [referenceText, setReferenceText] = useState<string>("")
   const [answerText, setAnswerText] = useState<string>("")
 
   // データ取得
@@ -149,7 +151,7 @@ export default function ReviewPage() {
               // 最初の設問を選択
               if (detailData.details && detailData.details.length > 0) {
                 setQuestionText(detailData.details[0].question_text)
-                setPurposeText(detailData.details[0].purpose || "")
+                setReferenceText(detailData.details[0].purpose || "")
               }
             } catch (err: any) {
               setError(err.message)
@@ -158,8 +160,9 @@ export default function ReviewPage() {
             // 3つすべて選択されていない場合は選択状態をクリア
             setSelectedMetadata(null)
             setSelectedDetails(null)
+            setQuestionTitle("")
             setQuestionText("")
-            setPurposeText("")
+            setReferenceText("")
           }
         } catch (err: any) {
           setError(err.message)
@@ -183,7 +186,7 @@ export default function ReviewPage() {
       // 最初の設問を選択
       if (data.details && data.details.length > 0) {
         setQuestionText(data.details[0].question_text)
-        setPurposeText(data.details[0].purpose || "")
+        setReferenceText(data.details[0].purpose || "")
       }
     } catch (err: any) {
       setError(err.message)
@@ -206,7 +209,6 @@ export default function ReviewPage() {
     try {
       const requestBody: ReviewRequest = {
         answer_text: answerText,
-        subject: selectedMetadata?.subject || subject || "未指定",
       }
 
       if (mode === "existing" && selectedDetails) {
@@ -214,26 +216,31 @@ export default function ReviewPage() {
           requestBody.problem_details_id = selectedDetails.details[0].id
           requestBody.problem_metadata_id = selectedMetadata?.id
         }
+        // 既存問題の場合はsubject_idはmetadataから取得されるため不要
+        // question_titleとreference_textも送信しない
       } else {
+        // 新規問題の場合のみ、question_titleとreference_textを送信
         requestBody.question_text = questionText || undefined
+        // 科目名からIDに変換
+        const subjectId = getSubjectId(subject || "")
+        if (subjectId) {
+          requestBody.subject = subjectId
+        } else {
+          requestBody.subject_name = subject || "未指定"
+        }
+        if (questionTitle.trim()) {
+          requestBody.question_title = questionTitle.trim()
+        }
+        if (referenceText.trim()) {
+          requestBody.reference_text = referenceText.trim()
+        }
       }
 
       setGenerationPhase("評価中...")
 
-      const res = await fetch("/api/review", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-      })
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({ error: "Unknown error" }))
-        throw new Error(errorData.error || "講評の生成に失敗しました")
-      }
+      const data = await apiClient.post<ReviewResponse>("/api/review", requestBody)
 
       setGenerationPhase("生成完了")
-
-      const data = await res.json()
       
       // 成功したら結果ページに遷移
       router.push(`/review/${data.submission_id}`)
@@ -349,9 +356,12 @@ export default function ReviewPage() {
                 setMode(newMode)
                 setSelectedMetadata(null)
                 setSelectedDetails(null)
+                setQuestionTitle("")
                 setQuestionText("")
                 if (newMode === "new") {
-                  setPurposeText("")
+                  setReferenceText("")
+                } else {
+                  setReferenceText("")
                 }
               }}
               className="ml-1 px-3 py-1.5 text-xs text-slate-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 hover:border-blue-300 transition-colors"
@@ -388,7 +398,7 @@ export default function ReviewPage() {
                             <BookOpen className="h-3 w-3 text-indigo-600" />
                           </div>
                           <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100 text-xs">
-                            {selectedMetadata?.exam_type} {formatYearToEra(selectedMetadata?.year || 0)} {selectedMetadata?.subject}
+                            {selectedMetadata?.exam_type} {formatYearToEra(selectedMetadata?.year || 0)} {selectedMetadata?.subject_name || (selectedMetadata?.subject ? getSubjectName(selectedMetadata.subject) : "")}
                           </Badge>
                         </div>
                         <Button
@@ -413,7 +423,7 @@ export default function ReviewPage() {
                         </CollapsibleContent>
                       </Collapsible>
 
-                      {purposeText && (
+                      {referenceText && (
                         <Collapsible open={isPurposeOpen} onOpenChange={setIsPurposeOpen} className="mt-2">
                           <CollapsibleTrigger className="flex items-center gap-1 text-xs text-slate-600 hover:text-slate-800">
                             {isPurposeOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
@@ -421,7 +431,7 @@ export default function ReviewPage() {
                           </CollapsibleTrigger>
                           <CollapsibleContent className="mt-1.5">
                             <div className="max-h-[120px] overflow-y-auto rounded bg-amber-50/50 p-2 text-xs leading-relaxed text-slate-700">
-                              {purposeText}
+                              {referenceText}
                             </div>
                           </CollapsibleContent>
                         </Collapsible>
@@ -446,6 +456,18 @@ export default function ReviewPage() {
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-slate-600">
+                      問題タイトル <span className="text-slate-400">(任意)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={questionTitle}
+                      onChange={(e) => setQuestionTitle(e.target.value)}
+                      placeholder="試験種・年・科目を入れてください…"
+                      className="w-full px-2 py-1.5 text-xs rounded border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">
                       問題文 <span className="text-red-400">*</span>
                     </label>
                     <Textarea
@@ -457,12 +479,12 @@ export default function ReviewPage() {
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-slate-600">
-                      出題趣旨 <span className="text-slate-400">(任意)</span>
+                      参照文章 <span className="text-slate-400">(任意)</span>
                     </label>
                     <Textarea
-                      value={purposeText}
-                      onChange={(e) => setPurposeText(e.target.value)}
-                      placeholder="出題趣旨を入力..."
+                      value={referenceText}
+                      onChange={(e) => setReferenceText(e.target.value)}
+                      placeholder="講評上参照してほしい解説等があれば入れてください…"
                       className="h-16 resize-none rounded border-slate-200 bg-amber-50/30 text-xs leading-relaxed focus:bg-white"
                     />
                   </div>

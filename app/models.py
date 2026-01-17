@@ -25,8 +25,8 @@ class Subject(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     
-    # リレーションシップ
-    official_questions = relationship("OfficialQuestion", back_populates="subject")
+    # 注意: Subjectテーブルは削除予定（科目は1-18の数字で管理）
+    # OfficialQuestionはsubject_idで直接管理するため、リレーションシップは削除
     
     __table_args__ = (
         Index('idx_subjects_display_order', 'display_order'),
@@ -54,12 +54,7 @@ class OfficialQuestion(Base):
     # 識別情報
     shiken_type = Column(String(10), nullable=False)  # 'shihou' or 'yobi'
     nendo = Column(Integer, nullable=False)  # 年度（2000以上）
-    subject_id = Column(
-        Integer,
-        ForeignKey("subjects.id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True
-    )  # 科目ID
+    subject_id = Column(Integer, nullable=False, index=True)  # 科目ID（1-18）
     
     # バージョン管理
     version = Column(Integer, nullable=False)  # バージョン番号（1以上）
@@ -74,7 +69,7 @@ class OfficialQuestion(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     
     # リレーションシップ
-    subject = relationship("Subject", back_populates="official_questions")
+    # subject_idは1-18の数字で管理（Subjectテーブルへの参照は削除）
     reviews = relationship("Review", foreign_keys="Review.official_question_id", back_populates="official_question")
     grading_impression = relationship(
         "ShihouGradingImpression",
@@ -96,6 +91,7 @@ class OfficialQuestion(Base):
         # 検索用インデックス
         Index('idx_questions_lookup', 'shiken_type', 'nendo', 'subject_id', 'status'),
         Index('idx_questions_subject', 'subject_id'),
+        CheckConstraint("subject_id BETWEEN 1 AND 18", name="ck_official_question_subject"),
         
         # 注意: 部分ユニークインデックス（status='active'を1つに制限）は
         # PostgreSQLでは postgresql_where パラメータで実装可能だが、
@@ -306,17 +302,19 @@ class ProblemMetadata(Base):
     id = Column(Integer, primary_key=True, index=True)
     exam_type = Column(String(20), nullable=False)  # "司法試験" or "予備試験"
     year = Column(Integer, nullable=False)  # 年度（例: 2018, 2025）
-    subject = Column(String(50), nullable=False)  # 科目
+    subject = Column(Integer, nullable=False, index=True)  # 科目ID（1-18）
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     # リレーションシップ
+    # subjectは1-18の数字で管理（Subjectテーブルへの参照は削除）
     details = relationship("ProblemDetails", back_populates="problem_metadata", cascade="all, delete-orphan", order_by="ProblemDetails.question_number")
     submissions = relationship("Submission", back_populates="problem_metadata")
     
     __table_args__ = (
         UniqueConstraint('exam_type', 'year', 'subject', name='uq_problem_metadata'),
         Index('idx_exam_year_subject', 'exam_type', 'year', 'subject'),
+        CheckConstraint("subject BETWEEN 1 AND 18", name="ck_problem_metadata_subject"),
     )
 
 class ProblemDetails(Base):
@@ -385,12 +383,13 @@ class Submission(Base):
     problem_metadata_id = Column(Integer, ForeignKey("problem_metadata.id", ondelete="SET NULL"), nullable=True, index=True)  # 問題メタデータID
     problem_details_id = Column(Integer, ForeignKey("problem_details.id", ondelete="SET NULL"), nullable=True, index=True)  # 問題詳細ID（設問）
     
-    subject = Column(String(50), nullable=False)
+    subject = Column(Integer, nullable=False, index=True)  # 科目ID（1-18）
     question_text = Column(Text, nullable=True)  # 問題文（problem_details_idがある場合は詳細から取得、ない場合は手動入力）
     answer_text = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="submissions")
+    # subjectは1-18の数字で管理（Subjectテーブルへの参照は削除）
     problem = relationship("Problem", foreign_keys=[problem_id], back_populates="old_submissions")  # 既存の参照
     problem_metadata = relationship("ProblemMetadata", back_populates="submissions")  # 新しいメタデータ参照
     problem_details = relationship("ProblemDetails", back_populates="submissions")  # 新しい詳細参照
@@ -400,6 +399,7 @@ class Submission(Base):
     __table_args__ = (
         Index('idx_user_created_at', 'user_id', 'created_at'),
         Index('idx_metadata_details', 'problem_metadata_id', 'problem_details_id'),
+        CheckConstraint("subject BETWEEN 1 AND 18", name="ck_submission_subject"),
     )
 
 # 短答式問題関連のモデル
@@ -408,7 +408,7 @@ class ShortAnswerProblem(Base):
     id = Column(Integer, primary_key=True, index=True)
     exam_type = Column(String(20), nullable=False)  # "司法試験" or "予備試験"
     year = Column(String(10), nullable=False)  # 年度（"R7", "H30"など）
-    subject = Column(String(50), nullable=False)  # 科目
+    subject = Column(Integer, nullable=False, index=True)  # 科目ID（1-18）
     question_number = Column(Integer, nullable=False)  # 問題番号
     question_text = Column(Text, nullable=False)  # 問題本文
     choice_1 = Column(Text, nullable=False)  # 選択肢1
@@ -421,7 +421,12 @@ class ShortAnswerProblem(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
+    # subjectは1-18の数字で管理（Subjectテーブルへの参照は削除）
     answers = relationship("ShortAnswerAnswer", back_populates="problem")
+    
+    __table_args__ = (
+        CheckConstraint("subject BETWEEN 1 AND 18", name="ck_short_answer_problem_subject"),
+    )
 
 class ShortAnswerSession(Base):
     __tablename__ = "short_answer_sessions"
@@ -429,17 +434,19 @@ class ShortAnswerSession(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)  # ユーザーID（認証OFF時はNULL）
     exam_type = Column(String(20), nullable=False)  # 試験種別（フィルター条件）
     year = Column(String(10), nullable=True)  # 年度（フィルター条件、NULL可）
-    subject = Column(String(50), nullable=False)  # 科目（フィルター条件）
+    subject = Column(Integer, nullable=False, index=True)  # 科目ID（1-18）（フィルター条件）
     is_random = Column(Boolean, default=False)  # ランダムモードかどうか
     problem_ids = Column(Text, nullable=False)  # JSON配列として問題IDを保存
     started_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
     
+    # subjectは1-18の数字で管理（Subjectテーブルへの参照は削除）
     user = relationship("User", back_populates="short_answer_sessions")
     answers = relationship("ShortAnswerAnswer", back_populates="session", cascade="all, delete-orphan")
     
     __table_args__ = (
         Index('idx_user_started_at', 'user_id', 'started_at'),
+        CheckConstraint("subject BETWEEN 1 AND 18", name="ck_short_answer_session_subject"),
     )
 
 class ShortAnswerAnswer(Base):
@@ -753,16 +760,18 @@ class UserReviewHistory(Base):
     review_id = Column(BigInteger, ForeignKey("reviews.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # 簡易情報（マイページ表示用）
-    subject = Column(String(50), nullable=True)  # 科目（検索・フィルタ用）
+    subject = Column(Integer, nullable=True, index=True)  # 科目ID（1-18、検索・フィルタ用）
     exam_type = Column(String(20), nullable=True)  # 試験種別（"司法試験" or "予備試験"）
     year = Column(Integer, nullable=True)  # 年度
     score = Column(Numeric(5, 2), nullable=True)  # 点数（講評結果から抽出）
-    score_breakdown = Column(Text, nullable=True)  # 点数内訳（JSON形式、簡易版）
+    attempt_count = Column(Integer, nullable=False, default=1)  # 同一試験に関する講評の回数
+    question_title = Column(String(200), nullable=True)  # 問題タイトル（任意）
+    reference_text = Column(Text, nullable=True)  # 参照文章（任意、講評上参照してほしい解説等）
     
     # タイムスタンプ
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     
-    # リレーションシップ
+    # subjectは1-18の数字で管理（Subjectテーブルへの参照は削除）
     user = relationship("User", back_populates="review_history")
     review = relationship("Review", back_populates="user_history")
     
@@ -770,6 +779,8 @@ class UserReviewHistory(Base):
         Index('idx_user_review_history_created', 'user_id', 'created_at'),
         Index('idx_user_review_history_review', 'review_id'),
         Index('idx_user_review_history_subject', 'user_id', 'subject', 'created_at'),
+        Index('idx_user_review_history_exam', 'user_id', 'subject', 'exam_type', 'year'),
+        CheckConstraint("subject IS NULL OR (subject BETWEEN 1 AND 18)", name="ck_review_history_subject"),
     )
 
 

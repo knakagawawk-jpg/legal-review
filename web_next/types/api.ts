@@ -7,6 +7,8 @@ export interface ReviewRequest {
   subject: string
   question_text?: string | null
   answer_text: string
+  question_title?: string | null
+  reference_text?: string | null
 }
 
 export interface ReviewResponse {
@@ -64,15 +66,18 @@ export interface ReviewResponse {
   }
   answer_text: string
   question_text?: string | null
-  subject?: string | null
+  subject?: number | null  // 科目ID（1-18）
+  subject_name?: string | null  // 科目名（表示用）
   purpose?: string | null
+  question_title?: string | null
 }
 
 export interface ProblemMetadata {
   id: number
   exam_type: string
   year: number
-  subject: string
+  subject: number  // 科目ID（1-18）
+  subject_name: string  // 科目名（表示用）
 }
 
 export interface ProblemDetails {
@@ -92,7 +97,8 @@ export interface ShortAnswerProblem {
   id: number
   exam_type: string
   year: string
-  subject: string
+  subject: number  // 科目ID（1-18）
+  subject_name: string  // 科目名（表示用）
   question_number: number
   question_text: string
   choice_1: string
@@ -110,7 +116,8 @@ export interface ShortAnswerSession {
   id: number
   exam_type: string
   year?: string | null
-  subject: string
+  subject: number  // 科目ID（1-18）
+  subject_name: string  // 科目名（表示用）
   is_random: boolean
   problem_ids: number[]
   started_at: string
@@ -156,7 +163,8 @@ export interface ShortAnswerHistory {
   session_id: number
   exam_type: string
   year?: string | null
-  subject: string
+  subject: number  // 科目ID（1-18）
+  subject_name: string  // 科目名（表示用）
   started_at: string
   completed_at?: string | null
   total_problems: number

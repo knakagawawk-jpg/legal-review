@@ -14,12 +14,14 @@ export const maxDuration = 600 // 10分（秒単位）
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
+    const authHeader = request.headers.get("authorization")
 
     // FastAPIの /v1/review にリクエストを転送
     const response = await fetch(`${BACKEND_URL}/v1/review`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(authHeader && { "Authorization": authHeader }),
       },
       body: JSON.stringify(body),
       // タイムアウト（環境変数 REVIEW_TIMEOUT_MS で設定可能、デフォルト: 600秒 = 10分）

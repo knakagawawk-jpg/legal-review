@@ -21,10 +21,11 @@ from .models import (
     Notebook, NoteSection, NotePage,
     Thread, Message,
     UserPreference, UserDashboard, UserDashboardHistory, UserReviewHistory,
-    DashboardItem, Subject,
+    DashboardItem, Subject, OfficialQuestion,
     TimerSession, TimerDailyChunk, TimerDailyStats
 )
 from config.constants import FIXED_SUBJECTS
+from config.subjects import SUBJECT_MAP, SUBJECT_NAME_TO_ID, get_subject_name, get_subject_id
 from .schemas import (
     ReviewRequest, ReviewResponse, ReviewChatRequest, ReviewChatResponse,
     FreeChatRequest, FreeChatResponse,
@@ -38,7 +39,7 @@ from .schemas import (
     NotebookCreate, NotebookUpdate, NotebookResponse, NotebookDetailResponse,
     NoteSectionCreate, NoteSectionUpdate, NoteSectionResponse, NoteSectionDetailResponse,
     NotePageCreate, NotePageUpdate, NotePageResponse,
-    SubmissionHistoryResponse, ShortAnswerHistoryResponse,
+    SubmissionHistoryResponse, ShortAnswerHistoryResponse, UserReviewHistoryResponse,
     ThreadCreate, ThreadResponse, ThreadListResponse,
     MessageCreate, MessageResponse, MessageListResponse, ThreadMessageCreate,
     UserUpdate, UserResponse,
@@ -47,7 +48,7 @@ from .schemas import (
 )
 from pydantic import BaseModel
 from .llm_service import generate_review, chat_about_review, free_chat
-from .auth import get_current_user, get_current_user_required, verify_google_token, get_or_create_user
+from .auth import get_current_user, get_current_user_required, verify_google_token, get_or_create_user, create_access_token
 from config.settings import AUTH_ENABLED
 from .timer_api import register_timer_routes
 
@@ -144,7 +145,13 @@ class GoogleAuthRequest(BaseModel):
 
 @app.post("/v1/auth/google")
 async def google_auth(req: GoogleAuthRequest, db: Session = Depends(get_db)):
-    """Google認証エンドポイント"""
+    """
+    Google認証エンドポイント
+    
+    レスポンス:
+    - access_token: JWTトークン（長期有効、デフォルト30日）
+    - user_id, email, name, is_active: ユーザー情報
+    """
     if not AUTH_ENABLED:
         raise HTTPException(
             status_code=503,
@@ -157,7 +164,11 @@ async def google_auth(req: GoogleAuthRequest, db: Session = Depends(get_db)):
     # ユーザーを取得または作成
     user = get_or_create_user(google_info, db)
     
+    # JWTアクセストークンを発行（長期有効）
+    access_token = create_access_token(user_id=user.id, email=user.email)
+    
     return {
+        "access_token": access_token,  # JWTトークン
         "user_id": user.id,
         "email": user.email,
         "name": user.name,
@@ -283,16 +294,10 @@ def get_problem_years(db: Session = Depends(get_db)):
 
 @app.get("/v1/problems/subjects", response_model=ProblemSubjectsResponse)
 def get_problem_subjects(db: Session = Depends(get_db)):
-    """利用可能な科目の一覧を取得（軽量版・改善版構造を使用）"""
+    """利用可能な科目の一覧を取得（科目名のリストを返す）"""
     try:
-        # 新しい構造（ProblemMetadata）から取得を試みる
-        subjects_from_metadata = db.query(ProblemMetadata.subject).distinct().all()
-        subjects_list = sorted(set(s[0] for s in subjects_from_metadata))
-        
-        # 新しい構造にデータがない場合は、既存構造（Problem）から取得（後方互換性）
-        if not subjects_list:
-            subjects_from_old = db.query(Problem.subject).distinct().all()
-            subjects_list = sorted(set(s[0] for s in subjects_from_old))
+        # 科目名のリストを返す（FIXED_SUBJECTSと同じ順序）
+        subjects_list = list(SUBJECT_MAP.values())
         
         return ProblemSubjectsResponse(subjects=subjects_list)
     except Exception as e:
@@ -307,7 +312,8 @@ def get_problem_subjects(db: Session = Depends(get_db)):
 def list_problem_metadata(
     exam_type: Optional[str] = Query(None, description="試験種別（司法試験/予備試験）"),
     year: Optional[int] = Query(None, description="年度"),
-    subject: Optional[str] = Query(None, description="科目"),
+    subject: Optional[int] = Query(None, description="科目ID（1-18）"),
+    subject_name: Optional[str] = Query(None, description="科目名（subjectが指定されていない場合に使用）"),
     db: Session = Depends(get_db)
 ):
     """問題メタデータの一覧を取得（改善版）"""
@@ -320,12 +326,33 @@ def list_problem_metadata(
             query = query.filter(ProblemMetadata.year == year)
         if subject:
             query = query.filter(ProblemMetadata.subject == subject)
+        elif subject_name:
+            # 科目名からIDに変換
+            subject_id = get_subject_id(subject_name)
+            if subject_id:
+                query = query.filter(ProblemMetadata.subject == subject_id)
+            else:
+                raise HTTPException(status_code=400, detail=f"無効な科目名: {subject_name}")
         
         metadata_list = query.order_by(ProblemMetadata.year.desc(), ProblemMetadata.subject).all()
         
+        # レスポンスにsubject_nameを追加
+        response_list = []
+        for m in metadata_list:
+            response_dict = {
+                "id": m.id,
+                "exam_type": m.exam_type,
+                "year": m.year,
+                "subject": m.subject,
+                "subject_name": get_subject_name(m.subject),
+                "created_at": m.created_at,
+                "updated_at": m.updated_at,
+            }
+            response_list.append(ProblemMetadataResponse(**response_dict))
+        
         return ProblemMetadataListResponse(
-            metadata_list=[ProblemMetadataResponse.model_validate(m) for m in metadata_list],
-            total=len(metadata_list)
+            metadata_list=response_list,
+            total=len(response_list)
         )
     except Exception as e:
         logger.error(f"メタデータ取得エラー: {str(e)}")
@@ -346,8 +373,19 @@ def get_problem_metadata_with_details(metadata_id: int, db: Session = Depends(ge
             ProblemDetails.problem_metadata_id == metadata_id
         ).order_by(ProblemDetails.question_number).all()
         
+        # レスポンスにsubject_nameを追加
+        metadata_dict = {
+            "id": metadata.id,
+            "exam_type": metadata.exam_type,
+            "year": metadata.year,
+            "subject": metadata.subject,
+            "subject_name": get_subject_name(metadata.subject),
+            "created_at": metadata.created_at,
+            "updated_at": metadata.updated_at,
+        }
+        
         return ProblemMetadataWithDetailsResponse(
-            metadata=ProblemMetadataResponse.model_validate(metadata),
+            metadata=ProblemMetadataResponse(**metadata_dict),
             details=[ProblemDetailsResponse.model_validate(d) for d in details]
         )
     except HTTPException:
@@ -476,11 +514,17 @@ async def create_review(
     try:
         # 1) 問題情報の取得（新しい構造を優先、既存構造は後方互換性のため）
         question_text = req.question_text
-        subject = req.subject
+        subject_id = req.subject  # 科目ID（1-18）
         purpose_text = None
         problem_metadata_id = None
         problem_details_id = None
         problem_id = None  # 既存構造用（後方互換性）
+        
+        # 科目名からIDに変換（subject_nameが指定されている場合）
+        if subject_id is None and req.subject_name:
+            subject_id = get_subject_id(req.subject_name)
+            if subject_id is None:
+                raise HTTPException(status_code=400, detail=f"無効な科目名: {req.subject_name}")
         
         # 新しい構造を使用する場合（優先）
         if req.problem_metadata_id:
@@ -488,7 +532,7 @@ async def create_review(
             if not metadata:
                 raise HTTPException(status_code=404, detail="Problem metadata not found")
             
-            subject = metadata.subject
+            subject_id = metadata.subject  # メタデータから科目IDを取得
             problem_metadata_id = metadata.id
             
             # 特定の設問が指定されている場合
@@ -519,9 +563,19 @@ async def create_review(
             if not problem:
                 raise HTTPException(status_code=404, detail="Problem not found")
             question_text = problem.question_text
-            subject = problem.subject
+            # 既存構造ではsubjectが文字列なので、IDに変換
+            if isinstance(problem.subject, str):
+                subject_id = get_subject_id(problem.subject)
+                if subject_id is None:
+                    subject_id = 1  # デフォルト値（憲法）
+            else:
+                subject_id = problem.subject
             purpose_text = problem.purpose  # 出題趣旨を取得
             problem_id = problem.id
+        
+        # 科目IDが未設定の場合はエラー
+        if subject_id is None:
+            raise HTTPException(status_code=400, detail="科目IDまたは科目名を指定してください")
         
         # 2) Submission保存（認証されている場合はuser_idを設定）
         sub = Submission(
@@ -529,7 +583,7 @@ async def create_review(
             problem_id=problem_id,  # 既存構造用（後方互換性）
             problem_metadata_id=problem_metadata_id,  # 新しい構造用
             problem_details_id=problem_details_id,  # 新しい構造用（設問指定）
-            subject=subject,
+            subject=subject_id,  # 科目ID（1-18）
             question_text=question_text,
             answer_text=req.answer_text,
         )
@@ -537,10 +591,11 @@ async def create_review(
         db.commit()
         db.refresh(sub)
 
-        # 3) LLMで講評を生成
+        # 3) LLMで講評を生成（科目名が必要）
+        subject_name = get_subject_name(subject_id)
         try:
             review_markdown, review_json, model_name = generate_review(
-                subject=subject,
+                subject=subject_name,  # LLMには科目名を渡す
                 question_text=question_text,
                 answer_text=req.answer_text,
                 purpose_text=purpose_text,  # 出題趣旨を渡す
@@ -582,24 +637,110 @@ async def create_review(
             )
 
         # 4) Review保存
+        # official_question_idを取得（可能な場合）
+        official_question_id = None
+        source_type = "custom"
+        exam_type = None
+        year = None
+        
+        # ProblemMetadataからOfficialQuestionを検索
+        if problem_metadata_id:
+            metadata = db.query(ProblemMetadata).filter(ProblemMetadata.id == problem_metadata_id).first()
+            if metadata:
+                # exam_typeをshiken_typeに変換
+                shiken_type_map = {"司法試験": "shihou", "予備試験": "yobi"}
+                shiken_type = shiken_type_map.get(metadata.exam_type)
+                
+                if shiken_type:
+                    # metadata.subjectは科目ID（1-18）なので、そのまま使用
+                    # OfficialQuestionを検索（subject_idは1-18の数字）
+                    official_q = db.query(OfficialQuestion).filter(
+                        OfficialQuestion.shiken_type == shiken_type,
+                        OfficialQuestion.nendo == metadata.year,
+                        OfficialQuestion.subject_id == metadata.subject,  # 科目ID（1-18）
+                        OfficialQuestion.status == "active"
+                    ).first()
+                    
+                    if official_q:
+                        official_question_id = official_q.id
+                        source_type = "official"
+                        exam_type = metadata.exam_type
+                        year = metadata.year
+        
         rev = Review(
-            submission_id=sub.id,
-            review_markdown=review_markdown,
-            review_json=json.dumps(review_json, ensure_ascii=False),
-            model=model_name,
-            prompt_version="v1",
+            user_id=current_user.id,
+            source_type=source_type,
+            official_question_id=official_question_id,
+            custom_question_text=question_text if source_type == "custom" else None,
+            answer_text=req.answer_text,
+            kouhyo_kekka=json.dumps(review_json, ensure_ascii=False),
         )
         db.add(rev)
         db.commit()
+        db.refresh(rev)
+        
+        # 5) UserReviewHistoryを作成
+        # 講評結果から点数を抽出
+        score = None
+        if isinstance(review_json, dict):
+            # review_jsonから点数を取得（構造に応じて調整が必要）
+            if "総合評価" in review_json:
+                eval_data = review_json["総合評価"]
+                if isinstance(eval_data, dict) and "点数" in eval_data:
+                    try:
+                        score = float(eval_data["点数"])
+                    except (ValueError, TypeError):
+                        pass
+            elif "score" in review_json:
+                try:
+                    score = float(review_json["score"])
+                except (ValueError, TypeError):
+                    pass
+        
+        # 同一試験の講評回数をカウント
+        attempt_count = 1
+        if exam_type and year and subject_id:
+            # 同一試験（user_id, subject_id, exam_type, year）の講評回数をカウント
+            existing_count = db.query(UserReviewHistory).filter(
+                UserReviewHistory.user_id == current_user.id,
+                UserReviewHistory.subject == subject_id,  # 科目ID（1-18）
+                UserReviewHistory.exam_type == exam_type,
+                UserReviewHistory.year == year
+            ).count()
+            attempt_count = existing_count + 1
+        
+        # UserReviewHistoryレコードを作成
+        # 新規問題（custom）の場合のみ、question_titleとreference_textを保存
+        question_title = None
+        reference_text = None
+        if source_type == "custom" and req.question_title is not None:
+            question_title = req.question_title
+        if source_type == "custom" and req.reference_text is not None:
+            reference_text = req.reference_text
+        
+        history = UserReviewHistory(
+            user_id=current_user.id,
+            review_id=rev.id,
+            subject=subject_id,  # 科目ID（1-18）
+            exam_type=exam_type,
+            year=year,
+            score=score,
+            attempt_count=attempt_count,
+            question_title=question_title,
+            reference_text=reference_text
+        )
+        db.add(history)
+        db.commit()
 
-        # 5) レスポンスを返す
+        # 6) レスポンスを返す
         return ReviewResponse(
             submission_id=sub.id,
             review_markdown=review_markdown,
             review_json=review_json,
             answer_text=req.answer_text,
             question_text=question_text,
-            subject=subject,
+            subject=subject_id,  # 科目ID（1-18）
+            subject_name=subject_name,  # 科目名（表示用）
             purpose=purpose_text,
         )
     except HTTPException:
@@ -663,14 +804,92 @@ async def get_review(
             question_text = problem.question_text
             purpose_text = problem.purpose
     
+    # 科目IDから科目名を取得
+    subject_id = submission.subject  # 科目ID（1-18）
+    subject_name = get_subject_name(subject_id)
+    
     return ReviewResponse(
         submission_id=submission.id,
         review_markdown=review.review_markdown,
         review_json=review_json,
         answer_text=submission.answer_text,
         question_text=question_text,
-        subject=submission.subject,
+        subject=subject_id,  # 科目ID（1-18）
+        subject_name=subject_name,  # 科目名（表示用）
         purpose=purpose_text,
+    )
+
+@app.get("/v1/reviews/{review_id}", response_model=ReviewResponse)
+async def get_review_by_id(
+    review_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """review_idで講評を取得（認証必須）"""
+    review = db.query(Review).filter(Review.id == review_id).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    
+    # ユーザー所有チェック
+    if review.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    try:
+        # kouhyo_kekkaからJSONを取得
+        if isinstance(review.kouhyo_kekka, str):
+            review_json = json.loads(review.kouhyo_kekka)
+        else:
+            review_json = review.kouhyo_kekka
+    except (json.JSONDecodeError, TypeError):
+        raise HTTPException(status_code=500, detail="Review JSON is invalid")
+    
+    # 問題情報を取得
+    question_text = review.custom_question_text or ""
+    purpose_text = None
+    subject_id = None
+    subject_name = None
+    question_title = None
+    
+    # 既存問題の場合：OfficialQuestionから全情報を取得
+    if review.official_question_id:
+        official_q = db.query(OfficialQuestion).filter(OfficialQuestion.id == review.official_question_id).first()
+        if official_q:
+            question_text = official_q.text
+            purpose_text = official_q.syutudaisyusi
+            if official_q.subject_id:
+                subject_id = official_q.subject_id  # 科目ID（1-18）
+                subject_name = get_subject_name(subject_id)
+    
+    # 新規問題の場合：UserReviewHistoryからタイトルと参照文章を取得
+    history = db.query(UserReviewHistory).filter(UserReviewHistory.review_id == review_id).first()
+    if history:
+        if subject_id is None and history.subject:
+            subject_id = history.subject  # 科目ID（1-18）
+            subject_name = get_subject_name(subject_id)
+        # 新規問題（custom）の場合、question_titleとreference_textを取得
+        if review.source_type == "custom":
+            if history.question_title:
+                question_title = history.question_title
+            if history.reference_text:
+                purpose_text = history.reference_text
+    
+    # review_markdownを生成（JSONから）
+    # llm_serviceの_format_markdown関数を使用
+    from .llm_service import _format_markdown
+    review_markdown = _format_markdown(subject_name or "不明", review_json)
+    
+    # submission_idは後方互換性のため、review_idを使用（存在しない場合は0）
+    # 実際にはReviewResponseのsubmission_idは必須なので、ダミー値を設定
+    return ReviewResponse(
+        submission_id=0,  # review_idベースの場合は使用しない
+        review_markdown=review_markdown,
+        review_json=review_json,
+        answer_text=review.answer_text,
+        question_text=question_text,
+        subject=subject_id,  # 科目ID（1-18）
+        subject_name=subject_name,  # 科目名（表示用）
+        purpose=purpose_text,
+        question_title=question_title,
     )
 
 @app.post("/v1/review/chat", response_model=ReviewChatResponse)
@@ -710,7 +929,8 @@ async def chat_review(
 def list_short_answer_problems(
     exam_type: Optional[str] = Query(None, description="試験種別（司法試験/予備試験）"),
     year: Optional[str] = Query(None, description="年度（R7, H30など）"),
-    subject: Optional[str] = Query(None, description="科目"),
+    subject: Optional[int] = Query(None, description="科目ID（1-18）"),
+    subject_name: Optional[str] = Query(None, description="科目名（subjectが指定されていない場合に使用）"),
     db: Session = Depends(get_db)
 ):
     """短答式問題一覧を取得"""
@@ -722,6 +942,13 @@ def list_short_answer_problems(
         query = query.filter(ShortAnswerProblem.year == year)
     if subject:
         query = query.filter(ShortAnswerProblem.subject == subject)
+    elif subject_name:
+        # 科目名からIDに変換
+        subject_id = get_subject_id(subject_name)
+        if subject_id:
+            query = query.filter(ShortAnswerProblem.subject == subject_id)
+        else:
+            raise HTTPException(status_code=400, detail=f"無効な科目名: {subject_name}")
     
     problems = query.order_by(ShortAnswerProblem.year.desc(), ShortAnswerProblem.question_number).all()
     
@@ -730,7 +957,8 @@ def list_short_answer_problems(
             id=p.id,
             exam_type=p.exam_type,
             year=p.year,
-            subject=p.subject,
+            subject=p.subject,  # 科目ID（1-18）
+            subject_name=get_subject_name(p.subject),  # 科目名（表示用）
             question_number=p.question_number,
             question_text=p.question_text,
             choice_1=p.choice_1,
@@ -756,7 +984,8 @@ def get_short_answer_problem(problem_id: int, db: Session = Depends(get_db)):
         id=problem.id,
         exam_type=problem.exam_type,
         year=problem.year,
-        subject=problem.subject,
+        subject=problem.subject,  # 科目ID（1-18）
+        subject_name=get_subject_name(problem.subject),  # 科目名（表示用）
         question_number=problem.question_number,
         question_text=problem.question_text,
         choice_1=problem.choice_1,
@@ -777,11 +1006,21 @@ async def create_short_answer_session(
     db: Session = Depends(get_db)
 ):
     """短答式解答セッションを作成（認証必須）"""
+    # 科目名からIDに変換（subject_nameが指定されている場合）
+    subject_id = session_data.subject
+    if subject_id is None and session_data.subject_name:
+        subject_id = get_subject_id(session_data.subject_name)
+        if subject_id is None:
+            raise HTTPException(status_code=400, detail=f"無効な科目名: {session_data.subject_name}")
+    
+    if subject_id is None:
+        raise HTTPException(status_code=400, detail="科目IDまたは科目名を指定してください")
+    
     db_session = ShortAnswerSession(
         user_id=current_user.id,
         exam_type=session_data.exam_type,
         year=session_data.year,
-        subject=session_data.subject,
+        subject=subject_id,  # 科目ID（1-18）
         is_random=session_data.is_random,
         problem_ids=json.dumps(session_data.problem_ids, ensure_ascii=False),
     )
@@ -794,7 +1033,8 @@ async def create_short_answer_session(
         id=db_session.id,
         exam_type=db_session.exam_type,
         year=db_session.year,
-        subject=db_session.subject,
+        subject=db_session.subject,  # 科目ID（1-18）
+        subject_name=get_subject_name(db_session.subject),  # 科目名（表示用）
         is_random=db_session.is_random,
         problem_ids=problem_ids_list,
         started_at=db_session.started_at,
@@ -821,7 +1061,8 @@ async def get_short_answer_session(
         id=session.id,
         exam_type=session.exam_type,
         year=session.year,
-        subject=session.subject,
+        subject=session.subject,  # 科目ID（1-18）
+        subject_name=get_subject_name(session.subject),  # 科目名（表示用）
         is_random=session.is_random,
         problem_ids=problem_ids_list,
         started_at=session.started_at,
@@ -1016,13 +1257,63 @@ async def get_my_short_answer_sessions(
             session_id=session.id,
             exam_type=session.exam_type,
             year=session.year,
-            subject=session.subject,
+            subject=session.subject,  # 科目ID（1-18）
+            subject_name=get_subject_name(session.subject),  # 科目名（表示用）
             started_at=session.started_at,
             completed_at=session.completed_at,
             total_problems=total,
             correct_count=correct_count,
             accuracy=round(accuracy, 1)
         ))
+    
+    return result
+
+@app.get("/v1/users/me/review-history", response_model=List[UserReviewHistoryResponse])
+async def get_my_review_history(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+    subject: Optional[int] = Query(None, description="科目ID（1-18）でフィルタ"),
+    subject_name: Optional[str] = Query(None, description="科目名でフィルタ（subjectが指定されていない場合に使用）"),
+    exam_type: Optional[str] = Query(None, description="試験種別でフィルタ（司法試験 or 予備試験）"),
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0)
+):
+    """自分の講評履歴一覧を取得（認証必須）"""
+    query = db.query(UserReviewHistory).filter(
+        UserReviewHistory.user_id == current_user.id
+    )
+    
+    if subject:
+        query = query.filter(UserReviewHistory.subject == subject)
+    elif subject_name:
+        # 科目名からIDに変換
+        subject_id = get_subject_id(subject_name)
+        if subject_id:
+            query = query.filter(UserReviewHistory.subject == subject_id)
+        else:
+            raise HTTPException(status_code=400, detail=f"無効な科目名: {subject_name}")
+    if exam_type:
+        query = query.filter(UserReviewHistory.exam_type == exam_type)
+    
+    histories = query.order_by(UserReviewHistory.created_at.desc()).offset(offset).limit(limit).all()
+    
+    # レスポンスにsubject_nameを追加
+    result = []
+    for h in histories:
+        history_dict = {
+            "id": h.id,
+            "review_id": h.review_id,
+            "subject": h.subject,  # 科目ID（1-18）
+            "subject_name": get_subject_name(h.subject) if h.subject else None,  # 科目名（表示用）
+            "exam_type": h.exam_type,
+            "year": h.year,
+            "score": float(h.score) if h.score else None,
+            "attempt_count": h.attempt_count,
+            "question_title": h.question_title,
+            "reference_text": h.reference_text,
+            "created_at": h.created_at,
+        }
+        result.append(UserReviewHistoryResponse(**history_dict))
     
     return result
 
@@ -1481,8 +1772,8 @@ def recalculate_positions(db: Session, user_id: int, dashboard_date: str, entry_
 @app.get("/v1/subjects", response_model=List[dict])
 def get_subjects(db: Session = Depends(get_db)):
     """科目一覧を取得（IDと名前）"""
-    subjects = db.query(Subject).order_by(Subject.display_order).all()
-    return [{"id": s.id, "name": s.name} for s in subjects]
+    # SUBJECT_MAPから科目一覧を返す（1-18の順序）
+    return [{"id": id, "name": name} for id, name in SUBJECT_MAP.items()]
 
 @app.get("/v1/dashboard/items", response_model=DashboardItemListResponse)
 async def get_dashboard_items(

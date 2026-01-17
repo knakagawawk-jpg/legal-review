@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useCallback, useRef } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
@@ -207,6 +208,8 @@ function SortableRow({
 
 function YourPageDashboard() {
   const { isOpen } = useSidebar()
+  const searchParams = useSearchParams()
+  const router = useRouter()
   const [revisitTab, setRevisitTab] = useState<"7days" | "whole">("7days")
   const [timerEnabled, setTimerEnabled] = useState(false)
   const [timerDetailsOpen, setTimerDetailsOpen] = useState(false)
@@ -251,12 +254,31 @@ function YourPageDashboard() {
   // Subjects
   const [subjects, setSubjects] = useState<Subject[]>([])
   
-  // Current date (YYYY-MM-DD)
+  // Current date (YYYY-MM-DD) - URLクエリパラメータから取得、なければ今日の日付
   const [currentDate, setCurrentDate] = useState(() => {
+    const dateParam = searchParams.get("date")
+    if (dateParam) {
+      // 日付形式を検証
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/
+      if (dateRegex.test(dateParam)) {
+        return dateParam
+      }
+    }
     const now = new Date()
     const jstDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }))
     return jstDate.toISOString().split("T")[0]
   })
+  
+  // URLクエリパラメータの変更を監視
+  useEffect(() => {
+    const dateParam = searchParams.get("date")
+    if (dateParam) {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/
+      if (dateRegex.test(dateParam)) {
+        setCurrentDate(dateParam)
+      }
+    }
+  }, [searchParams])
   
   // Debounce save
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -398,12 +420,27 @@ function YourPageDashboard() {
       const sessions = await apiClient.get<TimerSession[]>(`/api/timer/sessions?study_date=${studyDate}`)
       setTimerDailyStats(stats)
       setTimerSessions(sessions)
+      
+      // runningセッションを検出して状態を設定
+      const runningSession = sessions.find(s => s.status === "running")
+      if (runningSession) {
+        setActiveSessionId(runningSession.id)
+        setActiveSessionStartTime(new Date(runningSession.started_at))
+        setTimerEnabled(true)
+      } else {
+        setActiveSessionId(null)
+        setActiveSessionStartTime(null)
+        setTimerEnabled(false)
+      }
     } catch (error) {
       console.error("Failed to load timer data:", error)
       // エラー時は空のデータを設定
       const studyDate = getStudyDate()
       setTimerDailyStats({ study_date: studyDate, total_seconds: 0, sessions_count: 0 })
       setTimerSessions([])
+      setActiveSessionId(null)
+      setActiveSessionStartTime(null)
+      setTimerEnabled(false)
     }
   }, [])
 
@@ -460,10 +497,16 @@ function YourPageDashboard() {
 
   // Handle timer toggle
   const handleTimerToggle = async (enabled: boolean) => {
-    if (enabled) {
-      await handleTimerStart()
-    } else {
-      await handleTimerStop()
+    try {
+      if (enabled) {
+        await handleTimerStart()
+      } else {
+        await handleTimerStop()
+      }
+    } catch (error) {
+      console.error("Failed to toggle timer:", error)
+      // エラー時は状態を元に戻す
+      setTimerEnabled(!enabled)
     }
   }
 
@@ -1264,12 +1307,6 @@ function YourPageDashboard() {
                 </CollapsibleTrigger>
                 <CollapsibleContent className="mt-1">
                   <div className="bg-card border rounded px-3 py-2 shadow-sm">
-                    <div className="mb-2">
-                      <p className="text-lg font-mono font-medium text-center">{formatTime(calculateTotalDisplaySeconds())}</p>
-                      <p className="text-xs text-muted-foreground text-center mt-1">
-                        今日の合計: {formatTimeInMinutes(calculateTotalDisplaySeconds())}
-                      </p>
-                    </div>
                     <div className="border-t pt-2 mt-2">
                       <p className="text-[10px] font-medium text-muted-foreground mb-1">今日のログ</p>
                       <div className="max-h-[120px] overflow-y-auto space-y-1">

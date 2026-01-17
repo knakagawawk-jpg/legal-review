@@ -9,7 +9,8 @@ class ProblemMetadataResponse(BaseModel):
     id: int
     exam_type: str
     year: int
-    subject: str
+    subject: int  # 科目ID（1-18）
+    subject_name: str  # 科目名（表示用）
     created_at: datetime
     updated_at: datetime
 
@@ -48,7 +49,8 @@ class ProblemMetadataCreate(BaseModel):
     """問題メタデータの作成用スキーマ（詳細情報も含む）"""
     exam_type: str  # "司法試験" or "予備試験"
     year: int
-    subject: str
+    subject: Optional[int] = None  # 科目ID（1-18）
+    subject_name: Optional[str] = None  # 科目名（subjectが指定されていない場合に使用）
     details: List[ProblemDetailsCreate]  # 設問ごとの詳細情報
 
 class ProblemDetailsUpdate(BaseModel):
@@ -119,9 +121,12 @@ class ReviewRequest(BaseModel):
     problem_id: Optional[int] = None  # 既存問題を選択する場合（旧形式、後方互換性のため保持）
     problem_metadata_id: Optional[int] = None  # 新しい問題メタデータID（改善版）
     problem_details_id: Optional[int] = None  # 新しい問題詳細ID（設問指定、改善版）
-    subject: str
+    subject: Optional[int] = None  # 科目ID（1-18）
+    subject_name: Optional[str] = None  # 科目名（subjectが指定されていない場合に使用）
     question_text: Optional[str] = None  # problem_details_idがある場合は無視される
     answer_text: str
+    question_title: Optional[str] = None  # 問題タイトル（任意）
+    reference_text: Optional[str] = None  # 参照文章（任意、講評上参照してほしい解説等）
 
 class ReviewResponse(BaseModel):
     submission_id: int
@@ -129,8 +134,10 @@ class ReviewResponse(BaseModel):
     review_json: Dict[str, Any]
     answer_text: str
     question_text: Optional[str] = None
-    subject: Optional[str] = None
+    subject: Optional[int] = None  # 科目ID（1-18）
+    subject_name: Optional[str] = None  # 科目名（表示用）
     purpose: Optional[str] = None
+    question_title: Optional[str] = None  # 問題タイトル（新規問題の場合）
 
 class ReviewChatRequest(BaseModel):
     submission_id: int
@@ -151,7 +158,8 @@ class FreeChatResponse(BaseModel):
 class ShortAnswerProblemCreate(BaseModel):
     exam_type: str
     year: str  # "R7", "H30"など
-    subject: str
+    subject: Optional[int] = None  # 科目ID（1-18）
+    subject_name: Optional[str] = None  # 科目名（subjectが指定されていない場合に使用）
     question_number: int
     question_text: str
     choice_1: str
@@ -166,7 +174,8 @@ class ShortAnswerProblemResponse(BaseModel):
     id: int
     exam_type: str
     year: str
-    subject: str
+    subject: int  # 科目ID（1-18）
+    subject_name: str  # 科目名（表示用）
     question_number: int
     question_text: str
     choice_1: str
@@ -189,7 +198,8 @@ class ShortAnswerProblemListResponse(BaseModel):
 class ShortAnswerSessionCreate(BaseModel):
     exam_type: str
     year: Optional[str] = None
-    subject: str
+    subject: Optional[int] = None  # 科目ID（1-18）
+    subject_name: Optional[str] = None  # 科目名（subjectが指定されていない場合に使用）
     is_random: bool = False
     problem_ids: List[int]
 
@@ -197,7 +207,8 @@ class ShortAnswerSessionResponse(BaseModel):
     id: int
     exam_type: str
     year: Optional[str] = None
-    subject: str
+    subject: int  # 科目ID（1-18）
+    subject_name: str  # 科目名（表示用）
     is_random: bool
     problem_ids: List[int]
     started_at: datetime
@@ -307,12 +318,30 @@ class ShortAnswerHistoryResponse(BaseModel):
     session_id: int
     exam_type: str
     year: Optional[str]
-    subject: str
+    subject: int  # 科目ID（1-18）
+    subject_name: str  # 科目名（表示用）
     started_at: datetime
     completed_at: Optional[datetime]
     total_problems: int
     correct_count: int
     accuracy: float
+
+class UserReviewHistoryResponse(BaseModel):
+    """ユーザー講評履歴レスポンス"""
+    id: int
+    review_id: int
+    subject: Optional[int] = None  # 科目ID（1-18）
+    subject_name: Optional[str] = None  # 科目名（表示用）
+    exam_type: Optional[str]
+    year: Optional[int]
+    score: Optional[float]
+    attempt_count: int
+    question_title: Optional[str] = None
+    reference_text: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 # フリーチャット用スキーマ（threads/messagesベース）
 class ThreadCreate(BaseModel):

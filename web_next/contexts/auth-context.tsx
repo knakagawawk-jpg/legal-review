@@ -142,7 +142,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const userData = await response.json()
-      const authToken = idToken // Google IDトークンを認証トークンとして使用
+      
+      // バックエンドから返されたJWTトークンを使用（長期有効）
+      // 後方互換性のため、access_tokenがない場合はGoogle IDトークンを使用
+      const authToken = userData.access_token || idToken
+      
       const userInfo = {
         user_id: userData.user_id,
         email: userData.email,
@@ -155,6 +159,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setError(null) // 成功時はエラーをクリア
       
       // ストレージに保存（rememberMeに応じて使い分け）
+      // JWTトークンは長期有効なので、rememberMeに関係なくlocalStorageに保存することを推奨
       authStorage.setToken(authToken, rememberMe)
       authStorage.setUser(userInfo)
     } catch (error: any) {

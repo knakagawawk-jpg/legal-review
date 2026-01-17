@@ -31,3 +31,6 @@ ALGORITHM = "HS256"
 # トークン検証キャッシュ設定
 TOKEN_CACHE_TTL = int(os.getenv("TOKEN_CACHE_TTL", "300"))  # デフォルト5分（秒）
 TOKEN_CACHE_MAX_SIZE = int(os.getenv("TOKEN_CACHE_MAX_SIZE", "1000"))  # デフォルト1000エントリ
+
+# JWTトークン設定
+JWT_ACCESS_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_DAYS", "30"))  # デフォルト30日
