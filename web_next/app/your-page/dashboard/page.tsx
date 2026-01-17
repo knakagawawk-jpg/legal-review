@@ -189,23 +189,27 @@ function MemoField({
         textareaRef.current.style.maxHeight = `${maxHeight}px`
       } else {
         // 表示時：実際の行数に応じて高さを設定
-        // 1行以下: 1行分、2行: 2行分、3行以上: 3行分
+        // 空または1行: 1行分、2行: 2行分、3行以上: 3行分
         let displayLines = 1
-        if (scrollHeight > lineHeight * 2) {
-          // 2行以上
-          if (scrollHeight > lineHeight * 3) {
-            // 3行以上
-            displayLines = 3
-          } else {
-            // 2行
-            displayLines = 2
-          }
-        } else {
-          // 1行以下
+        const twoLineHeight = lineHeight * 2 // 2行分の高さ
+        const threeLineHeight = lineHeight * 3 // 3行分の高さ
+        
+        if (!value || value.trim() === '') {
+          // 空の場合：1行分
           displayLines = 1
+        } else if (scrollHeight <= twoLineHeight) {
+          // 1行以下（空でない場合も含む）
+          displayLines = 1
+        } else if (scrollHeight <= threeLineHeight) {
+          // 2行
+          displayLines = 2
+        } else {
+          // 3行以上
+          displayLines = 3
         }
+        
         const displayHeight = displayLines * lineHeight
-        textareaRef.current.style.height = `${Math.min(scrollHeight, displayHeight)}px`
+        textareaRef.current.style.height = `${displayHeight}px`
         textareaRef.current.style.maxHeight = `${displayHeight}px`
       }
     }
@@ -225,18 +229,29 @@ function MemoField({
           textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
         } else {
           // 表示時：実際の行数に応じて高さを設定
+          // 空または1行: 1行分、2行: 2行分、3行以上: 3行分
           let displayLines = 1
-          if (scrollHeight > lineHeight * 2) {
-            if (scrollHeight > lineHeight * 3) {
-              displayLines = 3
-            } else {
-              displayLines = 2
-            }
-          } else {
+          const twoLineHeight = lineHeight * 2
+          const threeLineHeight = lineHeight * 3
+          const newValue = e.target.value
+          
+          if (!newValue || newValue.trim() === '') {
+            // 空の場合：1行分
             displayLines = 1
+          } else if (scrollHeight <= twoLineHeight) {
+            // 1行以下
+            displayLines = 1
+          } else if (scrollHeight <= threeLineHeight) {
+            // 2行
+            displayLines = 2
+          } else {
+            // 3行以上
+            displayLines = 3
           }
+          
           const displayHeight = displayLines * lineHeight
-          textareaRef.current.style.height = `${Math.min(scrollHeight, displayHeight)}px`
+          textareaRef.current.style.height = `${displayHeight}px`
+          textareaRef.current.style.maxHeight = `${displayHeight}px`
         }
       }
     }, 0)
