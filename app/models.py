@@ -302,7 +302,7 @@ class ProblemMetadata(Base):
     id = Column(Integer, primary_key=True, index=True)
     exam_type = Column(String(20), nullable=False)  # "司法試験" or "予備試験"
     year = Column(Integer, nullable=False)  # 年度（例: 2018, 2025）
-    subject = Column(Integer, nullable=False, index=True)  # 科目ID（1-18）
+    subject = Column(Integer, nullable=True, index=True)  # 科目ID（1-18、NULL可）
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
@@ -383,7 +383,7 @@ class Submission(Base):
     problem_metadata_id = Column(Integer, ForeignKey("problem_metadata.id", ondelete="SET NULL"), nullable=True, index=True)  # 問題メタデータID
     problem_details_id = Column(Integer, ForeignKey("problem_details.id", ondelete="SET NULL"), nullable=True, index=True)  # 問題詳細ID（設問）
     
-    subject = Column(Integer, nullable=False, index=True)  # 科目ID（1-18）
+    subject = Column(Integer, nullable=True, index=True)  # 科目ID（1-18、NULL可）
     question_text = Column(Text, nullable=True)  # 問題文（problem_details_idがある場合は詳細から取得、ない場合は手動入力）
     answer_text = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -399,7 +399,8 @@ class Submission(Base):
     __table_args__ = (
         Index('idx_user_created_at', 'user_id', 'created_at'),
         Index('idx_metadata_details', 'problem_metadata_id', 'problem_details_id'),
-        CheckConstraint("subject BETWEEN 1 AND 18", name="ck_submission_subject"),
+        # subjectがNULLの場合は許可、NULLでない場合は1-18の範囲内であることを確認
+        CheckConstraint("subject IS NULL OR (subject BETWEEN 1 AND 18)", name="ck_submission_subject"),
     )
 
 # 短答式問題関連のモデル
@@ -408,7 +409,7 @@ class ShortAnswerProblem(Base):
     id = Column(Integer, primary_key=True, index=True)
     exam_type = Column(String(20), nullable=False)  # "司法試験" or "予備試験"
     year = Column(String(10), nullable=False)  # 年度（"R7", "H30"など）
-    subject = Column(Integer, nullable=False, index=True)  # 科目ID（1-18）
+    subject = Column(Integer, nullable=True, index=True)  # 科目ID（1-18、NULL可）
     question_number = Column(Integer, nullable=False)  # 問題番号
     question_text = Column(Text, nullable=False)  # 問題本文
     choice_1 = Column(Text, nullable=False)  # 選択肢1
@@ -434,7 +435,7 @@ class ShortAnswerSession(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)  # ユーザーID（認証OFF時はNULL）
     exam_type = Column(String(20), nullable=False)  # 試験種別（フィルター条件）
     year = Column(String(10), nullable=True)  # 年度（フィルター条件、NULL可）
-    subject = Column(Integer, nullable=False, index=True)  # 科目ID（1-18）（フィルター条件）
+    subject = Column(Integer, nullable=True, index=True)  # 科目ID（1-18、NULL可）（フィルター条件）
     is_random = Column(Boolean, default=False)  # ランダムモードかどうか
     problem_ids = Column(Text, nullable=False)  # JSON配列として問題IDを保存
     started_at = Column(DateTime(timezone=True), server_default=func.now())

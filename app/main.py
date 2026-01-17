@@ -573,9 +573,8 @@ async def create_review(
             purpose_text = problem.purpose  # 出題趣旨を取得
             problem_id = problem.id
         
-        # 科目IDが未設定の場合はエラー
-        if subject_id is None:
-            raise HTTPException(status_code=400, detail="科目IDまたは科目名を指定してください")
+        # 科目IDが未設定の場合も許可（NULL可）
+        # subject_idがNoneの場合はそのままNULLとして保存
         
         # 2) Submission保存（認証されている場合はuser_idを設定）
         sub = Submission(
@@ -592,7 +591,8 @@ async def create_review(
         db.refresh(sub)
 
         # 3) LLMで講評を生成（科目名が必要）
-        subject_name = get_subject_name(subject_id)
+        # subject_idがNoneの場合は"不明"を使用
+        subject_name = get_subject_name(subject_id) if subject_id is not None else "不明"
         try:
             review_markdown, review_json, model_name = generate_review(
                 subject=subject_name,  # LLMには科目名を渡す

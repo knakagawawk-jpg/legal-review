@@ -4,7 +4,8 @@ export interface ReviewRequest {
   problem_id?: number | null
   problem_metadata_id?: number | null
   problem_details_id?: number | null
-  subject: string
+  subject?: number | null  // 科目ID（1-18）、既存問題の場合は不要
+  subject_name?: string | null  // 科目名（subjectが指定されていない場合に使用）
   question_text?: string | null
   answer_text: string
   question_title?: string | null

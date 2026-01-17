@@ -16,7 +16,7 @@ import { CheckCircle2, AlertCircle, Loader2, Copy, Check, ChevronDown, ChevronRi
 import { cn } from "@/lib/utils"
 import type { ReviewRequest, ReviewResponse, ProblemMetadata, ProblemMetadataWithDetails } from "@/types/api"
 import { formatYearToEra, formatYearToShortEra } from "@/lib/utils"
-import { sortSubjectsByFixedOrder, getSubjectName, getSubjectId } from "@/lib/subjects"
+import { sortSubjectsByFixedOrder, getSubjectName, getSubjectId, FIXED_SUBJECTS } from "@/lib/subjects"
 import { SidebarToggle, useSidebar } from "@/components/sidebar"
 import { apiClient } from "@/lib/api-client"
 
@@ -35,7 +35,8 @@ export default function ReviewPage() {
   // Step 1: 問題選択 + 答案入力
   const [examType, setExamType] = useState<string>("")
   const [year, setYear] = useState<number | null>(null)
-  const [subject, setSubject] = useState<string>("")
+  const [subject, setSubject] = useState<string>("")  // 既存問題選択用
+  const [newSubjectId, setNewSubjectId] = useState<number | null>(null)  // 新規問題用の科目ID
   const [selectedMetadata, setSelectedMetadata] = useState<ProblemMetadata | null>(null)
   const [selectedDetails, setSelectedDetails] = useState<ProblemMetadataWithDetails | null>(null)
   const [questionTitle, setQuestionTitle] = useState<string>("")
@@ -221,13 +222,11 @@ export default function ReviewPage() {
       } else {
         // 新規問題の場合のみ、question_titleとreference_textを送信
         requestBody.question_text = questionText || undefined
-        // 科目名からIDに変換
-        const subjectId = getSubjectId(subject || "")
-        if (subjectId) {
-          requestBody.subject = subjectId
-        } else {
-          requestBody.subject_name = subject || "未指定"
+        // 科目IDを設定（未選択の場合はNULL）
+        if (newSubjectId !== null) {
+          requestBody.subject = newSubjectId
         }
+        // subject_nameは送信しない（NULLでも処理可能）
         if (questionTitle.trim()) {
           requestBody.question_title = questionTitle.trim()
         }
@@ -453,6 +452,29 @@ export default function ReviewPage() {
                       <BookOpen className="h-3 w-3 text-indigo-600" />
                     </div>
                     <span className="text-xs font-semibold text-slate-700">問題入力</span>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-600">
+                      科目 <span className="text-slate-400">(任意)</span>
+                    </label>
+                    <Select
+                      value={newSubjectId !== null ? String(newSubjectId) : ""}
+                      onValueChange={(value) => {
+                        setNewSubjectId(value === "" ? null : parseInt(value))
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="科目を選択（未選択可）" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">未選択</SelectItem>
+                        {FIXED_SUBJECTS.map((subjectName, index) => (
+                          <SelectItem key={index + 1} value={String(index + 1)}>
+                            {subjectName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-slate-600">
