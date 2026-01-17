@@ -63,8 +63,10 @@ function YourPageSectionInner() {
         const historyStr = localStorage.getItem('recent_subject_pages')
         if (historyStr) {
           const history: Array<{ subject: string; timestamp: number }> = JSON.parse(historyStr)
-          // 有効な科目のみをフィルタリング
-          const validHistory = history.filter(item => FIXED_SUBJECTS.includes(item.subject))
+          // 有効な科目のみをフィルタリング（型アサーションを使用）
+          const validHistory = history.filter(item => 
+            FIXED_SUBJECTS.includes(item.subject as typeof FIXED_SUBJECTS[number])
+          )
           setRecentSubjects(validHistory.slice(0, 5))
         }
       } catch (error) {
