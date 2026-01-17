@@ -32,7 +32,12 @@ export default function DevPage() {
   const [activeTab, setActiveTab] = useState("verify")
 
   return (
-    <div className={cn("min-h-screen bg-gradient-to-b from-background to-muted/20 transition-all duration-300", isOpen && "ml-52")}>
+    <div 
+      className="min-h-screen bg-gradient-to-b from-background to-muted/20 transition-all duration-300"
+      style={{
+        marginLeft: isOpen ? '208px' : '0',
+      }}
+    >
       <div className="container mx-auto px-8 py-12 max-w-7xl">
         {/* ヘッダー */}
         <div className="mb-8 text-center">

@@ -38,7 +38,12 @@ export default function FreeChatPage() {
   }, [router])
 
   return (
-    <div className={cn("min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center transition-all duration-300", isOpen && "ml-52")}>
+    <div 
+      className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center transition-all duration-300"
+      style={{
+        marginLeft: isOpen ? '208px' : '0',
+      }}
+    >
       <div className="text-center space-y-4">
         {loading && (
           <>

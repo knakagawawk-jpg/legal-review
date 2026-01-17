@@ -98,7 +98,12 @@ export default function YourPage() {
   }
 
   return (
-    <div className={cn("min-h-screen bg-gradient-to-b from-amber-50/80 to-background transition-all duration-300 relative", isOpen && "ml-52")}>
+    <div 
+      className="min-h-screen bg-gradient-to-b from-amber-50/80 to-background transition-all duration-300 relative"
+      style={{
+        marginLeft: isOpen ? '208px' : '0',
+      }}
+    >
       {/* コンテンツ */}
       <div className="container mx-auto px-4 py-4 max-w-4xl">
         {/* Header */}
