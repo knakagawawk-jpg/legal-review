@@ -145,7 +145,7 @@ export default function ReviewResultPage() {
 
     const userMessage = inputValue.trim()
     setInputValue("")
-    
+
     // ユーザーメッセージを追加
     const updatedMessages = [...chatMessages, { role: "user" as const, content: userMessage }]
     setChatMessages(updatedMessages)
@@ -179,7 +179,7 @@ export default function ReviewResultPage() {
       }
 
       const data = await response.json()
-      
+
       // アシスタントの回答を追加
       setChatMessages((prev) => [
         ...prev,
@@ -214,7 +214,7 @@ export default function ReviewResultPage() {
 
   // 科目名を取得（review.subject または review_json から）
   const subject = review.subject || reviewJson.subject || ""
-  
+
   // V0に合わせて、問題文と出題趣旨は常に表示
   const questionText = review.question_text || ""
   const purposeText = review.purpose || ""
@@ -239,10 +239,10 @@ export default function ReviewResultPage() {
         </div>
       </header>
 
-      <div 
+      <div
         className="flex flex-row min-h-0 overflow-hidden w-full"
-        style={{ 
-          height: isChatOpen 
+        style={{
+          height: isChatOpen
             ? 'calc(50vh - 3rem)'  // チャットが開いている時は画面の上半分
             : 'calc(100vh - 3rem - 3.5rem)'  // ヘッダー(約3rem) + チャットバー(約3.5rem)
         }}
@@ -250,7 +250,7 @@ export default function ReviewResultPage() {
         {/* Left Panel */}
         <div
           className="lg:min-h-0 border-b lg:border-b-0 lg:border-r border-border flex flex-col overflow-hidden shrink-0"
-          style={{ 
+          style={{
             width: `${leftWidth}%`,
             flexBasis: `${leftWidth}%`,
             flexGrow: 0,
@@ -335,9 +335,9 @@ export default function ReviewResultPage() {
         <PanelResizer onResize={setLeftWidth} currentWidth={leftWidth} />
 
         {/* Right Panel */}
-        <div 
-          className="flex flex-col min-h-0 overflow-hidden min-w-0 bg-background" 
-          style={{ 
+        <div
+          className="flex flex-col min-h-0 overflow-hidden min-w-0 bg-background"
+          style={{
             width: 'auto',
             flexBasis: 0,
             flexGrow: 1,

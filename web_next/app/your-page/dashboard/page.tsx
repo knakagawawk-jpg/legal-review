@@ -177,30 +177,33 @@ function MemoField({
   // フォーカス時にテキストエリアの高さを調整
   useEffect(() => {
     if (textareaRef.current) {
-      // まず高さをリセットして正確なscrollHeightを取得
-      textareaRef.current.style.height = 'auto'
-      const scrollHeight = textareaRef.current.scrollHeight
       const lineHeight = 24 // 1.5rem = 24px
       
       if (isFocused) {
+        // 入力時：まず高さをリセットして正確なscrollHeightを取得
+        textareaRef.current.style.height = 'auto'
+        const scrollHeight = textareaRef.current.scrollHeight
         // 入力時：5行分の高さに設定、それ以上はスクロール
         const maxHeight = inputHeight * 16 // 7.5rem = 120px (16px基準)
         textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
         textareaRef.current.style.maxHeight = `${maxHeight}px`
       } else {
-        // 表示時：実際の行数に応じて高さを設定
-        // 空または1行: 1行分、2行: 2行分、3行以上: 3行分
-        let displayLines = 1
+        // 表示時：デフォルトは1行、内容に応じて2行または3行
+        // まず高さをリセットして正確なscrollHeightを取得
+        textareaRef.current.style.height = 'auto'
+        const scrollHeight = textareaRef.current.scrollHeight
+        
+        const oneLineHeight = lineHeight // 1行分の高さ
         const twoLineHeight = lineHeight * 2 // 2行分の高さ
         const threeLineHeight = lineHeight * 3 // 3行分の高さ
         
-        if (!value || value.trim() === '') {
-          // 空の場合：1行分
+        let displayLines = 1 // デフォルトは1行
+        
+        // scrollHeightに基づいて行数を判定
+        if (scrollHeight <= oneLineHeight) {
+          // 1行以下（空の場合も含む）
           displayLines = 1
         } else if (scrollHeight <= twoLineHeight) {
-          // 1行以下（空でない場合も含む）
-          displayLines = 1
-        } else if (scrollHeight <= threeLineHeight) {
           // 2行
           displayLines = 2
         } else {
@@ -220,28 +223,32 @@ function MemoField({
     // onChangeの後に高さを再計算
     setTimeout(() => {
       if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto'
-        const scrollHeight = textareaRef.current.scrollHeight
         const lineHeight = 24 // 1.5rem = 24px
+        const newValue = e.target.value
         
         if (isFocused) {
+          // 入力時：まず高さをリセットして正確なscrollHeightを取得
+          textareaRef.current.style.height = 'auto'
+          const scrollHeight = textareaRef.current.scrollHeight
           const maxHeight = inputHeight * 16
           textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
         } else {
-          // 表示時：実際の行数に応じて高さを設定
-          // 空または1行: 1行分、2行: 2行分、3行以上: 3行分
-          let displayLines = 1
+          // 表示時：デフォルトは1行、内容に応じて2行または3行
+          // まず高さをリセットして正確なscrollHeightを取得
+          textareaRef.current.style.height = 'auto'
+          const scrollHeight = textareaRef.current.scrollHeight
+          
+          const oneLineHeight = lineHeight
           const twoLineHeight = lineHeight * 2
           const threeLineHeight = lineHeight * 3
-          const newValue = e.target.value
           
-          if (!newValue || newValue.trim() === '') {
-            // 空の場合：1行分
+          let displayLines = 1 // デフォルトは1行
+          
+          // scrollHeightに基づいて行数を判定
+          if (scrollHeight <= oneLineHeight) {
+            // 1行以下（空の場合も含む）
             displayLines = 1
           } else if (scrollHeight <= twoLineHeight) {
-            // 1行以下
-            displayLines = 1
-          } else if (scrollHeight <= threeLineHeight) {
             // 2行
             displayLines = 2
           } else {
@@ -290,7 +297,7 @@ function MemoField({
         "text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0 resize-none whitespace-pre-wrap break-words py-1 px-0",
         isFocused 
           ? "overflow-y-auto min-h-[7.5rem]" // 入力時：5行分、スクロール可能
-          : "overflow-hidden" // 表示時：実際の行数に応じて高さを設定
+          : "overflow-hidden min-h-[1.5rem]" // 表示時：デフォルト1行、内容に応じて2-3行
       )}
       style={{
         lineHeight: '1.5rem',
@@ -1032,7 +1039,7 @@ function YourPageDashboardInner() {
             value={item.subject?.toString() || undefined}
             onValueChange={(value) => updateItemField(item, "subject", value ? parseInt(value) : null)}
           >
-            <SelectTrigger className="h-7 text-xs border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
+            <SelectTrigger className="h-7 text-[10px] border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
               <SelectValue placeholder="--" />
             </SelectTrigger>
             <SelectContent>
@@ -1103,7 +1110,7 @@ function YourPageDashboardInner() {
             value={item.subject?.toString() || undefined}
             onValueChange={(value) => updateItemField(item, "subject", value ? parseInt(value) : null)}
           >
-            <SelectTrigger className="h-7 text-xs border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
+            <SelectTrigger className="h-7 text-[10px] border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
               {selectedSubject && subjectColor ? (
                 <span className={`px-1.5 py-0.5 rounded ${subjectColor}`}>{selectedSubject.name}</span>
               ) : selectedSubject ? (
@@ -1234,7 +1241,7 @@ function YourPageDashboardInner() {
             value={item.subject?.toString() || undefined}
             onValueChange={(value) => updateItemField(item, "subject", value ? parseInt(value) : null)}
           >
-            <SelectTrigger className="h-7 text-xs border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
+            <SelectTrigger className="h-7 text-[10px] border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
               {selectedSubject && subjectColor ? (
                 <span className={`px-1.5 py-0.5 rounded ${subjectColor}`}>{selectedSubject.name}</span>
               ) : selectedSubject ? (
@@ -1438,7 +1445,7 @@ function YourPageDashboardInner() {
                 }
               }}
             >
-              <SelectTrigger className="h-7 text-xs border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
+              <SelectTrigger className="h-7 text-[10px] border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
                 {selectedDraftSubject && draftSubjectColor ? (
                   <span className={`px-1.5 py-0.5 rounded ${draftSubjectColor}`}>{selectedDraftSubject.name}</span>
                 ) : selectedDraftSubject ? (
@@ -1524,7 +1531,7 @@ function YourPageDashboardInner() {
                 }
               }}
             >
-              <SelectTrigger className="h-7 text-xs border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
+              <SelectTrigger className="h-7 text-[10px] border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
                 {selectedDraftSubject && draftSubjectColor ? (
                   <span className={`px-1.5 py-0.5 rounded ${draftSubjectColor}`}>{selectedDraftSubject.name}</span>
                 ) : selectedDraftSubject ? (
