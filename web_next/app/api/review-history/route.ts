@@ -3,6 +3,9 @@ import { cookies } from "next/headers"
 
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000"
 
+// 動的ルートとしてマーク（cookiesを使用するため）
+export const dynamic = 'force-dynamic'
+
 // GET /api/review-history - 講評履歴を取得
 export async function GET(request: NextRequest) {
   try {

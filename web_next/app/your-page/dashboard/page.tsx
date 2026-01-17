@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useCallback, useRef } from "react"
+import React, { useState, useEffect, useCallback, useRef, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
@@ -206,7 +206,7 @@ function SortableRow({
   )
 }
 
-function YourPageDashboard() {
+function YourPageDashboardInner() {
   const { isOpen } = useSidebar()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -1533,6 +1533,21 @@ function YourPageDashboard() {
         </div>
       </div>
     </div>
+  )
+}
+
+function YourPageDashboard() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+          <p className="text-sm text-slate-500">読み込み中...</p>
+        </div>
+      </div>
+    }>
+      <YourPageDashboardInner />
+    </Suspense>
   )
 }
 
