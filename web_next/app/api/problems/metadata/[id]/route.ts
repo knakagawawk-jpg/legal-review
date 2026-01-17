@@ -18,9 +18,15 @@ export async function GET(
     })
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ detail: "Unknown error" }))
+      const errorData = await response.json().catch(() => ({ detail: "Unknown error", error: "問題データの取得に失敗しました" }))
+      console.error("Problem metadata detail API error:", {
+        status: response.status,
+        statusText: response.statusText,
+        metadataId,
+        error: errorData
+      })
       return NextResponse.json(
-        { error: errorData.detail || "問題データの取得に失敗しました" },
+        { error: errorData.error || errorData.detail || `問題データの取得に失敗しました (HTTP ${response.status})` },
         { status: response.status }
       )
     }

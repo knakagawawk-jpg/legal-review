@@ -125,6 +125,7 @@ export default function ReviewPage() {
     if (mode === "existing" && (examType || year || subject)) {
       const fetchMetadata = async () => {
         setLoadingMetadata(true)
+        setError(null)
         try {
           const params = new URLSearchParams()
           if (examType) params.append("exam_type", examType)
@@ -132,7 +133,10 @@ export default function ReviewPage() {
           if (subject) params.append("subject", subject)
 
           const res = await fetch(`/api/problems/metadata?${params.toString()}`)
-          if (!res.ok) throw new Error("問題データの取得に失敗しました")
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({ error: "問題データの取得に失敗しました" }))
+            throw new Error(errorData.error || errorData.detail || `問題データの取得に失敗しました (HTTP ${res.status})`)
+          }
           const data = await res.json()
           const metadataList = data.metadata_list || []
           setMetadataList(metadataList)
@@ -143,7 +147,10 @@ export default function ReviewPage() {
             setSelectedMetadata(metadata)
             try {
               const detailRes = await fetch(`/api/problems/metadata/${metadata.id}`)
-              if (!detailRes.ok) throw new Error("問題詳細の取得に失敗しました")
+              if (!detailRes.ok) {
+                const errorData = await detailRes.json().catch(() => ({ error: "問題詳細の取得に失敗しました" }))
+                throw new Error(errorData.error || errorData.detail || `問題詳細の取得に失敗しました (HTTP ${detailRes.status})`)
+              }
               const detailData: ProblemMetadataWithDetails = await detailRes.json()
               setSelectedDetails(detailData)
               setAccordionValue("") // 問題が選択されたときはAccordionを閉じた状態にする
@@ -179,9 +186,13 @@ export default function ReviewPage() {
   const handleSelectMetadata = async (metadata: ProblemMetadata) => {
     setSelectedMetadata(metadata)
     setLoadingMetadata(true)
+    setError(null)
     try {
       const res = await fetch(`/api/problems/metadata/${metadata.id}`)
-      if (!res.ok) throw new Error("問題詳細の取得に失敗しました")
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: "問題詳細の取得に失敗しました" }))
+        throw new Error(errorData.error || errorData.detail || `問題詳細の取得に失敗しました (HTTP ${res.status})`)
+      }
       const data: ProblemMetadataWithDetails = await res.json()
       setSelectedDetails(data)
       // 最初の設問を選択
@@ -203,6 +214,12 @@ export default function ReviewPage() {
       return
     }
 
+    // 新規問題モードの場合、問題文が必須
+    if (mode === "new" && !questionText.trim()) {
+      setError("問題文を入力してください")
+      return
+    }
+
     setLoading(true)
     setError(null)
     setGenerationPhase("解析中...")
@@ -216,12 +233,17 @@ export default function ReviewPage() {
         if (selectedDetails.details && selectedDetails.details.length > 0) {
           requestBody.problem_details_id = selectedDetails.details[0].id
           requestBody.problem_metadata_id = selectedMetadata?.id
+        } else {
+          throw new Error("問題詳細が取得できませんでした。問題を再度選択してください。")
         }
         // 既存問題の場合はsubject_idはmetadataから取得されるため不要
         // question_titleとreference_textも送信しない
       } else {
         // 新規問題の場合のみ、question_titleとreference_textを送信
-        requestBody.question_text = questionText || undefined
+        if (!questionText.trim()) {
+          throw new Error("問題文を入力してください")
+        }
+        requestBody.question_text = questionText.trim()
         // 科目IDを設定（未選択の場合はNULL）
         if (newSubjectId !== null) {
           requestBody.subject = newSubjectId
@@ -242,9 +264,15 @@ export default function ReviewPage() {
       setGenerationPhase("生成完了")
       
       // 成功したら結果ページに遷移
-      router.push(`/review/${data.submission_id}`)
+      if (data.submission_id) {
+        router.push(`/review/${data.submission_id}`)
+      } else {
+        throw new Error("講評の生成に成功しましたが、submission_idが取得できませんでした")
+      }
     } catch (err: any) {
-      setError(err.message)
+      console.error("Review generation error:", err)
+      const errorMessage = err?.error || err?.message || "講評の生成に失敗しました"
+      setError(errorMessage)
       setGenerationPhase("")
     } finally {
       setLoading(false)
@@ -392,53 +420,100 @@ export default function ReviewPage() {
             <div className="shrink-0 rounded-lg border border-slate-200/80 bg-white shadow-sm flex-shrink-0">
               {mode === "existing" ? (
                 <>
-                  {examType && year && subject && selectedDetails && questionText ? (
-                    <div className="p-2.5">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <div className="flex h-5 w-5 items-center justify-center rounded bg-indigo-100">
-                            <BookOpen className="h-3 w-3 text-indigo-600" />
-                          </div>
-                          <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100 text-xs">
-                            {selectedMetadata?.exam_type} {formatYearToEra(selectedMetadata?.year || 0)} {selectedMetadata?.subject_name || (selectedMetadata?.subject ? getSubjectName(selectedMetadata.subject) : "")}
-                          </Badge>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleCopy(questionText)}
-                          className="h-5 gap-1 px-1.5 text-xs text-slate-400 hover:text-slate-600"
-                        >
-                          {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-                        </Button>
-                      </div>
-
-                      <Collapsible open={isQuestionOpen} onOpenChange={setIsQuestionOpen}>
-                        <CollapsibleTrigger className="flex items-center gap-1 text-xs text-slate-600 hover:text-slate-800">
-                          {isQuestionOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                          <span className="font-medium">問題文</span>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent className="mt-1.5">
-                          <div className="max-h-[200px] overflow-y-auto rounded bg-slate-50 p-2 font-mono text-xs leading-relaxed text-slate-700">
-                            <pre className="whitespace-pre-wrap">{questionText}</pre>
-                          </div>
-                        </CollapsibleContent>
-                      </Collapsible>
-
-                      {referenceText && (
-                        <Collapsible open={isPurposeOpen} onOpenChange={setIsPurposeOpen} className="mt-2">
-                          <CollapsibleTrigger className="flex items-center gap-1 text-xs text-slate-600 hover:text-slate-800">
-                            {isPurposeOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                            <span className="font-medium">出題趣旨</span>
-                          </CollapsibleTrigger>
-                          <CollapsibleContent className="mt-1.5">
-                            <div className="max-h-[120px] overflow-y-auto rounded bg-amber-50/50 p-2 text-xs leading-relaxed text-slate-700">
-                              {referenceText}
+                  {examType && year && subject ? (
+                    <>
+                      {selectedDetails && questionText ? (
+                        <div className="p-2.5">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <div className="flex h-5 w-5 items-center justify-center rounded bg-indigo-100">
+                                <BookOpen className="h-3 w-3 text-indigo-600" />
+                              </div>
+                              <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100 text-xs">
+                                {selectedMetadata?.exam_type} {formatYearToEra(selectedMetadata?.year || 0)} {selectedMetadata?.subject_name || (selectedMetadata?.subject ? getSubjectName(selectedMetadata.subject) : "")}
+                              </Badge>
                             </div>
-                          </CollapsibleContent>
-                        </Collapsible>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleCopy(questionText)}
+                              className="h-5 gap-1 px-1.5 text-xs text-slate-400 hover:text-slate-600"
+                            >
+                              {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                            </Button>
+                          </div>
+
+                          <Collapsible open={isQuestionOpen} onOpenChange={setIsQuestionOpen}>
+                            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-slate-600 hover:text-slate-800">
+                              {isQuestionOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                              <span className="font-medium">問題文</span>
+                            </CollapsibleTrigger>
+                            <CollapsibleContent className="mt-1.5">
+                              <div className="max-h-[200px] overflow-y-auto rounded bg-slate-50 p-2 font-mono text-xs leading-relaxed text-slate-700">
+                                <pre className="whitespace-pre-wrap">{questionText}</pre>
+                              </div>
+                            </CollapsibleContent>
+                          </Collapsible>
+
+                          {referenceText && (
+                            <Collapsible open={isPurposeOpen} onOpenChange={setIsPurposeOpen} className="mt-2">
+                              <CollapsibleTrigger className="flex items-center gap-1 text-xs text-slate-600 hover:text-slate-800">
+                                {isPurposeOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                <span className="font-medium">出題趣旨</span>
+                              </CollapsibleTrigger>
+                              <CollapsibleContent className="mt-1.5">
+                                <div className="max-h-[120px] overflow-y-auto rounded bg-amber-50/50 p-2 text-xs leading-relaxed text-slate-700">
+                                  {referenceText}
+                                </div>
+                              </CollapsibleContent>
+                            </Collapsible>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          {loadingMetadata ? (
+                            <div className="flex items-center justify-center gap-2 p-4">
+                              <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+                              <p className="text-xs text-slate-500">問題データを取得中...</p>
+                            </div>
+                          ) : metadataList.length > 0 ? (
+                            <div className="p-2.5">
+                              <div className="mb-2 text-xs font-medium text-slate-700">
+                                問題を選択してください ({metadataList.length}件)
+                              </div>
+                              <Accordion type="single" value={accordionValue} onValueChange={setAccordionValue} className="w-full">
+                                {metadataList.map((metadata) => (
+                                  <AccordionItem key={metadata.id} value={`metadata-${metadata.id}`}>
+                                    <AccordionTrigger
+                                      className="text-xs py-2 hover:no-underline"
+                                      onClick={() => handleSelectMetadata(metadata)}
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100 text-xs">
+                                          {metadata.exam_type} {formatYearToEra(metadata.year)} {metadata.subject_name || (metadata.subject ? getSubjectName(metadata.subject) : "")}
+                                        </Badge>
+                                      </div>
+                                    </AccordionTrigger>
+                                    <AccordionContent className="pt-0 pb-2">
+                                      <div className="text-xs text-slate-500">
+                                        問題ID: {metadata.id}
+                                      </div>
+                                    </AccordionContent>
+                                  </AccordionItem>
+                                ))}
+                              </Accordion>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-start gap-2 p-4">
+                              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 shrink-0">
+                                <FileText className="h-4 w-4 text-slate-400" />
+                              </div>
+                              <p className="text-xs text-slate-500">該当する問題が見つかりませんでした</p>
+                            </div>
+                          )}
+                        </>
                       )}
-                    </div>
+                    </>
                   ) : (
                     <div className="flex items-center justify-start gap-2 p-4">
                       <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 shrink-0">
