@@ -41,7 +41,7 @@ export default function FreeChatPage() {
     <div 
       className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center transition-all duration-300"
       style={{
-        paddingLeft: isOpen ? '208px' : '0',
+        marginLeft: isOpen ? '208px' : '0',
       }}
     >
       <div className="text-center space-y-4">

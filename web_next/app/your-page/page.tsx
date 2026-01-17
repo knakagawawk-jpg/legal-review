@@ -101,7 +101,7 @@ export default function YourPage() {
     <div 
       className="min-h-screen bg-gradient-to-b from-amber-50/80 to-background transition-all duration-300 relative"
       style={{
-        paddingLeft: isOpen ? '208px' : '0',
+        marginLeft: isOpen ? '208px' : '0',
       }}
     >
       {/* コンテンツ */}

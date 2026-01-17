@@ -198,7 +198,7 @@ function SubjectPage() {
         isRightSidebarOpen && mainTab === "notes" && "mr-64"
       )}
       style={{
-        paddingLeft: isOpen ? '208px' : '0',
+        marginLeft: isOpen ? '208px' : '0',
       }}
     >
       {/* サイドバーを開くボタン（閉じている場合のみ表示） */}

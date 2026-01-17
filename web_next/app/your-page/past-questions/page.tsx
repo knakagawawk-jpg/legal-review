@@ -187,7 +187,7 @@ function PastExamsPage() {
     <div 
       className="min-h-screen bg-gradient-to-b from-amber-50/80 to-orange-50/30 transition-all duration-300"
       style={{
-        paddingLeft: isOpen ? '208px' : '0',
+        marginLeft: isOpen ? '208px' : '0',
       }}
     >
       {/* Fixed Header */}

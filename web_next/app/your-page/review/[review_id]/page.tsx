@@ -103,7 +103,7 @@ export default function ReviewResultPage() {
       <div 
         className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
         style={{
-          paddingLeft: isOpen ? '208px' : '0',
+          marginLeft: isOpen ? '208px' : '0',
         }}
       >
         <div className="container mx-auto px-5 py-12">
@@ -122,7 +122,7 @@ export default function ReviewResultPage() {
       <div 
         className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
         style={{
-          paddingLeft: isOpen ? '208px' : '0',
+          marginLeft: isOpen ? '208px' : '0',
         }}
       >
         <div className="container mx-auto px-5 py-12">
@@ -208,7 +208,7 @@ export default function ReviewResultPage() {
     <div 
       className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
       style={{
-        paddingLeft: isOpen ? '208px' : '0',
+        marginLeft: isOpen ? '208px' : '0',
       }}
     >
       <header className="border-b border-border shrink-0 bg-gradient-to-r from-primary/5 via-transparent to-accent/5">

@@ -89,7 +89,7 @@ function SettingsPage() {
     <div 
       className="flex min-h-screen flex-col bg-slate-50 transition-all duration-300"
       style={{
-        paddingLeft: isOpen ? '208px' : '0',
+        marginLeft: isOpen ? '208px' : '0',
       }}
     >
       <header className="shrink-0 border-b border-slate-200/60 bg-white/80 backdrop-blur-md">

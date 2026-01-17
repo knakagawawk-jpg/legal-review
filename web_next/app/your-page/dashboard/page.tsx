@@ -1759,7 +1759,7 @@ function YourPageDashboardInner() {
     <div
       className="min-h-screen bg-gradient-to-b from-amber-50/80 to-background transition-all duration-300"
       style={{
-        paddingLeft: isOpen ? '208px' : '0',
+        marginLeft: isOpen ? '208px' : '0',
       }}
     >
       <div className="container mx-auto px-20 py-3 max-w-6xl">

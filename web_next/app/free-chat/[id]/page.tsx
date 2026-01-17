@@ -98,7 +98,7 @@ export default function FreeChatThreadPage() {
     <div 
       className="flex h-screen flex-col bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 transition-all duration-300"
       style={{
-        paddingLeft: isOpen ? '208px' : '0',
+        marginLeft: isOpen ? '208px' : '0',
       }}
     >
       <ChatHeader title={thread?.title || "新しいチャット"} />
