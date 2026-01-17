@@ -422,7 +422,7 @@ function YourPageDashboardInner() {
   }, [])
 
   // Load timer data
-  const loadTimerData = useCallback(async () => {
+  const loadTimerData = useCallback(async (skipStateUpdate = false) => {
     // タイマー操作中は状態を上書きしない
     if (isTimerToggling) {
       return
@@ -434,6 +434,11 @@ function YourPageDashboardInner() {
       const sessions = await apiClient.get<TimerSession[]>(`/api/timer/sessions?study_date=${studyDate}`)
       setTimerDailyStats(stats)
       setTimerSessions(sessions)
+      
+      // skipStateUpdateがtrueの場合は状態を更新しない（handleTimerStart/Stopで既に更新済み）
+      if (skipStateUpdate) {
+        return
+      }
       
       // runningセッションを検出して状態を設定
       const runningSession = sessions.find(s => s.status === "running")
@@ -449,7 +454,7 @@ function YourPageDashboardInner() {
     } catch (error) {
       console.error("Failed to load timer data:", error)
       // エラー時は空のデータを設定（操作中でない場合のみ）
-      if (!isTimerToggling) {
+      if (!isTimerToggling && !skipStateUpdate) {
         const studyDate = getStudyDate()
         setTimerDailyStats({ study_date: studyDate, total_seconds: 0, sessions_count: 0 })
         setTimerSessions([])
@@ -475,12 +480,14 @@ function YourPageDashboardInner() {
       sessions: TimerSession[]
     }>("/api/timer/start", {})
     
+    // レスポンスから直接状態を設定（loadTimerDataを呼ばない）
     setActiveSessionId(response.active_session_id)
     setActiveSessionStartTime(new Date(response.active_started_at_utc))
     setTimerDailyStats(response.daily_stats)
     setTimerSessions(response.sessions)
     setElapsedTime(0)
     // setTimerEnabledはhandleTimerToggleで管理するため、ここでは呼び出さない
+    // 状態は既に楽観的更新で設定済み
   }
 
   // Handle timer stop
@@ -496,11 +503,13 @@ function YourPageDashboardInner() {
       sessions: TimerSession[]
     }>(`/api/timer/stop/${activeSessionId}`, {})
     
+    // レスポンスから直接状態を設定（loadTimerDataを呼ばない）
     setTimerDailyStats(response.daily_stats)
     setTimerSessions(response.sessions)
     setActiveSessionId(null)
     setActiveSessionStartTime(null)
     // setTimerEnabledはhandleTimerToggleで管理するため、ここでは呼び出さない
+    // 状態は既に楽観的更新で設定済み
   }
 
   // Handle timer toggle
@@ -515,15 +524,19 @@ function YourPageDashboardInner() {
         await handleTimerStop()
       }
       // 成功時は状態を確定（既に楽観的更新で設定済み）
+      // handleTimerStart/Stopで直接状態を設定しているため、loadTimerDataを呼ぶ必要はない
     } catch (error) {
       console.error("Failed to toggle timer:", error)
       // エラー時は状態を元に戻す
       setTimerEnabled(!enabled)
+      // エラー時はloadTimerDataを呼んで最新の状態を取得
+      await loadTimerData(false)
     } finally {
-      // 操作完了後、少し遅延してフラグを解除（loadTimerDataの再実行を許可）
+      // 操作完了後、少し遅延してフラグを解除
+      // 成功時は既に状態が設定済みなので、loadTimerDataを再実行しない
       setTimeout(() => {
         setIsTimerToggling(false)
-      }, 500)
+      }, 1000) // 500msから1000msに延長して、確実に操作が完了するまで待つ
     }
   }
 
