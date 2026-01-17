@@ -80,6 +80,14 @@ const STATUS_OPTIONS = [
   { value: 4, label: "後で", color: "bg-emerald-50 text-emerald-600" },
 ]
 
+// Point行専用のStatusオプション（種類表示用）
+const POINT_STATUS_OPTIONS = [
+  { value: 1, label: "論文", color: "bg-purple-100 text-purple-700" },
+  { value: 2, label: "短答", color: "bg-orange-100 text-orange-700" },
+  { value: 3, label: "判例", color: "bg-cyan-100 text-cyan-700" },
+  { value: 4, label: "その他", color: "bg-gray-100 text-gray-700" },
+]
+
 // Sortable Row Component
 function SortableRow({
   item,
@@ -182,7 +190,7 @@ function SortableRow({
             >
               <Trash2 className="h-3 w-3" />
             </Button>
-            {onEditCreatedDate && entryType === 2 && (
+            {onEditCreatedDate && (entryType === 2 || entryType === 3) && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -212,6 +220,7 @@ function YourPageDashboardInner() {
   const router = useRouter()
   const [revisitTab, setRevisitTab] = useState<"7days" | "whole">("7days")
   const [timerEnabled, setTimerEnabled] = useState(false)
+  const [isTimerToggling, setIsTimerToggling] = useState(false) // タイマー操作中のフラグ
   const [timerDetailsOpen, setTimerDetailsOpen] = useState(false)
   const [elapsedTime, setElapsedTime] = useState(0)
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
@@ -414,6 +423,11 @@ function YourPageDashboardInner() {
 
   // Load timer data
   const loadTimerData = useCallback(async () => {
+    // タイマー操作中は状態を上書きしない
+    if (isTimerToggling) {
+      return
+    }
+    
     try {
       const studyDate = getStudyDate()
       const stats = await apiClient.get<TimerDailyStats>(`/api/timer/daily-stats?study_date=${studyDate}`)
@@ -434,15 +448,17 @@ function YourPageDashboardInner() {
       }
     } catch (error) {
       console.error("Failed to load timer data:", error)
-      // エラー時は空のデータを設定
-      const studyDate = getStudyDate()
-      setTimerDailyStats({ study_date: studyDate, total_seconds: 0, sessions_count: 0 })
-      setTimerSessions([])
-      setActiveSessionId(null)
-      setActiveSessionStartTime(null)
-      setTimerEnabled(false)
+      // エラー時は空のデータを設定（操作中でない場合のみ）
+      if (!isTimerToggling) {
+        const studyDate = getStudyDate()
+        setTimerDailyStats({ study_date: studyDate, total_seconds: 0, sessions_count: 0 })
+        setTimerSessions([])
+        setActiveSessionId(null)
+        setActiveSessionStartTime(null)
+        setTimerEnabled(false)
+      }
     }
-  }, [])
+  }, [isTimerToggling])
 
   useEffect(() => {
     loadTimerData()
@@ -450,53 +466,46 @@ function YourPageDashboardInner() {
 
   // Handle timer start
   const handleTimerStart = async () => {
-    try {
-      const response = await apiClient.post<{
-        active_session_id: string
-        study_date: string
-        confirmed_total_seconds: number
-        active_started_at_utc: string
-        daily_stats: TimerDailyStats
-        sessions: TimerSession[]
-      }>("/api/timer/start", {})
-      
-      setActiveSessionId(response.active_session_id)
-      setActiveSessionStartTime(new Date(response.active_started_at_utc))
-      setTimerDailyStats(response.daily_stats)
-      setTimerSessions(response.sessions)
-      setTimerEnabled(true)
-      setElapsedTime(0)
-    } catch (error) {
-      console.error("Failed to start timer:", error)
-      setTimerEnabled(false)
-    }
+    const response = await apiClient.post<{
+      active_session_id: string
+      study_date: string
+      confirmed_total_seconds: number
+      active_started_at_utc: string
+      daily_stats: TimerDailyStats
+      sessions: TimerSession[]
+    }>("/api/timer/start", {})
+    
+    setActiveSessionId(response.active_session_id)
+    setActiveSessionStartTime(new Date(response.active_started_at_utc))
+    setTimerDailyStats(response.daily_stats)
+    setTimerSessions(response.sessions)
+    setElapsedTime(0)
+    // setTimerEnabledはhandleTimerToggleで管理するため、ここでは呼び出さない
   }
 
   // Handle timer stop
   const handleTimerStop = async () => {
-    try {
-      if (!activeSessionId) return
-      
-      const response = await apiClient.post<{
-        study_date: string
-        confirmed_total_seconds: number
-        daily_stats: TimerDailyStats
-        sessions: TimerSession[]
-      }>(`/api/timer/stop/${activeSessionId}`, {})
-      
-      setTimerDailyStats(response.daily_stats)
-      setTimerSessions(response.sessions)
-      setActiveSessionId(null)
-      setActiveSessionStartTime(null)
-      setTimerEnabled(false)
-    } catch (error) {
-      console.error("Failed to stop timer:", error)
-      setTimerEnabled(false)
+    if (!activeSessionId) {
+      throw new Error("アクティブなセッションがありません")
     }
+    
+    const response = await apiClient.post<{
+      study_date: string
+      confirmed_total_seconds: number
+      daily_stats: TimerDailyStats
+      sessions: TimerSession[]
+    }>(`/api/timer/stop/${activeSessionId}`, {})
+    
+    setTimerDailyStats(response.daily_stats)
+    setTimerSessions(response.sessions)
+    setActiveSessionId(null)
+    setActiveSessionStartTime(null)
+    // setTimerEnabledはhandleTimerToggleで管理するため、ここでは呼び出さない
   }
 
   // Handle timer toggle
   const handleTimerToggle = async (enabled: boolean) => {
+    setIsTimerToggling(true)
     // 楽観的更新: すぐに状態を更新
     setTimerEnabled(enabled)
     try {
@@ -505,10 +514,16 @@ function YourPageDashboardInner() {
       } else {
         await handleTimerStop()
       }
+      // 成功時は状態を確定（既に楽観的更新で設定済み）
     } catch (error) {
       console.error("Failed to toggle timer:", error)
       // エラー時は状態を元に戻す
       setTimerEnabled(!enabled)
+    } finally {
+      // 操作完了後、少し遅延してフラグを解除（loadTimerDataの再実行を許可）
+      setTimeout(() => {
+        setIsTimerToggling(false)
+      }, 500)
     }
   }
 
@@ -716,6 +731,45 @@ function YourPageDashboardInner() {
     }
   }
 
+  // Handle drag end for Left items
+  const handleDragEndLeftItems = async (event: DragEndEvent) => {
+    const { active, over } = event
+
+    if (over && active.id !== over.id) {
+      const oldIndex = leftItems.findIndex((item) => item.id.toString() === active.id)
+      const newIndex = leftItems.findIndex((item) => item.id.toString() === over.id)
+
+      const newItems = arrayMove(leftItems, oldIndex, newIndex)
+      setLeftItems(newItems)
+
+      // Update positions
+      const movedItem = newItems[newIndex]
+      const prevItem = newIndex > 0 ? newItems[newIndex - 1] : null
+      const nextItem = newIndex < newItems.length - 1 ? newItems[newIndex + 1] : null
+
+      let newPosition: number
+      if (prevItem && nextItem) {
+        newPosition = Math.floor((prevItem.position + nextItem.position) / 2)
+      } else if (prevItem) {
+        newPosition = prevItem.position + 10
+      } else if (nextItem) {
+        newPosition = nextItem.position - 10
+      } else {
+        newPosition = 10
+      }
+
+      try {
+        // Use PUT to update position
+        await apiClient.put(`/api/dashboard/items/${movedItem.id}`, {
+          position: newPosition,
+        })
+      } catch (error) {
+        console.error("Failed to reorder item:", error)
+        loadDashboardItems() // Revert on error
+      }
+    }
+  }
+
   // Update item field
   const updateItemField = (item: DashboardItem, field: keyof DashboardItem, value: any) => {
     const updateData = { [field]: value }
@@ -734,7 +788,7 @@ function YourPageDashboardInner() {
 
   // Render table row for Point
   const renderPointRow = (item: DashboardItem) => {
-    const statusOption = STATUS_OPTIONS.find((s) => s.value === item.status)
+    const statusOption = POINT_STATUS_OPTIONS.find((s) => s.value === item.status)
     return (
       <SortableRow key={item.id} item={item} entryType={1} onDelete={deleteItem}>
         <TableCell className="py-1.5 px-0.5 w-14">
@@ -767,11 +821,11 @@ function YourPageDashboardInner() {
             value={item.status.toString()}
             onValueChange={(value) => updateItemField(item, "status", parseInt(value))}
           >
-            <SelectTrigger className={`h-7 text-[10px] border-0 px-1 w-14 ${statusOption?.color || ""}`}>
+            <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-14">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {STATUS_OPTIONS.filter(opt => opt.value != null && opt.value.toString() !== "").map((opt) => (
+              {POINT_STATUS_OPTIONS.filter(opt => opt.value != null && opt.value.toString() !== "").map((opt) => (
                 <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
                   <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
                 </SelectItem>
@@ -884,7 +938,7 @@ function YourPageDashboardInner() {
             value={item.status.toString()}
             onValueChange={(value) => updateItemField(item, "status", parseInt(value))}
           >
-            <SelectTrigger className={`h-7 text-[10px] border-0 px-1 w-14 ${statusOption?.color || ""}`}>
+            <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-14">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -910,9 +964,17 @@ function YourPageDashboardInner() {
   // Render table row for Left item
   const renderLeftRow = (item: DashboardItem) => {
     const statusOption = STATUS_OPTIONS.find((s) => s.value === item.status)
-    const createdDate = item.dashboard_date ? formatDueDate(item.dashboard_date) : "--"
+    const createdDate = item.dashboard_date ? formatDueDate(item.dashboard_date) : getFormattedCreatedDate()
     return (
-      <TableRow key={item.id} className="border-b border-border/50 hover:bg-amber-50/30 transition-colors">
+      <SortableRow 
+        key={item.id} 
+        item={item} 
+        entryType={3} 
+        onDelete={deleteItem}
+        onEditCreatedDate={(id) => {
+          setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
+        }}
+      >
         <TableCell className="py-1.5 px-0.5 w-14">
           <Select
             value={item.subject?.toString() || undefined}
@@ -938,8 +1000,29 @@ function YourPageDashboardInner() {
             className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
           />
         </TableCell>
-        <TableCell className="py-1.5 px-1 w-12 text-xs text-muted-foreground text-center">
-          {createdDate}
+        <TableCell className="py-1.5 px-1 w-12 text-xs text-muted-foreground text-center relative">
+          <Popover 
+            open={createdDatePickerOpen[item.id] || false} 
+            onOpenChange={(open) => setCreatedDatePickerOpen(prev => ({ ...prev, [item.id]: open }))}
+          >
+            <PopoverTrigger asChild>
+              <button className="w-full h-full hover:bg-muted/50 rounded px-1">
+                {createdDate}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-3" align="start">
+              <DatePickerCalendar
+                selectedDate={item.dashboard_date ? new Date(item.dashboard_date) : null}
+                onSelect={(date) => {
+                  if (date) {
+                    const dateStr = date.toISOString().split("T")[0]
+                    updateItemField(item, "dashboard_date", dateStr)
+                  }
+                  setCreatedDatePickerOpen(prev => ({ ...prev, [item.id]: false }))
+                }}
+              />
+            </PopoverContent>
+          </Popover>
         </TableCell>
         <TableCell className="py-1.5 px-0 w-14">
           <Popover open={datePickerOpen[item.id] || false} onOpenChange={(open) => setDatePickerOpen(prev => ({ ...prev, [item.id]: open }))}>
@@ -972,7 +1055,7 @@ function YourPageDashboardInner() {
             value={item.status.toString()}
             onValueChange={(value) => updateItemField(item, "status", parseInt(value))}
           >
-            <SelectTrigger className={`h-7 text-[10px] border-0 px-1 w-14 ${statusOption?.color || ""}`}>
+            <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-14">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -991,17 +1074,7 @@ function YourPageDashboardInner() {
             className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
           />
         </TableCell>
-        <TableCell className="py-1.5 px-1 w-10">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => deleteItem(item.id)}
-            className="h-5 w-5 bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-          >
-            <Trash2 className="h-3 w-3" />
-          </Button>
-        </TableCell>
-      </TableRow>
+      </SortableRow>
     )
   }
 
@@ -1131,10 +1204,10 @@ function YourPageDashboardInner() {
               }}
             >
               <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-14">
-                <SelectValue placeholder="未了" />
+                <SelectValue placeholder="論文" />
               </SelectTrigger>
               <SelectContent>
-                {STATUS_OPTIONS.map((opt) => (
+                {POINT_STATUS_OPTIONS.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
                     <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
                   </SelectItem>
@@ -1377,7 +1450,7 @@ function YourPageDashboardInner() {
                           <th className="py-1 px-1 w-6"></th>
                           <th className="py-1 px-0.5 w-14 text-left font-medium">科目</th>
                           <th className="py-1 px-1 w-60 text-left font-medium">項目</th>
-                          <th className="py-1 px-0 w-14 text-left font-medium">状態</th>
+                          <th className="py-1 px-0 w-14 text-left font-medium">種類</th>
                           <th className="py-1 px-1 text-left font-medium">メモ</th>
                         </tr>
                       </thead>
@@ -1427,7 +1500,7 @@ function YourPageDashboardInner() {
                           <th className="py-1 px-1 text-left font-medium">項目</th>
                           <th className="py-1 px-1 w-12 text-center font-medium">作成</th>
                           <th className="py-1 px-0 w-14 text-left font-medium">期限</th>
-                          <th className="py-1 px-0 w-14 text-left font-medium">状態</th>
+                          <th className="py-1 px-0 w-14 text-left font-medium">種類</th>
                           <th className="py-1 px-1 text-left font-medium">メモ</th>
                         </tr>
                       </thead>
@@ -1463,24 +1536,32 @@ function YourPageDashboardInner() {
               </CardHeader>
               <CardContent className="px-3 pb-2">
                 {leftItems.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border text-xs text-muted-foreground">
-                          <th className="py-1 px-0.5 w-14 text-left font-medium">科目</th>
-                          <th className="py-1 px-1 text-left font-medium">項目</th>
-                          <th className="py-1 px-1 w-12 text-center font-medium">作成</th>
-                          <th className="py-1 px-0 w-14 text-left font-medium">期限</th>
-                          <th className="py-1 px-0 w-14 text-left font-medium">状態</th>
-                          <th className="py-1 px-1 text-left font-medium">メモ</th>
-                          <th className="py-1 px-1 w-10"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {leftItems.map(renderLeftRow)}
-                      </tbody>
-                    </table>
-                  </div>
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEndLeftItems}
+                  >
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-border text-xs text-muted-foreground">
+                            <th className="py-1 px-1 w-6"></th>
+                            <th className="py-1 px-0.5 w-14 text-left font-medium">科目</th>
+                            <th className="py-1 px-1 text-left font-medium">項目</th>
+                            <th className="py-1 px-1 w-12 text-center font-medium">作成</th>
+                            <th className="py-1 px-0 w-14 text-left font-medium">期限</th>
+                            <th className="py-1 px-0 w-14 text-left font-medium">種類</th>
+                            <th className="py-1 px-1 text-left font-medium">メモ</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <SortableContext items={leftItems.map(item => item.id.toString())} strategy={verticalListSortingStrategy}>
+                            {leftItems.map(renderLeftRow)}
+                          </SortableContext>
+                        </tbody>
+                      </table>
+                    </div>
+                  </DndContext>
                 ) : (
                   <div className="flex items-center justify-center py-6 bg-muted/20 rounded border border-dashed">
                     <p className="text-xs text-muted-foreground">未完了のトピックはありません</p>
