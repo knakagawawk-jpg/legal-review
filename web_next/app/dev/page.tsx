@@ -14,6 +14,7 @@ import { AlertCircle, Loader2, Search, Eye, Trash2 } from "lucide-react"
 import type { ReviewResponse, SubmissionHistory } from "@/types/api"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
+import { getSubjectName } from "@/lib/subjects"
 
 type DevReviewData = {
   submission_id?: number
@@ -96,7 +97,11 @@ function ReviewResultVerify() {
         answer_text: reviewData.answer_text || "",
         question_text: reviewData.question_text || "",
         purpose: reviewData.purpose || "",
-        subject: reviewData.subject || "",
+        // 設計思想: subject（数値）を優先し、表示時に文字列に変換
+        // subject_nameは後方互換性のためのフォールバック
+        subject: reviewData.subject != null 
+          ? getSubjectName(reviewData.subject) 
+          : (reviewData.subject_name || ""),
         review_markdown: reviewData.review_markdown || "",
         review_json: reviewData.review_json || {},
       })
