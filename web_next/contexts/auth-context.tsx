@@ -16,7 +16,7 @@ interface AuthContextType {
   isLoading: boolean
   error: string | null
   login: (token: string, rememberMe?: boolean) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
   refreshUser: () => Promise<void>
   clearError: () => void
   isAuthenticated: boolean
@@ -51,13 +51,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // ユーザー情報をキャッシュに保存
         authStorage.setUser(userInfo)
       } else {
-        // トークンが無効な場合は削除
+        // トークンが無効な場合
         const errorData = await response.json().catch(() => ({ error: "認証に失敗しました" }))
-        setError(errorData.error || "認証に失敗しました")
-        authStorage.removeToken()
-        authStorage.removeUser()
-        setToken(null)
-        setUser(null)
+        const status = response.status
+        
+        // 401/403エラーの場合のみ、トークンを削除
+        if (status === 401 || status === 403) {
+          setError(errorData.error || "認証に失敗しました")
+          authStorage.removeToken()
+          authStorage.removeUser()
+          setToken(null)
+          setUser(null)
+        } else {
+          // その他のエラー（500など）の場合は、トークンを保持
+          setError(errorData.error || "ユーザー情報の取得に失敗しました")
+        }
       }
     } catch (error: any) {
       console.error("Failed to fetch user info:", error)

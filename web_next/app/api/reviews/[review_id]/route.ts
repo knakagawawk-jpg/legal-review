@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
 
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000"
+const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || process.env.BACKEND_URL || "http://localhost:8000"
 
 // GET /api/reviews/[review_id] - review_idで講評を取得
 export async function GET(

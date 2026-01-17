@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { cookies } from "next/headers"
 
 const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:8000"
 
@@ -8,9 +9,18 @@ export const dynamic = 'force-dynamic'
 // GET /api/users/me - 現在のユーザー情報を取得
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization")
+    // クッキーからトークンを取得（優先）
+    const cookieStore = await cookies()
+    const cookieToken = cookieStore.get("auth_token")?.value
     
-    if (!authHeader) {
+    // Authorizationヘッダーからトークンを取得（フォールバック）
+    const authHeader = request.headers.get("authorization")
+    const headerToken = authHeader?.replace("Bearer ", "")
+    
+    // クッキーまたはヘッダーからトークンを取得
+    const token = cookieToken || headerToken
+    
+    if (!token) {
       return NextResponse.json(
         { error: "認証が必要です" },
         { status: 401 }
@@ -21,7 +31,7 @@ export async function GET(request: NextRequest) {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": authHeader,
+        "Authorization": `Bearer ${token}`,
       },
       cache: "no-store",
     })
@@ -48,9 +58,18 @@ export async function GET(request: NextRequest) {
 // PUT /api/users/me - ユーザー情報を更新
 export async function PUT(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization")
+    // クッキーからトークンを取得（優先）
+    const cookieStore = await cookies()
+    const cookieToken = cookieStore.get("auth_token")?.value
     
-    if (!authHeader) {
+    // Authorizationヘッダーからトークンを取得（フォールバック）
+    const authHeader = request.headers.get("authorization")
+    const headerToken = authHeader?.replace("Bearer ", "")
+    
+    // クッキーまたはヘッダーからトークンを取得
+    const token = cookieToken || headerToken
+    
+    if (!token) {
       return NextResponse.json(
         { error: "認証が必要です" },
         { status: 401 }
@@ -63,7 +82,7 @@ export async function PUT(request: NextRequest) {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": authHeader,
+        "Authorization": `Bearer ${token}`,
       },
       body: JSON.stringify(body),
       cache: "no-store",

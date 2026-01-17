@@ -31,11 +31,25 @@ class ApiClient {
       }
 
       // 認証エラーの場合はトークンを削除
+      // ただし、一時的なネットワークエラーやサーバーエラーの可能性もあるため、
+      // クッキーにトークンがある場合は即座にログアウトしない
       if (response.status === 401 || response.status === 403) {
-        authStorage.removeToken()
-        authStorage.removeUser()
-        // 認証エラーイベントを発火（AuthContextでリスン）
-        window.dispatchEvent(new CustomEvent('auth:error', { detail: error }))
+        // クッキーにトークンがあるか確認（サーバー側で確認するため、ここでは推測のみ）
+        // 実際のクッキー確認はできないため、ストレージにトークンがある場合は
+        // サーバー側のクッキーと同期していない可能性がある
+        const hasToken = authStorage.getToken()
+        if (hasToken) {
+          // ストレージにトークンがある場合、サーバー側のクッキーと同期していない可能性がある
+          // この場合は、認証エラーイベントを発火せず、単にエラーを投げる
+          // クライアント側のストレージは削除しない（サーバー側のクッキーが有効な可能性がある）
+          console.warn("認証エラーが発生しましたが、ストレージにトークンが存在します。サーバー側のクッキーと同期していない可能性があります。")
+        } else {
+          // ストレージにトークンがない場合、完全にログアウト状態
+          authStorage.removeToken()
+          authStorage.removeUser()
+          // 認証エラーイベントを発火（AuthContextでリスン）
+          window.dispatchEvent(new CustomEvent('auth:error', { detail: error }))
+        }
       }
 
       throw error
