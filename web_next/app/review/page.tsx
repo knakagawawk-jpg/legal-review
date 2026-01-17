@@ -291,12 +291,7 @@ export default function ReviewPage() {
   }
 
   return (
-    <div 
-      className="flex min-h-screen flex-col bg-slate-50 transition-all duration-300"
-      style={{
-        marginLeft: isOpen ? '208px' : '0',
-      }}
-    >
+    <div className={cn("flex min-h-screen flex-col bg-slate-50 transition-all duration-300", isOpen && "ml-52")}>
       <header className="shrink-0 border-b border-slate-200/60 bg-white/80 backdrop-blur-md">
         <div className="mx-auto flex h-11 max-w-7xl items-center justify-between px-3">
           <div className="flex items-center gap-2 ml-2">

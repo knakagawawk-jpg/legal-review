@@ -1756,12 +1756,7 @@ function YourPageDashboardInner() {
   }
 
   return (
-    <div
-      className="min-h-screen bg-gradient-to-b from-amber-50/80 to-background transition-all duration-300"
-      style={{
-        marginLeft: isOpen ? '208px' : '0',
-      }}
-    >
+    <div className={cn("min-h-screen bg-gradient-to-b from-amber-50/80 to-background transition-all duration-300", isOpen && "ml-52")}>
       <div className="container mx-auto px-20 py-3 max-w-6xl">
         {/* Header */}
         <header className="mb-3">

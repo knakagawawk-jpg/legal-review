@@ -192,15 +192,11 @@ function SubjectPage() {
     .find(page => page.id === selectedPageId)
 
   return (
-    <div 
-      className={cn(
-        "min-h-screen bg-gradient-to-b from-amber-50/80 to-orange-50/30 transition-all duration-300",
-        isRightSidebarOpen && mainTab === "notes" && "mr-64"
-      )}
-      style={{
-        marginLeft: isOpen ? '208px' : '0',
-      }}
-    >
+    <div className={cn(
+      "min-h-screen bg-gradient-to-b from-amber-50/80 to-orange-50/30 transition-all duration-300",
+      isOpen && "ml-52",
+      isRightSidebarOpen && mainTab === "notes" && "mr-64"
+    )}>
       {/* サイドバーを開くボタン（閉じている場合のみ表示） */}
       {!isOpen && (
         <button

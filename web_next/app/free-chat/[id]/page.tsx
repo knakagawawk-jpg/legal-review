@@ -95,12 +95,7 @@ export default function FreeChatThreadPage() {
   }
 
   return (
-    <div 
-      className="flex h-screen flex-col bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 transition-all duration-300"
-      style={{
-        marginLeft: isOpen ? '208px' : '0',
-      }}
-    >
+    <div className={cn("flex h-screen flex-col bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 transition-all duration-300", isOpen && "ml-52")}>
       <ChatHeader title={thread?.title || "新しいチャット"} />
 
       <ChatMessages messages={messages} isLoading={loading} error={error} messagesEndRef={messagesEndRef} />
