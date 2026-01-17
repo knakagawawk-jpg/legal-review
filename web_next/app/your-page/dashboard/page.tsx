@@ -88,6 +88,71 @@ const POINT_STATUS_OPTIONS = [
   { value: 4, label: "その他", color: "bg-gray-100 text-gray-700" },
 ]
 
+/**
+ * Dashboard内の科目と色の対応表
+ * 
+ * 色の分類:
+ * - 憲法系: 赤系（red, rose, pink）
+ * - 民事系: 青系（blue, cyan, sky, indigo, teal）
+ * - 刑事系: 緑系（green, emerald, lime）
+ * - その他: その他の色（yellow, amber, gray）
+ * 
+ * 科目と色の対応:
+ * 
+ * 【憲法系（赤系）】
+ * - 憲法: bg-red-100 text-red-700
+ * - 行政法: bg-rose-100 text-rose-700
+ * - 国際関係法（公法系）: bg-pink-100 text-pink-700
+ * 
+ * 【民事系（青系）】
+ * - 民法: bg-blue-100 text-blue-700
+ * - 商法: bg-cyan-100 text-cyan-700
+ * - 民事訴訟法: bg-sky-100 text-sky-700
+ * - 実務基礎（民事）: bg-indigo-100 text-indigo-700
+ * - 倒産法: bg-teal-100 text-teal-700
+ * - 租税法: bg-blue-200 text-blue-800
+ * - 知的財産法: bg-sky-200 text-sky-800
+ * - 労働法: bg-indigo-200 text-indigo-800
+ * - 国際関係法（私法系）: bg-blue-300 text-blue-900
+ * 
+ * 【刑事系（緑系）】
+ * - 刑法: bg-green-100 text-green-700
+ * - 刑事訴訟法: bg-emerald-100 text-emerald-700
+ * - 実務基礎（刑事）: bg-lime-100 text-lime-700
+ * 
+ * 【その他】
+ * - 経済法: bg-yellow-100 text-yellow-700
+ * - 環境法: bg-amber-100 text-amber-700
+ * - 一般教養科目: bg-gray-100 text-gray-700
+ */
+const SUBJECT_COLORS: Record<string, string> = {
+  // 憲法系（赤系）
+  "憲法": "bg-red-100 text-red-700",
+  "行政法": "bg-rose-100 text-rose-700",
+  "国際関係法（公法系）": "bg-pink-100 text-pink-700",
+  
+  // 民事系（青系）
+  "民法": "bg-blue-100 text-blue-700",
+  "商法": "bg-cyan-100 text-cyan-700",
+  "民事訴訟法": "bg-sky-100 text-sky-700",
+  "実務基礎（民事）": "bg-indigo-100 text-indigo-700",
+  "倒産法": "bg-teal-100 text-teal-700",
+  "租税法": "bg-blue-200 text-blue-800",
+  "知的財産法": "bg-sky-200 text-sky-800",
+  "労働法": "bg-indigo-200 text-indigo-800",
+  "国際関係法（私法系）": "bg-blue-300 text-blue-900",
+  
+  // 刑事系（緑系）
+  "刑法": "bg-green-100 text-green-700",
+  "刑事訴訟法": "bg-emerald-100 text-emerald-700",
+  "実務基礎（刑事）": "bg-lime-100 text-lime-700",
+  
+  // その他
+  "経済法": "bg-yellow-100 text-yellow-700",
+  "環境法": "bg-amber-100 text-amber-700",
+  "一般教養科目": "bg-gray-100 text-gray-700",
+}
+
 // Memo Field Component
 function MemoField({
   value,
@@ -107,8 +172,6 @@ function MemoField({
 
   // 行数を計算（改行を考慮）
   const lineCount = value ? value.split('\n').length : 1
-  const minDisplayHeight = 1.5 // 最小表示高さ（1行分）
-  const maxDisplayHeight = 4.5 // 最大表示高さ（3行分: 1.5rem * 3）
   const inputHeight = 7.5 // 入力時高さ（5行分: 1.5rem * 5）
 
   // フォーカス時にテキストエリアの高さを調整
@@ -117,6 +180,7 @@ function MemoField({
       // まず高さをリセットして正確なscrollHeightを取得
       textareaRef.current.style.height = 'auto'
       const scrollHeight = textareaRef.current.scrollHeight
+      const lineHeight = 24 // 1.5rem = 24px
       
       if (isFocused) {
         // 入力時：5行分の高さに設定、それ以上はスクロール
@@ -124,13 +188,28 @@ function MemoField({
         textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
         textareaRef.current.style.maxHeight = `${maxHeight}px`
       } else {
-        // 表示時：3行まで表示（折り返し含む）
-        const maxHeight = maxDisplayHeight * 16 // 4.5rem = 72px
-        textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
-        textareaRef.current.style.maxHeight = `${maxHeight}px`
+        // 表示時：実際の行数に応じて高さを設定
+        // 1行以下: 1行分、2行: 2行分、3行以上: 3行分
+        let displayLines = 1
+        if (scrollHeight > lineHeight * 2) {
+          // 2行以上
+          if (scrollHeight > lineHeight * 3) {
+            // 3行以上
+            displayLines = 3
+          } else {
+            // 2行
+            displayLines = 2
+          }
+        } else {
+          // 1行以下
+          displayLines = 1
+        }
+        const displayHeight = displayLines * lineHeight
+        textareaRef.current.style.height = `${Math.min(scrollHeight, displayHeight)}px`
+        textareaRef.current.style.maxHeight = `${displayHeight}px`
       }
     }
-  }, [isFocused, value, maxDisplayHeight, inputHeight])
+  }, [isFocused, value, inputHeight])
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onChange(e)
@@ -139,12 +218,25 @@ function MemoField({
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto'
         const scrollHeight = textareaRef.current.scrollHeight
+        const lineHeight = 24 // 1.5rem = 24px
+        
         if (isFocused) {
           const maxHeight = inputHeight * 16
           textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
         } else {
-          const maxHeight = maxDisplayHeight * 16
-          textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
+          // 表示時：実際の行数に応じて高さを設定
+          let displayLines = 1
+          if (scrollHeight > lineHeight * 2) {
+            if (scrollHeight > lineHeight * 3) {
+              displayLines = 3
+            } else {
+              displayLines = 2
+            }
+          } else {
+            displayLines = 1
+          }
+          const displayHeight = displayLines * lineHeight
+          textareaRef.current.style.height = `${Math.min(scrollHeight, displayHeight)}px`
         }
       }
     }, 0)
@@ -183,7 +275,7 @@ function MemoField({
         "text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0 resize-none whitespace-pre-wrap break-words py-1 px-0",
         isFocused 
           ? "overflow-y-auto min-h-[7.5rem]" // 入力時：5行分、スクロール可能
-          : "overflow-hidden min-h-[1.5rem]" // 表示時：3行まで、スクロールなし
+          : "overflow-hidden" // 表示時：実際の行数に応じて高さを設定
       )}
       style={{
         lineHeight: '1.5rem',
@@ -916,9 +1008,11 @@ function YourPageDashboardInner() {
   // Render table row for Point
   const renderPointRow = (item: DashboardItem) => {
     const statusOption = POINT_STATUS_OPTIONS.find((s) => s.value === item.status)
+    const selectedSubject = subjects.find(s => s.id === item.subject)
+    const subjectColor = selectedSubject ? SUBJECT_COLORS[selectedSubject.name] || "" : ""
     return (
       <SortableRow key={item.id} item={item} entryType={1} onDelete={deleteItem}>
-        <TableCell className="py-1.5 px-0.5 w-14">
+        <TableCell className="py-1.5 px-0.5 w-14 align-top">
           <Select
             value={item.subject?.toString() || undefined}
             onValueChange={(value) => updateItemField(item, "subject", value ? parseInt(value) : null)}
@@ -927,15 +1021,18 @@ function YourPageDashboardInner() {
               <SelectValue placeholder="--" />
             </SelectTrigger>
             <SelectContent>
-              {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => (
-                <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
-                  {s.name}
-                </SelectItem>
-              ))}
+              {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => {
+                const color = SUBJECT_COLORS[s.name] || ""
+                return (
+                  <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
+                    <span className={color ? `px-1.5 py-0.5 rounded ${color}` : ""}>{s.name}</span>
+                  </SelectItem>
+                )
+              })}
             </SelectContent>
           </Select>
         </TableCell>
-        <TableCell className="py-1.5 px-1 w-[120px]">
+        <TableCell className="py-1.5 px-1 w-[120px] align-top">
           <Input
             value={item.item}
             onChange={(e) => updateItemField(item, "item", e.target.value)}
@@ -943,7 +1040,7 @@ function YourPageDashboardInner() {
             className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
           />
         </TableCell>
-        <TableCell className="py-1.5 px-0 w-14">
+        <TableCell className="py-1.5 px-0 w-14 align-top">
           <Select
             value={item.status.toString()}
             onValueChange={(value) => updateItemField(item, "status", parseInt(value))}
@@ -974,6 +1071,8 @@ function YourPageDashboardInner() {
   const renderTaskRow = (item: DashboardItem) => {
     const statusOption = STATUS_OPTIONS.find((s) => s.value === item.status)
     const createdDate = item.created_at ? formatDueDate(item.created_at) : getFormattedCreatedDate()
+    const selectedSubject = subjects.find(s => s.id === item.subject)
+    const subjectColor = selectedSubject ? SUBJECT_COLORS[selectedSubject.name] || "" : ""
     return (
       <SortableRow 
         key={item.id} 
@@ -984,24 +1083,37 @@ function YourPageDashboardInner() {
           setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
         }}
       >
-        <TableCell className="py-1.5 px-0.5 w-14">
+        <TableCell className="py-1.5 px-0.5 w-14 align-top">
           <Select
             value={item.subject?.toString() || undefined}
             onValueChange={(value) => updateItemField(item, "subject", value ? parseInt(value) : null)}
           >
             <SelectTrigger className="h-7 text-xs border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
-              <SelectValue placeholder="--" />
+              {selectedSubject && subjectColor ? (
+                <span className={`px-1.5 py-0.5 rounded ${subjectColor}`}>{selectedSubject.name}</span>
+              ) : selectedSubject ? (
+                <span>{selectedSubject.name}</span>
+              ) : (
+                <SelectValue placeholder="--" />
+              )}
             </SelectTrigger>
             <SelectContent>
-              {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => (
-                <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
-                  {s.name}
-                </SelectItem>
-              ))}
+              {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => {
+                const color = SUBJECT_COLORS[s.name] || ""
+                return (
+                  <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
+                    {color ? (
+                      <span className={`px-1.5 py-0.5 rounded ${color}`}>{s.name}</span>
+                    ) : (
+                      s.name
+                    )}
+                  </SelectItem>
+                )
+              })}
             </SelectContent>
           </Select>
         </TableCell>
-        <TableCell className="py-1.5 px-1">
+        <TableCell className="py-1.5 px-1 align-top">
           <Input
             value={item.item}
             onChange={(e) => updateItemField(item, "item", e.target.value)}
@@ -1009,7 +1121,7 @@ function YourPageDashboardInner() {
             className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
           />
         </TableCell>
-        <TableCell className="py-1.5 px-1 w-12 text-xs text-muted-foreground text-center relative">
+        <TableCell className="py-1.5 px-1 w-12 text-xs text-muted-foreground text-center relative align-top">
           <Popover 
             open={createdDatePickerOpen[item.id] || false} 
             onOpenChange={(open) => setCreatedDatePickerOpen(prev => ({ ...prev, [item.id]: open }))}
@@ -1033,7 +1145,7 @@ function YourPageDashboardInner() {
             </PopoverContent>
           </Popover>
         </TableCell>
-        <TableCell className="py-1.5 px-0 w-14">
+        <TableCell className="py-1.5 px-0 w-14 align-top">
           <Popover open={datePickerOpen[item.id] || false} onOpenChange={(open) => setDatePickerOpen(prev => ({ ...prev, [item.id]: open }))}>
             <PopoverTrigger asChild>
               <Button
@@ -1059,7 +1171,7 @@ function YourPageDashboardInner() {
             </PopoverContent>
           </Popover>
         </TableCell>
-        <TableCell className="py-1.5 px-0 w-14">
+        <TableCell className="py-1.5 px-0 w-14 align-top">
           <Select
             value={item.status.toString()}
             onValueChange={(value) => updateItemField(item, "status", parseInt(value))}
@@ -1090,6 +1202,8 @@ function YourPageDashboardInner() {
   const renderLeftRow = (item: DashboardItem) => {
     const statusOption = STATUS_OPTIONS.find((s) => s.value === item.status)
     const createdDate = item.dashboard_date ? formatDueDate(item.dashboard_date) : getFormattedCreatedDate()
+    const selectedSubject = subjects.find(s => s.id === item.subject)
+    const subjectColor = selectedSubject ? SUBJECT_COLORS[selectedSubject.name] || "" : ""
     return (
       <SortableRow 
         key={item.id} 
@@ -1100,24 +1214,37 @@ function YourPageDashboardInner() {
           setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
         }}
       >
-        <TableCell className="py-1.5 px-0.5 w-14">
+        <TableCell className="py-1.5 px-0.5 w-14 align-top">
           <Select
             value={item.subject?.toString() || undefined}
             onValueChange={(value) => updateItemField(item, "subject", value ? parseInt(value) : null)}
           >
             <SelectTrigger className="h-7 text-xs border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
-              <SelectValue placeholder="--" />
+              {selectedSubject && subjectColor ? (
+                <span className={`px-1.5 py-0.5 rounded ${subjectColor}`}>{selectedSubject.name}</span>
+              ) : selectedSubject ? (
+                <span>{selectedSubject.name}</span>
+              ) : (
+                <SelectValue placeholder="--" />
+              )}
             </SelectTrigger>
             <SelectContent>
-              {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => (
-                <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
-                  {s.name}
-                </SelectItem>
-              ))}
+              {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => {
+                const color = SUBJECT_COLORS[s.name] || ""
+                return (
+                  <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
+                    {color ? (
+                      <span className={`px-1.5 py-0.5 rounded ${color}`}>{s.name}</span>
+                    ) : (
+                      s.name
+                    )}
+                  </SelectItem>
+                )
+              })}
             </SelectContent>
           </Select>
         </TableCell>
-        <TableCell className="py-1.5 px-1">
+        <TableCell className="py-1.5 px-1 align-top">
           <Input
             value={item.item}
             onChange={(e) => updateItemField(item, "item", e.target.value)}
@@ -1125,7 +1252,7 @@ function YourPageDashboardInner() {
             className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
           />
         </TableCell>
-        <TableCell className="py-1.5 px-1 w-12 text-xs text-muted-foreground text-center relative">
+        <TableCell className="py-1.5 px-1 w-12 text-xs text-muted-foreground text-center relative align-top">
           <Popover 
             open={createdDatePickerOpen[item.id] || false} 
             onOpenChange={(open) => setCreatedDatePickerOpen(prev => ({ ...prev, [item.id]: open }))}
@@ -1149,7 +1276,7 @@ function YourPageDashboardInner() {
             </PopoverContent>
           </Popover>
         </TableCell>
-        <TableCell className="py-1.5 px-0 w-14">
+        <TableCell className="py-1.5 px-0 w-14 align-top">
           <Popover open={datePickerOpen[item.id] || false} onOpenChange={(open) => setDatePickerOpen(prev => ({ ...prev, [item.id]: open }))}>
             <PopoverTrigger asChild>
               <Button
@@ -1175,7 +1302,7 @@ function YourPageDashboardInner() {
             </PopoverContent>
           </Popover>
         </TableCell>
-        <TableCell className="py-1.5 px-0 w-14">
+        <TableCell className="py-1.5 px-0 w-14 align-top">
           <Select
             value={item.status.toString()}
             onValueChange={(value) => updateItemField(item, "status", parseInt(value))}
@@ -1280,10 +1407,12 @@ function YourPageDashboardInner() {
 
     if (entryType === 1) {
       // Point empty row
+      const selectedDraftSubject = subjects.find(s => s.id === draft.subject)
+      const draftSubjectColor = selectedDraftSubject ? SUBJECT_COLORS[selectedDraftSubject.name] || "" : ""
       return (
         <TableRow key={`empty-point-${index}`}>
           <TableCell className="py-1.5 px-1 w-6"></TableCell>
-          <TableCell className="py-1.5 px-0.5 w-14">
+          <TableCell className="py-1.5 px-0.5 w-14 align-top">
             <Select
               value={draft.subject?.toString() || undefined}
               onValueChange={(value) => updateDraft("subject", value ? parseInt(value) : null)}
@@ -1295,18 +1424,31 @@ function YourPageDashboardInner() {
               }}
             >
               <SelectTrigger className="h-7 text-xs border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
-                <SelectValue placeholder="--" />
+                {selectedDraftSubject && draftSubjectColor ? (
+                  <span className={`px-1.5 py-0.5 rounded ${draftSubjectColor}`}>{selectedDraftSubject.name}</span>
+                ) : selectedDraftSubject ? (
+                  <span>{selectedDraftSubject.name}</span>
+                ) : (
+                  <SelectValue placeholder="--" />
+                )}
               </SelectTrigger>
               <SelectContent>
-                {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => (
-                  <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
-                    {s.name}
-                  </SelectItem>
-                ))}
+                {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => {
+                  const color = SUBJECT_COLORS[s.name] || ""
+                  return (
+                    <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
+                      {color ? (
+                        <span className={`px-1.5 py-0.5 rounded ${color}`}>{s.name}</span>
+                      ) : (
+                        s.name
+                      )}
+                    </SelectItem>
+                  )
+                })}
               </SelectContent>
             </Select>
           </TableCell>
-          <TableCell className="py-1.5 px-1 w-[120px]">
+          <TableCell className="py-1.5 px-1 w-[120px] align-top">
             <Input
               value={draft.item || ""}
               onChange={(e) => updateDraft("item", e.target.value)}
@@ -1316,7 +1458,7 @@ function YourPageDashboardInner() {
               className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
             />
           </TableCell>
-          <TableCell className="py-1.5 px-0 w-14">
+          <TableCell className="py-1.5 px-0 w-14 align-top">
             <Select
               value={draft.status?.toString() || undefined}
               onValueChange={(value) => updateDraft("status", parseInt(value))}
@@ -1351,10 +1493,12 @@ function YourPageDashboardInner() {
       )
     } else {
       // Task empty row
+      const selectedDraftSubject = subjects.find(s => s.id === draft.subject)
+      const draftSubjectColor = selectedDraftSubject ? SUBJECT_COLORS[selectedDraftSubject.name] || "" : ""
       return (
         <TableRow key={`empty-task-${index}`}>
           <TableCell className="py-1.5 px-1 w-6"></TableCell>
-          <TableCell className="py-1.5 px-0.5 w-14">
+          <TableCell className="py-1.5 px-0.5 w-14 align-top">
             <Select
               value={draft.subject?.toString() || undefined}
               onValueChange={(value) => updateDraft("subject", value ? parseInt(value) : null)}
@@ -1366,18 +1510,31 @@ function YourPageDashboardInner() {
               }}
             >
               <SelectTrigger className="h-7 text-xs border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
-                <SelectValue placeholder="--" />
+                {selectedDraftSubject && draftSubjectColor ? (
+                  <span className={`px-1.5 py-0.5 rounded ${draftSubjectColor}`}>{selectedDraftSubject.name}</span>
+                ) : selectedDraftSubject ? (
+                  <span>{selectedDraftSubject.name}</span>
+                ) : (
+                  <SelectValue placeholder="--" />
+                )}
               </SelectTrigger>
               <SelectContent>
-                {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => (
-                  <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
-                    {s.name}
-                  </SelectItem>
-                ))}
+                {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => {
+                  const color = SUBJECT_COLORS[s.name] || ""
+                  return (
+                    <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
+                      {color ? (
+                        <span className={`px-1.5 py-0.5 rounded ${color}`}>{s.name}</span>
+                      ) : (
+                        s.name
+                      )}
+                    </SelectItem>
+                  )
+                })}
               </SelectContent>
             </Select>
           </TableCell>
-          <TableCell className="py-1.5 px-1">
+          <TableCell className="py-1.5 px-1 align-top">
             <Input
               value={draft.item || ""}
               onChange={(e) => updateDraft("item", e.target.value)}
@@ -1387,10 +1544,10 @@ function YourPageDashboardInner() {
               className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
             />
           </TableCell>
-          <TableCell className="py-1.5 px-1 w-12 text-xs text-muted-foreground text-center">
+          <TableCell className="py-1.5 px-1 w-12 text-xs text-muted-foreground text-center align-top">
             {getFormattedCreatedDate()}
           </TableCell>
-          <TableCell className="py-1.5 px-0 w-14">
+          <TableCell className="py-1.5 px-0 w-14 align-top">
             <Popover>
               <PopoverTrigger asChild>
                 <Button
@@ -1415,7 +1572,7 @@ function YourPageDashboardInner() {
               </PopoverContent>
             </Popover>
           </TableCell>
-          <TableCell className="py-1.5 px-0 w-14">
+          <TableCell className="py-1.5 px-0 w-14 align-top">
             <Select
               value={draft.status?.toString() || undefined}
               onValueChange={(value) => updateDraft("status", parseInt(value))}
