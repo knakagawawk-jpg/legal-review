@@ -604,8 +604,9 @@ function YourPageDashboardInner() {
 
   // Load timer data
   const loadTimerData = useCallback(async (skipStateUpdate = false) => {
-    // タイマー操作中は状態を上書きしない（refでチェック）
+    // タイマー操作中は状態を上書きしない（refでチェック）- 最初にチェック
     if (isTimerTogglingRef.current) {
+      console.log("loadTimerData: タイマー操作中のためスキップ")
       return
     }
 
@@ -613,6 +614,13 @@ function YourPageDashboardInner() {
       const studyDate = getStudyDate()
       const stats = await apiClient.get<TimerDailyStats>(`/api/timer/daily-stats?study_date=${studyDate}`)
       const sessions = await apiClient.get<TimerSession[]>(`/api/timer/sessions?study_date=${studyDate}`)
+
+      // タイマー操作中でないことを再確認（API呼び出し後）
+      if (isTimerTogglingRef.current) {
+        console.log("loadTimerData: API呼び出し後にタイマー操作中を検出、スキップ")
+        return
+      }
+
       setTimerDailyStats(stats)
       setTimerSessions(sessions)
 
@@ -621,8 +629,9 @@ function YourPageDashboardInner() {
         return
       }
 
-      // タイマー操作中でない場合のみ状態を更新
+      // タイマー操作中でないことを最終確認（状態更新前）
       if (isTimerTogglingRef.current) {
+        console.log("loadTimerData: 状態更新前にタイマー操作中を検出、スキップ")
         return
       }
 
@@ -651,13 +660,20 @@ function YourPageDashboardInner() {
     }
   }, []) // 依存配列を空にして、再作成を防ぐ
 
-  // 初期マウント時のみloadTimerDataを実行
+  // 初期マウント時のみloadTimerDataを実行（タイマー操作中は実行しない）
   useEffect(() => {
     // タイマー操作中はloadTimerDataを実行しない
     if (isTimerTogglingRef.current) {
+      console.log("useEffect: タイマー操作中のためloadTimerDataをスキップ")
       return
     }
-    loadTimerData()
+    // 少し遅延して実行（タイマー操作が開始される前に実行されないようにする）
+    const timer = setTimeout(() => {
+      if (!isTimerTogglingRef.current) {
+        loadTimerData()
+      }
+    }, 100)
+    return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // 依存配列を空にして、マウント時のみ実行
 
@@ -673,6 +689,10 @@ function YourPageDashboardInner() {
     }>("/api/timer/start", {})
 
     // レスポンスから直接状態を設定（loadTimerDataを呼ばない）
+    // タイマー操作中であることを確認
+    if (!isTimerTogglingRef.current) {
+      console.warn("handleTimerStart: タイマー操作フラグが設定されていません")
+    }
     setActiveSessionId(response.active_session_id)
     setActiveSessionStartTime(new Date(response.active_started_at_utc))
     setTimerDailyStats(response.daily_stats)
@@ -696,6 +716,10 @@ function YourPageDashboardInner() {
     }>(`/api/timer/stop/${activeSessionId}`, {})
 
     // レスポンスから直接状態を設定（loadTimerDataを呼ばない）
+    // タイマー操作中であることを確認
+    if (!isTimerTogglingRef.current) {
+      console.warn("handleTimerStop: タイマー操作フラグが設定されていません")
+    }
     setTimerDailyStats(response.daily_stats)
     setTimerSessions(response.sessions)
     setActiveSessionId(null)
@@ -706,7 +730,10 @@ function YourPageDashboardInner() {
 
   // Handle timer toggle
   const handleTimerToggle = async (enabled: boolean) => {
-    // まずrefを設定して、loadTimerDataが実行されないようにする（最優先）
+    console.log(`handleTimerToggle: ${enabled ? 'ON' : 'OFF'} - refをtrueに設定`)
+
+    // 最優先でrefを設定して、loadTimerDataが実行されないようにする
+    // この時点で、loadTimerData内のすべてのチェックポイントでブロックされる
     isTimerTogglingRef.current = true
     setIsTimerToggling(true)
 
@@ -716,8 +743,10 @@ function YourPageDashboardInner() {
     try {
       if (enabled) {
         await handleTimerStart()
+        console.log("handleTimerToggle: タイマー開始成功")
       } else {
         await handleTimerStop()
+        console.log("handleTimerToggle: タイマー停止成功")
       }
       // 成功時は状態を確定（既に楽観的更新とhandleTimerStart/Stopで設定済み）
       // loadTimerDataを呼ぶ必要はない
@@ -735,6 +764,7 @@ function YourPageDashboardInner() {
     // 成功時は、十分な遅延後にフラグを解除
     // この間、loadTimerDataはisTimerTogglingRef.currentでブロックされる
     setTimeout(() => {
+      console.log("handleTimerToggle: refをfalseに解除")
       isTimerTogglingRef.current = false
       setIsTimerToggling(false)
     }, 5000) // 5000msに延長して、確実に操作が完了し、loadTimerDataが実行されないようにする

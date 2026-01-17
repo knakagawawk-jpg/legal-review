@@ -3,9 +3,10 @@
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, FileText, BookOpen, StickyNote, ChevronDown } from "lucide-react"
-import { useMemo, Suspense, useState } from "react"
+import { LayoutDashboard, FileText, BookOpen, StickyNote, ChevronDown, Clock } from "lucide-react"
+import { useMemo, Suspense, useState, useEffect } from "react"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { FIXED_SUBJECTS } from "@/lib/subjects"
 
 const yourPageNav = [
   {
@@ -51,6 +52,26 @@ function YourPageSectionInner() {
   
   // 過去5日分は常にデフォルトで閉じた状態
   const [isDateListOpen, setIsDateListOpen] = useState(false)
+  
+  // 直近アクセスした科目ページ（最大5件）
+  const [recentSubjects, setRecentSubjects] = useState<Array<{ subject: string; timestamp: number }>>([])
+  const [isRecentSubjectsOpen, setIsRecentSubjectsOpen] = useState(false)
+  
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const historyStr = localStorage.getItem('recent_subject_pages')
+        if (historyStr) {
+          const history: Array<{ subject: string; timestamp: number }> = JSON.parse(historyStr)
+          // 有効な科目のみをフィルタリング
+          const validHistory = history.filter(item => FIXED_SUBJECTS.includes(item.subject))
+          setRecentSubjects(validHistory.slice(0, 5))
+        }
+      } catch (error) {
+        console.error('Failed to load recent subject pages:', error)
+      }
+    }
+  }, [pathname]) // pathnameが変更されたときに再読み込み
 
   // 過去5日分の日付を計算
   const dateOptions = useMemo(() => {
@@ -123,6 +144,36 @@ function YourPageSectionInner() {
                       >
                         {option.label}
                       </button>
+                    )
+                  })}
+                </CollapsibleContent>
+              </Collapsible>
+            )}
+            
+            {/* 各科目ページ配下では直近アクセスした科目ページを表示（折りたたみ可能） */}
+            {isSubjectsActive && isYourPageActive && recentSubjects.length > 0 && (
+              <Collapsible open={isRecentSubjectsOpen} onOpenChange={setIsRecentSubjectsOpen}>
+                <CollapsibleTrigger className="mt-1 ml-7 flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors w-full px-2 py-1 rounded">
+                  <ChevronDown className={cn("h-3 w-3 transition-transform", isRecentSubjectsOpen && "rotate-180")} />
+                  <Clock className="h-3 w-3" />
+                  <span>直近アクセス</span>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-0.5 ml-7 space-y-0.5">
+                  {recentSubjects.map((item) => {
+                    const isSelected = pathname === `/your-page/subjects/${item.subject}`
+                    return (
+                      <Link
+                        key={item.subject}
+                        href={`/your-page/subjects/${item.subject}`}
+                        className={cn(
+                          "block w-full text-left px-2 py-1 text-xs rounded transition-colors",
+                          isSelected
+                            ? "bg-blue-200/60 text-blue-800 font-medium"
+                            : "text-slate-500 hover:bg-blue-50/60 hover:text-slate-700"
+                        )}
+                      >
+                        {item.subject}
+                      </Link>
                     )
                   })}
                 </CollapsibleContent>

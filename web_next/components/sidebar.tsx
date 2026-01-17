@@ -67,26 +67,47 @@ const navigation = [
 
 // サイドバーの状態を管理するProviderコンポーネント
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
-  // サーバー側とクライアント側で同じ初期値を返す（Hydrationエラーを防ぐ）
-  const [isOpen, setIsOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
   
-  // パス変更時にサイドバーの状態を更新
-  const pathname = usePathname()
+  // localStorageからサイドバーの状態を読み込む（デフォルトは開く）
+  const getInitialState = () => {
+    if (typeof window === 'undefined') return true
+    try {
+      const saved = localStorage.getItem('sidebar_is_open')
+      return saved !== null ? saved === 'true' : true // デフォルトは開く
+    } catch {
+      return true
+    }
+  }
+  
+  const [isOpen, setIsOpen] = useState(getInitialState)
   
   // クライアント側でのみマウントされたことを確認（Hydrationエラーを防ぐ）
   useEffect(() => {
     setMounted(true)
-  }, [])
-  
-  useEffect(() => {
-    if (mounted) {
-      // すべてのページでデフォルトでサイドバーを開く
+    // マウント時にlocalStorageから状態を読み込む
+    const saved = localStorage.getItem('sidebar_is_open')
+    if (saved !== null) {
+      setIsOpen(saved === 'true')
+    } else {
+      // 初回アクセス時は開く
       setIsOpen(true)
     }
-  }, [pathname, mounted])
+  }, [])
   
-  return <SidebarContext.Provider value={{ isOpen, setIsOpen }}>{children}</SidebarContext.Provider>
+  // サイドバーの状態が変更されたときにlocalStorageに保存
+  const handleSetIsOpen = (open: boolean) => {
+    setIsOpen(open)
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('sidebar_is_open', open ? 'true' : 'false')
+      } catch (error) {
+        console.error('Failed to save sidebar state:', error)
+      }
+    }
+  }
+  
+  return <SidebarContext.Provider value={{ isOpen, setIsOpen: handleSetIsOpen }}>{children}</SidebarContext.Provider>
 }
 
 export function Sidebar() {

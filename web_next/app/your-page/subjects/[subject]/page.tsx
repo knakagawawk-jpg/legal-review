@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { FIXED_SUBJECTS } from "@/lib/subjects"
-import { BookOpen, FileText, StickyNote, Plus, Folder, ChevronRight, ChevronDown } from "lucide-react"
+import { BookOpen, FileText, StickyNote, Plus, Folder, ChevronRight, ChevronDown, ChevronLeft, X } from "lucide-react"
 import type { Notebook, NotePage } from "@/types/api"
 import { withAuth } from "@/components/auth/with-auth"
 import { apiClient } from "@/lib/api-client"
@@ -22,13 +22,32 @@ function SubjectPage() {
   const params = useParams()
   const router = useRouter()
   const { isOpen } = useSidebar()
-  const currentSubject = (params.subject as string) || FIXED_SUBJECTS[0] || "憲法"
+  // デフォルトは憲法、またはlocalStorageから直近アクセスした科目を取得
+  const getDefaultSubject = () => {
+    if (typeof window === 'undefined') return "憲法"
+    try {
+      const historyStr = localStorage.getItem('recent_subject_pages')
+      if (historyStr) {
+        const history: Array<{ subject: string; timestamp: number }> = JSON.parse(historyStr)
+        if (history.length > 0 && FIXED_SUBJECTS.includes(history[0].subject)) {
+          return history[0].subject
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load recent subject page:', error)
+    }
+    return "憲法"
+  }
+  
+  const currentSubject = (params.subject as string) || getDefaultSubject()
   const [selectedSubject, setSelectedSubject] = useState<string>(currentSubject)
   const [mainTab, setMainTab] = useState<"study" | "notes">("study")
   const [studyTab, setStudyTab] = useState<"norms" | "points">("norms")
   const [notebooks, setNotebooks] = useState<NotebookWithPages[]>([])
   const [loadingNotebooks, setLoadingNotebooks] = useState(false)
   const [expandedNotebooks, setExpandedNotebooks] = useState<Set<number>>(new Set())
+  const [selectedPageId, setSelectedPageId] = useState<number | null>(null)
+  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true)
 
   // URLパラメータが変更されたときに状態を更新
   useEffect(() => {
@@ -36,6 +55,30 @@ function SubjectPage() {
       setSelectedSubject(params.subject as string)
     }
   }, [params.subject, selectedSubject])
+
+  // アクセス時にlocalStorageに保存（直近アクセス履歴）
+  useEffect(() => {
+    if (selectedSubject && typeof window !== 'undefined') {
+      try {
+        const historyKey = 'recent_subject_pages'
+        const historyStr = localStorage.getItem(historyKey)
+        const history: Array<{ subject: string; timestamp: number }> = historyStr ? JSON.parse(historyStr) : []
+        
+        // 現在の科目を履歴から削除（重複を避ける）
+        const filteredHistory = history.filter(item => item.subject !== selectedSubject)
+        
+        // 現在の科目を先頭に追加
+        const newHistory = [
+          { subject: selectedSubject, timestamp: Date.now() },
+          ...filteredHistory
+        ].slice(0, 5) // 最大5件まで保持
+        
+        localStorage.setItem(historyKey, JSON.stringify(newHistory))
+      } catch (error) {
+        console.error('Failed to save recent subject page:', error)
+      }
+    }
+  }, [selectedSubject])
 
   // ノートブック一覧を取得（ページも含む）
   useEffect(() => {
@@ -72,6 +115,9 @@ function SubjectPage() {
         }
       }
       fetchNotebooks()
+    } else {
+      // My規範・My論点タブの場合は右サイドバーを閉じる
+      setIsRightSidebarOpen(false)
     }
   }, [mainTab, selectedSubject])
 
@@ -90,8 +136,17 @@ function SubjectPage() {
     setExpandedNotebooks(newExpanded)
   }
 
+  // 選択されたページを取得
+  const selectedPage = notebooks
+    .flatMap(nb => nb.pages || [])
+    .find(page => page.id === selectedPageId)
+
   return (
-    <div className={cn("min-h-screen bg-gradient-to-b from-amber-50/80 to-orange-50/30 transition-all duration-300", isOpen && "ml-52")}>
+    <div className={cn(
+      "min-h-screen bg-gradient-to-b from-amber-50/80 to-orange-50/30 transition-all duration-300",
+      isOpen && "ml-52",
+      isRightSidebarOpen && mainTab === "notes" && "mr-64"
+    )}>
       {/* Fixed Header */}
       <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-amber-200/60 shadow-sm">
         <div className="container mx-auto px-20 py-3 max-w-6xl">
@@ -182,73 +237,186 @@ function SubjectPage() {
 
             {/* ノートタブ */}
             {mainTab === "notes" && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-semibold text-amber-900/80">{selectedSubject}のノート</h3>
-                    <Button size="sm" className="h-7 text-xs">
-                      <Plus className="h-3 w-3 mr-1" />
-                      新しいノートブック
-                    </Button>
-                  </div>
-                  {loadingNotebooks ? (
-                    <div className="text-center py-8 text-muted-foreground text-sm">読み込み中...</div>
-                  ) : notebooks.length === 0 ? (
-                    <div className="text-center py-12 border border-amber-200/60 rounded-lg">
-                      <p className="text-muted-foreground mb-4 text-sm">ノートブックがありません</p>
-                      <Button size="sm" className="h-7 text-xs">
-                        <Plus className="h-3 w-3 mr-1" />
-                        最初のノートブックを作成
-                      </Button>
+              <div className="flex items-start gap-4">
+                {/* メインコンテンツエリア */}
+                <div className="flex-1 min-w-0">
+                  {selectedPage ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold text-amber-900/80">{selectedPage.title}</h3>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs"
+                          onClick={() => setIsRightSidebarOpen(!isRightSidebarOpen)}
+                        >
+                          {isRightSidebarOpen ? (
+                            <>
+                              <ChevronRight className="h-3 w-3 mr-1" />
+                              サイドバーを閉じる
+                            </>
+                          ) : (
+                            <>
+                              <ChevronLeft className="h-3 w-3 mr-1" />
+                              サイドバーを開く
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                      <div className="border border-amber-200/60 rounded-lg p-4 min-h-[400px]">
+                        {selectedPage.content ? (
+                          <div className="prose prose-sm max-w-none">
+                            <pre className="whitespace-pre-wrap text-xs text-slate-700 font-sans">
+                              {selectedPage.content}
+                            </pre>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-muted-foreground text-center py-8">
+                            内容がありません
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ) : (
-                    <div className="space-y-2">
-                      {notebooks.map((notebook) => (
-                        <div key={notebook.id} className="border border-amber-200/60 rounded-lg overflow-hidden">
-                          <button
-                            onClick={() => toggleNotebook(notebook.id)}
-                            className="w-full flex items-center gap-2 p-3 hover:bg-amber-50/40 transition-colors text-left"
-                          >
-                            {expandedNotebooks.has(notebook.id) ? (
-                              <ChevronDown className="h-4 w-4 text-amber-600" />
-                            ) : (
-                              <ChevronRight className="h-4 w-4 text-amber-600" />
-                            )}
-                            <Folder className="h-4 w-4 text-amber-700" />
-                            <div className="flex-1">
-                              <h3 className="font-semibold text-sm text-slate-700">{notebook.title}</h3>
-                              {notebook.description && (
-                                <p className="text-xs text-slate-500 mt-0.5">{notebook.description}</p>
-                              )}
-                            </div>
-                          </button>
-                          {expandedNotebooks.has(notebook.id) && (
-                            <div className="pl-8 pr-4 pb-3 space-y-1">
-                              {notebook.pages && notebook.pages.length > 0 ? (
-                                notebook.pages.map((page) => (
-                                  <button
-                                    key={page.id}
-                                    className="w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs text-slate-600 hover:bg-amber-50/40 rounded transition-colors"
-                                  >
-                                    <FileText className="h-3 w-3 text-amber-600" />
-                                    <span>{page.title}</span>
-                                  </button>
-                                ))
-                              ) : (
-                                <div className="text-xs text-muted-foreground pl-6 py-2">
-                                  ページがありません
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ))}
+                    <div className="text-center py-12 border border-amber-200/60 rounded-lg">
+                      <p className="text-muted-foreground mb-4 text-sm">ノートを選択してください</p>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs"
+                        onClick={() => setIsRightSidebarOpen(!isRightSidebarOpen)}
+                      >
+                        {isRightSidebarOpen ? (
+                          <>
+                            <ChevronRight className="h-3 w-3 mr-1" />
+                            サイドバーを閉じる
+                          </>
+                        ) : (
+                          <>
+                            <ChevronLeft className="h-3 w-3 mr-1" />
+                            サイドバーを開く
+                          </>
+                        )}
+                      </Button>
                     </div>
                   )}
                 </div>
+              </div>
             )}
           </CardContent>
         </Card>
       </main>
+
+      {/* 右側サイドパネル（ノート管理） */}
+      {mainTab === "notes" && (
+        <aside
+          className={cn(
+            "fixed right-0 top-0 h-full w-64 bg-white/95 backdrop-blur-sm border-l border-amber-200/60 shadow-lg z-30 transition-transform duration-300 ease-out",
+            isRightSidebarOpen ? "translate-x-0" : "translate-x-full"
+          )}
+        >
+          <div className="flex h-full flex-col">
+            {/* ヘッダー */}
+            <div className="px-4 py-3 border-b border-amber-200/60 bg-amber-50/60">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-amber-900">ノート管理</h2>
+                <button
+                  onClick={() => setIsRightSidebarOpen(false)}
+                  className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-amber-200/40 transition-colors"
+                  aria-label="サイドバーを閉じる"
+                >
+                  <ChevronRight className="h-3.5 w-3.5 text-amber-600" />
+                </button>
+              </div>
+            </div>
+
+            {/* コンテンツ */}
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-xs font-medium text-amber-900/80">{selectedSubject}のノート</span>
+                <Button size="sm" className="h-6 text-xs px-2">
+                  <Plus className="h-3 w-3 mr-1" />
+                  新規
+                </Button>
+              </div>
+              {loadingNotebooks ? (
+                <div className="text-center py-8 text-muted-foreground text-xs">読み込み中...</div>
+              ) : notebooks.length === 0 ? (
+                <div className="text-center py-8 border border-amber-200/60 rounded-lg">
+                  <p className="text-muted-foreground mb-3 text-xs">ノートブックがありません</p>
+                  <Button size="sm" className="h-6 text-xs px-2">
+                    <Plus className="h-3 w-3 mr-1" />
+                    作成
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {notebooks.map((notebook) => (
+                    <div key={notebook.id} className="border border-amber-200/60 rounded-lg overflow-hidden">
+                      <button
+                        onClick={() => toggleNotebook(notebook.id)}
+                        className="w-full flex items-center gap-2 p-2 hover:bg-amber-50/40 transition-colors text-left"
+                      >
+                        {expandedNotebooks.has(notebook.id) ? (
+                          <ChevronDown className="h-3 w-3 text-amber-600 shrink-0" />
+                        ) : (
+                          <ChevronRight className="h-3 w-3 text-amber-600 shrink-0" />
+                        )}
+                        <Folder className="h-3.5 w-3.5 text-amber-700 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-xs text-slate-700 truncate">{notebook.title}</h3>
+                          {notebook.description && (
+                            <p className="text-[10px] text-slate-500 mt-0.5 truncate">{notebook.description}</p>
+                          )}
+                        </div>
+                      </button>
+                      {expandedNotebooks.has(notebook.id) && (
+                        <div className="pl-6 pr-2 pb-2 space-y-0.5">
+                          {notebook.pages && notebook.pages.length > 0 ? (
+                            notebook.pages.map((page) => {
+                              const isSelected = page.id === selectedPageId
+                              return (
+                                <button
+                                  key={page.id}
+                                  onClick={() => setSelectedPageId(page.id)}
+                                  className={cn(
+                                    "w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs rounded transition-colors",
+                                    isSelected
+                                      ? "bg-amber-200/60 text-amber-900 font-medium"
+                                      : "text-slate-600 hover:bg-amber-50/40"
+                                  )}
+                                >
+                                  <FileText className="h-3 w-3 text-amber-600 shrink-0" />
+                                  <span className="truncate">{page.title}</span>
+                                </button>
+                              )
+                            })
+                          ) : (
+                            <div className="text-[10px] text-muted-foreground pl-4 py-1">
+                              ページがありません
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </aside>
+      )}
+
+      {/* 右サイドバーが閉じている場合の開くボタン */}
+      {mainTab === "notes" && !isRightSidebarOpen && (
+        <button
+          onClick={() => setIsRightSidebarOpen(true)}
+          className="fixed right-4 top-20 z-20 flex h-8 w-8 items-center justify-center rounded-md bg-white/95 backdrop-blur-sm border border-amber-200/60 shadow-md hover:bg-amber-50/40 transition-colors"
+          aria-label="サイドバーを開く"
+        >
+          <ChevronLeft className="h-4 w-4 text-amber-600" />
+        </button>
+      )}
     </div>
   )
 }
