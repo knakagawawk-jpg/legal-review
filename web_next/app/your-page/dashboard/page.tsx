@@ -1364,7 +1364,7 @@ function YourPageDashboardInner() {
                 <SidebarToggle />
                 <div className="relative">
                   <h1 className="text-3xl font-light tracking-wider text-foreground">
-                    <span className="font-bold">Dash</span>
+                    <span className="font-bold text-slate-900/80">Dash</span>
                     <span className="text-amber-500 font-medium">board</span>
                   </h1>
                   <div className="absolute -bottom-1 left-0 w-full h-0.5 bg-gradient-to-r from-amber-400 via-amber-500 to-transparent rounded-full" />
@@ -1374,7 +1374,7 @@ function YourPageDashboardInner() {
               <div className="flex items-center gap-2 mt-1.5 ml-12">
                 <span className="text-xs text-muted-foreground font-light tracking-wide">{getGreeting()}</span>
                 <span className="text-xs text-muted-foreground">|</span>
-                <span className="text-xs font-medium text-foreground">{formatDate(selectedDate)}</span>
+                <span className="text-xs font-medium text-amber-200/60">{formatDate(selectedDate)}</span>
               </div>
             </div>
 
@@ -1446,8 +1446,8 @@ function YourPageDashboardInner() {
               <CardHeader className="py-1.5 px-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-xs font-medium flex items-center gap-1.5">
-                    <Lightbulb className="h-3.5 w-3.5 text-amber-600" />
-                    Point（Today&apos;s メモ）
+                    <Lightbulb className="h-3.5 w-3.5 text-amber-200/60" />
+                    Today&apos;s MEMO
                   </CardTitle>
                   <Button
                     variant="outline"
@@ -1494,8 +1494,8 @@ function YourPageDashboardInner() {
               <CardHeader className="py-1.5 px-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-xs font-medium flex items-center gap-1.5">
-                    <ListTodo className="h-3.5 w-3.5 text-amber-600" />
-                    Tasks（Today&apos;s Goals & Topics）
+                    <ListTodo className="h-3.5 w-3.5 text-amber-200/60" />
+                    Today&apos;s Goals & Topics
                   </CardTitle>
                   <Button
                     variant="outline"
@@ -1543,7 +1543,7 @@ function YourPageDashboardInner() {
             <Card className="shadow-sm">
               <CardHeader className="py-1.5 px-3 flex flex-row items-center justify-between">
                 <CardTitle className="text-xs font-medium flex items-center gap-1.5">
-                  <RotateCcw className="h-3.5 w-3.5 text-amber-600" />
+                  <RotateCcw className="h-3.5 w-3.5 text-amber-200/60" />
                   Topics to Revisit
                 </CardTitle>
                 <Tabs value={revisitTab} onValueChange={(v) => setRevisitTab(v as "7days" | "whole")}>
@@ -1597,7 +1597,7 @@ function YourPageDashboardInner() {
             <Card className="shadow-sm">
               <CardHeader className="py-1.5 px-3">
                 <CardTitle className="text-xs font-medium flex items-center gap-1.5">
-                  <RotateCcw className="h-3.5 w-3.5 text-amber-600" />
+                  <RotateCcw className="h-3.5 w-3.5 text-amber-200/60" />
                   昨日の復習問題
                 </CardTitle>
               </CardHeader>

@@ -105,7 +105,7 @@ function EmptyState() {
       <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/20 to-sky-500/20 mb-6">
         <Sparkles className="h-8 w-8 text-indigo-600" />
       </div>
-      <h3 className="text-xl font-semibold text-foreground mb-2">AIとチャットで勉強を捗らせよう</h3>
+      <h3 className="text-xl font-semibold text-foreground mb-2">AIとのチャットで勉強を捗らせよう</h3>
       <p className="text-center text-sm text-muted-foreground max-w-md mb-8 leading-relaxed">
         勉強中に気になったことを自由に聞くことができます。
         <br />
