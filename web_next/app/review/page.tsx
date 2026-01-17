@@ -351,16 +351,19 @@ export default function ReviewPage() {
 
             <button
               onClick={() => {
-                const newMode = mode === "existing" ? "new" : "existing"
-                setMode(newMode)
-                setSelectedMetadata(null)
-                setSelectedDetails(null)
-                setQuestionTitle("")
-                setQuestionText("")
-                if (newMode === "new") {
+                try {
+                  const newMode = mode === "existing" ? "new" : "existing"
+                  setMode(newMode)
+                  setSelectedMetadata(null)
+                  setSelectedDetails(null)
+                  setQuestionTitle("")
+                  setQuestionText("")
                   setReferenceText("")
-                } else {
-                  setReferenceText("")
+                  setNewSubjectId(null) // 新規問題モード用の科目IDもリセット
+                  setError(null) // エラーもクリア
+                } catch (err: any) {
+                  console.error("Mode switch error:", err)
+                  setError(err.message || "モードの切り替えに失敗しました")
                 }
               }}
               className="ml-1 px-3 py-1.5 text-xs text-slate-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 hover:border-blue-300 transition-colors"
@@ -460,7 +463,22 @@ export default function ReviewPage() {
                     <Select
                       value={newSubjectId !== null ? String(newSubjectId) : ""}
                       onValueChange={(value) => {
-                        setNewSubjectId(value === "" ? null : parseInt(value))
+                        try {
+                          if (value === "") {
+                            setNewSubjectId(null)
+                          } else {
+                            const subjectId = parseInt(value, 10)
+                            if (!isNaN(subjectId) && subjectId >= 1 && subjectId <= 18) {
+                              setNewSubjectId(subjectId)
+                            } else {
+                              console.error("Invalid subject ID:", value)
+                              setNewSubjectId(null)
+                            }
+                          }
+                        } catch (err: any) {
+                          console.error("Subject selection error:", err)
+                          setNewSubjectId(null)
+                        }
                       }}
                     >
                       <SelectTrigger className="h-8 text-xs">

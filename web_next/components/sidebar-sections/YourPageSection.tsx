@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { LayoutDashboard, FileText, BookOpen, StickyNote, ChevronDown } from "lucide-react"
-import { useMemo, Suspense, useState } from "react"
+import { useMemo, Suspense, useState, useEffect } from "react"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
 const yourPageNav = [
@@ -45,7 +45,20 @@ function YourPageSectionInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const isDashboardActive = pathname === "/your-page/dashboard" || pathname?.startsWith("/your-page/dashboard")
-  const [isDateListOpen, setIsDateListOpen] = useState(true)
+  const isPastQuestionsActive = pathname === "/your-page/past-questions" || pathname?.startsWith("/your-page/past-questions")
+  const isSubjectsActive = pathname?.startsWith("/your-page/subjects/")
+  const isYourPageActive = isDashboardActive || isPastQuestionsActive || isSubjectsActive
+  
+  // Dashboardの場合は展開、それ以外は折りたたみ
+  const [isDateListOpen, setIsDateListOpen] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return isDashboardActive
+  })
+  
+  // パス変更時に折りたたみ状態を更新
+  useEffect(() => {
+    setIsDateListOpen(isDashboardActive)
+  }, [isDashboardActive])
 
   // 過去5日分の日付を計算
   const dateOptions = useMemo(() => {
@@ -95,8 +108,8 @@ function YourPageSectionInner() {
               <span>{item.name}</span>
             </Link>
             
-            {/* ダッシュボード選択中は日付選択を表示 */}
-            {isDashboard && isDashboardActive && (
+            {/* Your Page配下のページでは日付選択を表示（折りたたみ可能） */}
+            {isDashboard && isYourPageActive && (
               <Collapsible open={isDateListOpen} onOpenChange={setIsDateListOpen}>
                 <CollapsibleTrigger className="mt-1 ml-7 flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors w-full px-2 py-1 rounded">
                   <ChevronDown className={cn("h-3 w-3 transition-transform", isDateListOpen && "rotate-180")} />

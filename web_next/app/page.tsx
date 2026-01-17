@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
 const menuItems = [
   {
     title: "Your Page",
-    description: "学習の進捗状況とAIからのフィードバック",
+    description: "あなたの学習を一括管理",
     href: "/your-page",
     icon: User,
     gradient: "from-amber-500 via-orange-500 to-rose-500",
@@ -19,7 +19,7 @@ const menuItems = [
   },
   {
     title: "講評生成",
-    description: "答案をAIが詳細に分析・講評",
+    description: "あなたの答案をAIが詳細に分析・講評",
     href: "/review",
     icon: FileText,
     gradient: "from-blue-500 via-cyan-500 to-teal-500",
@@ -30,7 +30,7 @@ const menuItems = [
   },
   {
     title: "フリーチャット",
-    description: "法律の疑問を何でも質問",
+    description: "学習の疑問を何でも質問",
     href: "/free-chat",
     icon: MessageSquare,
     gradient: "from-emerald-500 via-teal-500 to-cyan-500",
@@ -41,7 +41,7 @@ const menuItems = [
   },
   {
     title: "短答チャレンジ",
-    description: "実践的な問題で実力を試す",
+    description: "短答を解き、AIに質問しながら学習",
     href: "/short-answer",
     icon: Trophy,
     gradient: "from-violet-500 via-purple-500 to-fuchsia-500",
