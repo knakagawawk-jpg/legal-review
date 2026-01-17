@@ -133,7 +133,9 @@ export default function HomePage() {
           <div className="h-px w-12 bg-gradient-to-l from-transparent to-slate-200" />
         </div>
         <p className="text-xs text-slate-400 text-center max-w-md mt-2">
-          あくまでも司法試験受験勉強を補助するツールであり法的なアドバイスを行うサービスではありません。
+          あくまでも司法試験受験勉強を補助するツールであり
+          <br />
+          法的なアドバイスを行うサービスではありません。
         </p>
       </div>
     </div>

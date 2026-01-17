@@ -39,7 +39,7 @@ const navigation = [
     name: "講評生成",
     href: "/review",
     icon: FileText,
-    description: "過去問の答案をAIがレビュー",
+    description: "答案をAIがレビュー",
     color: "from-blue-500 to-cyan-500",
   },
   {
