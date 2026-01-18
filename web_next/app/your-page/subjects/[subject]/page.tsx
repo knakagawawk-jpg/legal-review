@@ -80,6 +80,23 @@ function SubjectPage() {
   const params = useParams()
   const router = useRouter()
   const { isOpen, setIsOpen } = useSidebar()
+  
+  // URLパラメータをデコードする関数
+  const decodeSubject = (subject: string | string[] | undefined): string | null => {
+    if (!subject) return null
+    const subjectStr = Array.isArray(subject) ? subject[0] : subject
+    try {
+      const decoded = decodeURIComponent(subjectStr)
+      // 型ガード: FIXED_SUBJECTSに含まれるかチェック
+      if (FIXED_SUBJECTS.includes(decoded as typeof FIXED_SUBJECTS[number])) {
+        return decoded
+      }
+    } catch (error) {
+      console.error('Failed to decode subject:', error)
+    }
+    return null
+  }
+  
   // デフォルトは憲法、またはlocalStorageから直近アクセスした科目を取得
   const getDefaultSubject = () => {
     if (typeof window === 'undefined') return "憲法"
@@ -101,8 +118,16 @@ function SubjectPage() {
     return "憲法"
   }
 
-  const currentSubject = (params.subject as string) || getDefaultSubject()
-  const [selectedSubject, setSelectedSubject] = useState<string>(currentSubject)
+  // 初期値を決定: URLパラメータがあればそれをデコード、なければlocalStorageから取得、それもなければ「憲法」
+  const getInitialSubject = (): string => {
+    const decodedFromUrl = decodeSubject(params.subject)
+    if (decodedFromUrl) {
+      return decodedFromUrl
+    }
+    return getDefaultSubject()
+  }
+
+  const [selectedSubject, setSelectedSubject] = useState<string>(getInitialSubject())
   const [mainTab, setMainTab] = useState<"study" | "notes" | null>(null)
   const [studyTab, setStudyTab] = useState<"norms" | "points">("norms")
   const [notebooks, setNotebooks] = useState<NotebookWithPages[]>([])
@@ -125,13 +150,15 @@ function SubjectPage() {
 
   // URLパラメータが変更されたときに状態を更新、またはデフォルトで憲法にリダイレクト
   useEffect(() => {
-    if (!params.subject) {
-      // URLパラメータがない場合、デフォルトで憲法にリダイレクト
+    const decodedSubject = decodeSubject(params.subject)
+    if (!decodedSubject) {
+      // URLパラメータがない、または無効な場合、デフォルトでlocalStorageから取得または「憲法」にリダイレクト
       const defaultSubject = getDefaultSubject()
-      router.push(`/your-page/subjects/${defaultSubject}`)
+      const encodedSubject = encodeURIComponent(defaultSubject)
+      router.push(`/your-page/subjects/${encodedSubject}`)
       setSelectedSubject(defaultSubject)
-    } else if (params.subject !== selectedSubject) {
-      setSelectedSubject(params.subject as string)
+    } else if (decodedSubject !== selectedSubject) {
+      setSelectedSubject(decodedSubject)
     }
   }, [params.subject, selectedSubject, router])
 
@@ -229,7 +256,8 @@ function SubjectPage() {
 
   const handleSubjectChange = (value: string) => {
     setSelectedSubject(value)
-    router.push(`/your-page/subjects/${value}`)
+    const encodedValue = encodeURIComponent(value)
+    router.push(`/your-page/subjects/${encodedValue}`)
   }
 
   const toggleNotebook = (notebookId: number) => {
@@ -270,42 +298,38 @@ function SubjectPage() {
       {/* Fixed Header */}
       <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-amber-200/60 shadow-sm">
         <div className="container mx-auto px-20 py-3 max-w-6xl">
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <StickyNote className="h-4 w-4 text-amber-600" />
-                <h1 className="text-base font-semibold text-amber-900">Your Note</h1>
-              </div>
-              <div className="flex items-center gap-2">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className={cn(
-                      "flex items-center gap-1.5 text-xs transition-colors px-2 py-1 rounded-md hover:opacity-80",
-                      SUBJECT_COLORS[selectedSubject] || "bg-amber-100 text-amber-900"
-                    )}>
-                      <span>{selectedSubject}</span>
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" side="bottom" className="w-32">
-                    {FIXED_SUBJECTS.map((subject) => (
-                      <DropdownMenuItem
-                        key={subject}
-                        onClick={() => handleSubjectChange(subject)}
-                        className={cn(
-                          "text-xs cursor-pointer rounded-sm",
-                          SUBJECT_COLORS[subject] || "bg-gray-100 text-gray-700",
-                          selectedSubject === subject && "ring-2 ring-offset-1 ring-amber-500 font-medium"
-                        )}
-                      >
-                        {subject}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <StickyNote className="h-4 w-4 text-amber-600" />
+              <h1 className="text-base font-semibold text-amber-900">Your Note</h1>
             </div>
             <div className="flex items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className={cn(
+                    "flex items-center gap-1.5 text-xs transition-colors px-2 py-1 rounded-md hover:opacity-80",
+                    SUBJECT_COLORS[selectedSubject] || "bg-amber-100 text-amber-900"
+                  )}>
+                    <span>{selectedSubject}</span>
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" side="bottom" className="w-32">
+                  {FIXED_SUBJECTS.map((subject) => (
+                    <DropdownMenuItem
+                      key={subject}
+                      onClick={() => handleSubjectChange(subject)}
+                      className={cn(
+                        "text-xs cursor-pointer rounded-sm",
+                        SUBJECT_COLORS[subject] || "bg-gray-100 text-gray-700",
+                        selectedSubject === subject && "ring-2 ring-offset-1 ring-amber-500 font-medium"
+                      )}
+                    >
+                      {subject}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Tabs value={mainTab || ""} onValueChange={(v) => {
                 if (v === "study" || v === "notes") {
                   setMainTab(v)
@@ -470,8 +494,8 @@ function SubjectPage() {
                             </>
                           ) : (
                             <>
-                              <ChevronLeft className="h-3 w-3 mr-1" />
-                              サイドバーを開く
+                              ノート一覧を開く
+                              <ChevronRight className="h-3 w-3 ml-1" />
                             </>
                           )}
                         </Button>
@@ -506,8 +530,8 @@ function SubjectPage() {
                           </>
                         ) : (
                           <>
-                            <ChevronLeft className="h-3 w-3 mr-1" />
-                            サイドバーを開く
+                            ノート一覧を開く
+                            <ChevronRight className="h-3 w-3 ml-1" />
                           </>
                         )}
                       </Button>
