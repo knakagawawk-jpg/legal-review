@@ -81,7 +81,7 @@ function SubjectPage() {
   const params = useParams()
   const router = useRouter()
   const { isOpen, setIsOpen } = useSidebar()
-  
+
   // URLパラメータをデコードする関数
   const decodeSubject = (subject: string | string[] | undefined): string | null => {
     if (!subject) return null
@@ -97,7 +97,7 @@ function SubjectPage() {
     }
     return null
   }
-  
+
   // デフォルトは憲法、またはlocalStorageから直近アクセスした科目を取得
   const getDefaultSubject = () => {
     if (typeof window === 'undefined') return "憲法"
@@ -424,7 +424,7 @@ function SubjectPage() {
                                   <Select
                                     value={norm.importance.toString()}
                                     onValueChange={(value) => {
-                                      const updatedNorms = norms.map(n => 
+                                      const updatedNorms = norms.map(n =>
                                         n.id === norm.id ? { ...n, importance: parseInt(value) } : n
                                       )
                                       setNorms(updatedNorms)
@@ -497,7 +497,7 @@ function SubjectPage() {
                                   <Select
                                     value={point.importance.toString()}
                                     onValueChange={(value) => {
-                                      const updatedPoints = points.map(p => 
+                                      const updatedPoints = points.map(p =>
                                         p.id === point.id ? { ...p, importance: parseInt(value) } : p
                                       )
                                       setPoints(updatedPoints)
