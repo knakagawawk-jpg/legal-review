@@ -4,6 +4,7 @@ from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import or_, cast, String, func
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import datetime, timedelta
@@ -354,7 +355,22 @@ def list_problem_metadata(
         if year:
             query = query.filter(ProblemMetadata.year == year)
         if subject:
-            query = query.filter(ProblemMetadata.subject == subject)
+            # subjectは「科目ID（int）」で受けるが、DBが旧データだと科目名（文字列）混入があり得る。
+            # その場合も検索できるように、subject列を文字列化＆空白除去した値とも比較する。
+            subject_name = get_subject_name(subject)
+            subject_str = str(subject)
+            subject_col_str = cast(ProblemMetadata.subject, String)
+            subject_col_norm = func.replace(func.replace(subject_col_str, " ", ""), "　", "")
+            subject_name_norm = "".join(str(subject_name).split())
+
+            query = query.filter(
+                or_(
+                    ProblemMetadata.subject == subject,  # 正常系（INTEGER）
+                    subject_col_str == subject_str,  # "1" 等の数値文字列
+                    subject_col_norm == subject_str,  # " 1 " 等
+                    subject_col_norm == subject_name_norm,  # "憲 法" 等の空白混入
+                )
+            )
         elif subject_name:
             # 科目名からIDに変換
             subject_id = get_subject_id(subject_name)
@@ -581,7 +597,12 @@ async def create_review(
             if not metadata:
                 raise HTTPException(status_code=404, detail="Problem metadata not found")
             
-            subject_id = metadata.subject  # メタデータから科目IDを取得
+            subject_id = _normalize_subject_id(metadata.subject)  # メタデータから科目IDを取得（旧データ対策）
+            if subject_id is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Invalid subject stored for problem_metadata id={metadata.id}: {metadata.subject!r}"
+                )
             problem_metadata_id = metadata.id
             
             # 特定の設問が指定されている場合
@@ -701,12 +722,12 @@ async def create_review(
                 shiken_type = shiken_type_map.get(metadata.exam_type)
                 
                 if shiken_type:
-                    # metadata.subjectは科目ID（1-18）なので、そのまま使用
+                    subject_id_for_official = _normalize_subject_id(metadata.subject)
                     # OfficialQuestionを検索（subject_idは1-18の数字）
                     official_q = db.query(OfficialQuestion).filter(
                         OfficialQuestion.shiken_type == shiken_type,
                         OfficialQuestion.nendo == metadata.year,
-                        OfficialQuestion.subject_id == metadata.subject,  # 科目ID（1-18）
+                        OfficialQuestion.subject_id == subject_id_for_official,  # 科目ID（1-18）
                         OfficialQuestion.status == "active"
                     ).first()
                     
