@@ -292,7 +292,7 @@ function SubjectPage() {
   }
 
   const [selectedSubject, setSelectedSubject] = useState<string>(getInitialSubject())
-  
+
   // デフォルトは"study"（規範論点）、またはlocalStorageから直近アクセスしたタブを取得。
   // URLクエリ（tab=study|notes）があればそれを優先。
   const getInitialMainTab = (): "study" | "notes" => {
@@ -311,7 +311,7 @@ function SubjectPage() {
     }
     return "study"
   }
-  
+
   const [mainTab, setMainTab] = useState<"study" | "notes">(() => {
     // クライアントサイドでのみ実行
     if (typeof window !== 'undefined') {
@@ -358,9 +358,12 @@ function SubjectPage() {
 
   // 重要度オプション定義
   const IMPORTANCE_OPTIONS = [
-    { value: 1, label: "High", color: "bg-pink-600 text-white" },  // 濃いピンク（赤寄り）
-    { value: 2, label: "Middle", color: "bg-lime-600 text-white" },  // 濃い黄緑
-    { value: 3, label: "Low", color: "bg-cyan-600 text-white" },  // 濃い水色
+    // 重要度は 1〜5 を維持（1が最重要）
+    { value: 1, label: "1", color: "bg-pink-600 text-white" },
+    { value: 2, label: "2", color: "bg-rose-600 text-white" },
+    { value: 3, label: "3", color: "bg-amber-600 text-white" },
+    { value: 4, label: "4", color: "bg-lime-600 text-white" },
+    { value: 5, label: "5", color: "bg-cyan-600 text-white" },
   ]
 
   // 重要度の表示用関数
@@ -457,6 +460,18 @@ function SubjectPage() {
     const existingKeys = Object.keys(draftPointsRows).filter(key => key.startsWith('points-'))
     return existingKeys[i] || `points-${i}`
   })
+
+  // テーブルの表示高さ（ウィンドウ高さ調整用：一定行数を超えたら縦スクロール）
+  const getTableMaxHeight = (itemCount: number, emptyCount: number) => {
+    const totalRows = itemCount + emptyCount
+    const rowHeight = 44
+    const headerHeight = 40
+    if (totalRows <= 7) return undefined
+    return headerHeight + rowHeight * 7
+  }
+
+  const normsMaxHeight = getTableMaxHeight(norms.length, emptyNormsRows.length)
+  const pointsMaxHeight = getTableMaxHeight(points.length, emptyPointsRows.length)
 
   // 次のIDを生成（簡易版）
   const getNextId = (items: StudyItem[]) => {
@@ -1163,19 +1178,22 @@ function SubjectPage() {
                           collisionDetection={closestCenter}
                           onDragEnd={handleDragEndNorms}
                         >
-                          <div className="overflow-x-auto">
+                          <div
+                            className="overflow-x-auto overflow-y-auto"
+                            style={normsMaxHeight ? { maxHeight: normsMaxHeight } : undefined}
+                          >
                             <Table className="table-fixed">
                               <colgroup>
                                 <col className="w-6" />
-                                <col className="w-[15%]" />
+                                <col className="w-[16%]" />
                                 <col className="w-[7%]" />
                                 <col className="w-[7%]" />
-                                <col className="w-[38%]" />
+                                <col className="w-[40%]" />
                                 <col className="w-[18%]" />
-                                <col className="w-[10%]" />
-                                <col className="w-[10%]" />
+                                <col className="w-[7%]" />
+                                <col className="w-[6%]" />
                               </colgroup>
-                              <TableHeader>
+                              <TableHeader className="sticky top-0 bg-white z-10">
                                 <TableRow>
                                   <TableHead className="w-6"></TableHead>
                                   <TableHead className="text-xs font-semibold text-amber-900/80">項目</TableHead>
@@ -1188,8 +1206,8 @@ function SubjectPage() {
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                <SortableContext 
-                                  items={norms.length > 0 ? norms.map(n => n.id.toString()) : []} 
+                                <SortableContext
+                                  items={norms.length > 0 ? norms.map(n => n.id.toString()) : []}
                                   strategy={verticalListSortingStrategy}
                                 >
                                   {norms.map((norm) => {
@@ -1429,19 +1447,22 @@ function SubjectPage() {
                           collisionDetection={closestCenter}
                           onDragEnd={handleDragEndPoints}
                         >
-                          <div className="overflow-x-auto">
+                          <div
+                            className="overflow-x-auto overflow-y-auto"
+                            style={pointsMaxHeight ? { maxHeight: pointsMaxHeight } : undefined}
+                          >
                             <Table className="table-fixed">
                               <colgroup>
                                 <col className="w-6" />
-                                <col className="w-[15%]" />
+                                <col className="w-[16%]" />
                                 <col className="w-[7%]" />
                                 <col className="w-[7%]" />
-                                <col className="w-[38%]" />
+                                <col className="w-[40%]" />
                                 <col className="w-[18%]" />
-                                <col className="w-[10%]" />
-                                <col className="w-[10%]" />
+                                <col className="w-[7%]" />
+                                <col className="w-[6%]" />
                               </colgroup>
-                              <TableHeader>
+                              <TableHeader className="sticky top-0 bg-white z-10">
                                 <TableRow>
                                   <TableHead className="w-6"></TableHead>
                                   <TableHead className="text-xs font-semibold text-amber-900/80">項目</TableHead>
@@ -1454,8 +1475,8 @@ function SubjectPage() {
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                <SortableContext 
-                                  items={points.length > 0 ? points.map(p => p.id.toString()) : []} 
+                                <SortableContext
+                                  items={points.length > 0 ? points.map(p => p.id.toString()) : []}
                                   strategy={verticalListSortingStrategy}
                                 >
                                   {points.map((point) => {

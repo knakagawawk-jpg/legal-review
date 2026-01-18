@@ -179,9 +179,9 @@ function YourPageSectionInner() {
               </Collapsible>
             )}
             
-            {/* YourPage配下では直近アクセスした科目ページを表示（デフォルト折りたたみ） */}
-            {/* Dashboard/過去問管理の下には不要なので「各科目ページ」メニューの下にのみ表示 */}
-            {isSubjectsNavItem && isYourPageActive && recentSubjects.length > 0 && (
+            {/* 直近アクセスは「各科目ページ」メニュー配下だけで表示（デフォルト折りたたみ） */}
+            {/* Your Page配下にいる限り、各科目ページを開いていなくても常に表示 */}
+            {isSubjectsNavItem && (
               <Collapsible open={isRecentSubjectsOpen} onOpenChange={setIsRecentSubjectsOpen}>
                 <CollapsibleTrigger className="mt-1 ml-7 flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors w-full px-2 py-1 rounded">
                   <ChevronDown className={cn("h-3 w-3 transition-transform", isRecentSubjectsOpen && "rotate-180")} />
@@ -189,29 +189,34 @@ function YourPageSectionInner() {
                   <span>直近アクセス</span>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="mt-0.5 ml-7 space-y-0.5">
-                  {recentSubjects.map((item) => {
-                    const isSelected = pathname === `/your-page/subjects/${item.subject}`
-                    return (
-                      <Link
-                        key={item.subject}
-                        href={`/your-page/subjects/${item.subject}`}
-                        className={cn(
-                          "block w-full text-left px-2 py-1 text-xs rounded transition-colors",
-                          isSelected
-                            ? "bg-blue-200/60 text-blue-800 font-medium"
-                            : "text-slate-500 hover:bg-blue-50/60 hover:text-slate-700"
-                        )}
-                      >
-                        {item.subject}
-                      </Link>
-                    )
-                  })}
+                  {recentSubjects.length === 0 ? (
+                    <div className="px-2 py-1 text-[10px] text-slate-400">履歴がありません</div>
+                  ) : (
+                    recentSubjects.map((item) => {
+                      const encodedSubject = encodeURIComponent(item.subject)
+                      const isSelected = pathname === `/your-page/subjects/${encodedSubject}`
+                      return (
+                        <Link
+                          key={item.subject}
+                          href={`/your-page/subjects/${encodedSubject}`}
+                          className={cn(
+                            "block w-full text-left px-2 py-1 text-xs rounded transition-colors",
+                            isSelected
+                              ? "bg-blue-200/60 text-blue-800 font-medium"
+                              : "text-slate-500 hover:bg-blue-50/60 hover:text-slate-700"
+                          )}
+                        >
+                          {item.subject}
+                        </Link>
+                      )
+                    })
+                  )}
                 </CollapsibleContent>
               </Collapsible>
             )}
 
             {/* 各科目ページ内の note_page 直近アクセス（最大5件） */}
-            {isSubjectsNavItem && isYourPageActive && recentNotePages.length > 0 && (
+            {isSubjectsNavItem && (
               <Collapsible open={isRecentNotePagesOpen} onOpenChange={setIsRecentNotePagesOpen}>
                 <CollapsibleTrigger className="mt-1 ml-7 flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors w-full px-2 py-1 rounded">
                   <ChevronDown className={cn("h-3 w-3 transition-transform", isRecentNotePagesOpen && "rotate-180")} />
@@ -219,30 +224,34 @@ function YourPageSectionInner() {
                   <span>ノート直近アクセス</span>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="mt-0.5 ml-7 space-y-0.5">
-                  {recentNotePages.map((item) => {
-                    const encodedSubject = encodeURIComponent(item.subject)
-                    const href = `/your-page/subjects/${encodedSubject}?tab=notes&pageId=${encodeURIComponent(String(item.pageId))}`
-                    const isSelected =
-                      pathname?.startsWith(`/your-page/subjects/`) &&
-                      searchParams.get("tab") === "notes" &&
-                      searchParams.get("pageId") === String(item.pageId)
+                  {recentNotePages.length === 0 ? (
+                    <div className="px-2 py-1 text-[10px] text-slate-400">履歴がありません</div>
+                  ) : (
+                    recentNotePages.map((item) => {
+                      const encodedSubject = encodeURIComponent(item.subject)
+                      const href = `/your-page/subjects/${encodedSubject}?tab=notes&pageId=${encodeURIComponent(String(item.pageId))}`
+                      const isSelected =
+                        pathname?.startsWith(`/your-page/subjects/`) &&
+                        searchParams.get("tab") === "notes" &&
+                        searchParams.get("pageId") === String(item.pageId)
 
-                    return (
-                      <Link
-                        key={`${item.subject}-${item.pageId}`}
-                        href={href}
-                        className={cn(
-                          "block w-full text-left px-2 py-1 text-xs rounded transition-colors",
-                          isSelected
-                            ? "bg-blue-200/60 text-blue-800 font-medium"
-                            : "text-slate-500 hover:bg-blue-50/60 hover:text-slate-700"
-                        )}
-                        title={`${item.subject} / ${item.title || "無題"}`}
-                      >
-                        <span className="block truncate">{item.title || "無題"}</span>
-                      </Link>
-                    )
-                  })}
+                      return (
+                        <Link
+                          key={`${item.subject}-${item.pageId}`}
+                          href={href}
+                          className={cn(
+                            "block w-full text-left px-2 py-1 text-xs rounded transition-colors",
+                            isSelected
+                              ? "bg-blue-200/60 text-blue-800 font-medium"
+                              : "text-slate-500 hover:bg-blue-50/60 hover:text-slate-700"
+                          )}
+                          title={`${item.subject} / ${item.title || "無題"}`}
+                        >
+                          <span className="block truncate">{item.title || "無題"}</span>
+                        </Link>
+                      )
+                    })
+                  )}
                 </CollapsibleContent>
               </Collapsible>
             )}
