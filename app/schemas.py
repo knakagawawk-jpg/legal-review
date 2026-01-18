@@ -518,3 +518,23 @@ class TimerStopResponse(BaseModel):
     confirmed_total_seconds: int
     daily_stats: TimerDailyStatsResponse
     sessions: List[TimerSessionResponse]
+
+
+# ============================================================================
+# My規範・My論点: 科目別タグマスタ
+# ============================================================================
+
+class StudyTagCreate(BaseModel):
+    subject_id: int  # 1-18
+    name: str
+
+
+class StudyTagResponse(BaseModel):
+    id: int
+    user_id: int
+    subject_id: int
+    name: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

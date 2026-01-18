@@ -22,7 +22,8 @@ from .models import (
     Thread, Message,
     UserPreference, UserDashboard, UserDashboardHistory, UserReviewHistory,
     DashboardItem, Subject, OfficialQuestion,
-    TimerSession, TimerDailyChunk, TimerDailyStats
+    TimerSession, TimerDailyChunk, TimerDailyStats,
+    StudyTag
 )
 from config.constants import FIXED_SUBJECTS
 from config.subjects import SUBJECT_MAP, SUBJECT_NAME_TO_ID, get_subject_name, get_subject_id
@@ -44,7 +45,8 @@ from .schemas import (
     MessageCreate, MessageResponse, MessageListResponse, ThreadMessageCreate,
     UserUpdate, UserResponse,
     DashboardItemCreate, DashboardItemUpdate, DashboardItemResponse, DashboardItemListResponse,
-    TimerSessionResponse, TimerDailyStatsResponse, TimerStartResponse, TimerStopResponse
+    TimerSessionResponse, TimerDailyStatsResponse, TimerStartResponse, TimerStopResponse,
+    StudyTagCreate, StudyTagResponse
 )
 from pydantic import BaseModel
 from .llm_service import generate_review, chat_about_review, free_chat
@@ -1836,6 +1838,76 @@ def get_subjects(db: Session = Depends(get_db)):
     """科目一覧を取得（IDと名前）"""
     # SUBJECT_MAPから科目一覧を返す（1-18の順序）
     return [{"id": id, "name": name} for id, name in SUBJECT_MAP.items()]
+
+
+# ============================================================================
+# My規範・My論点: 科目別タグマスタAPI
+# ============================================================================
+
+@app.get("/v1/study-tags", response_model=List[StudyTagResponse])
+async def list_study_tags(
+    subject_id: int = Query(..., ge=1, le=18),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """科目別タグ候補一覧を取得（認証必須）"""
+    tags = db.query(StudyTag).filter(
+        StudyTag.user_id == current_user.id,
+        StudyTag.subject_id == subject_id,
+    ).order_by(StudyTag.name.asc()).all()
+    return [StudyTagResponse.model_validate(t) for t in tags]
+
+
+@app.post("/v1/study-tags", response_model=StudyTagResponse)
+async def create_study_tag(
+    payload: StudyTagCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """科目別タグ候補を作成（同名はupsert）（認証必須）"""
+    if not (1 <= payload.subject_id <= 18):
+        raise HTTPException(status_code=400, detail="Invalid subject_id (must be 1-18)")
+
+    name = (payload.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+
+    existing = db.query(StudyTag).filter(
+        StudyTag.user_id == current_user.id,
+        StudyTag.subject_id == payload.subject_id,
+        StudyTag.name == name,
+    ).first()
+    if existing:
+        return StudyTagResponse.model_validate(existing)
+
+    tag = StudyTag(
+        user_id=current_user.id,
+        subject_id=payload.subject_id,
+        name=name,
+    )
+    db.add(tag)
+    db.commit()
+    db.refresh(tag)
+    return StudyTagResponse.model_validate(tag)
+
+
+@app.delete("/v1/study-tags/{tag_id}")
+async def delete_study_tag(
+    tag_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """科目別タグ候補を削除（認証必須）"""
+    tag = db.query(StudyTag).filter(
+        StudyTag.id == tag_id,
+        StudyTag.user_id == current_user.id,
+    ).first()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found")
+
+    db.delete(tag)
+    db.commit()
+    return {"message": "deleted"}
 
 @app.get("/v1/dashboard/items", response_model=DashboardItemListResponse)
 async def get_dashboard_items(

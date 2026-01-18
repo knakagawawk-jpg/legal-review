@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useRef } from "react"
+import React, { useState, useEffect, useRef, useCallback } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -41,6 +41,113 @@ import { CSS } from "@dnd-kit/utilities"
 
 type NotebookWithPages = Notebook & {
   pages?: NotePage[]
+}
+
+// Dashboardと同じ高さ制御ロジック（入力時は最大5行、表示時は1〜3行）
+function MemoField({
+  value,
+  onChange,
+  onBlur,
+  onKeyDown,
+  placeholder = "",
+}: {
+  value: string
+  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
+  onBlur?: () => void
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
+  placeholder?: string
+}) {
+  const [isFocused, setIsFocused] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const lineHeight = 24 // 1.5rem = 24px
+  const inputHeight = 7.5 // 入力時高さ（5行分: 1.5rem * 5）
+  const maxHeight = inputHeight * 16 // 7.5rem = 120px (16px基準)
+
+  const adjustHeight = useCallback(() => {
+    if (!textareaRef.current) return
+
+    if (isFocused) {
+      textareaRef.current.style.height = "auto"
+      const scrollHeight = textareaRef.current.scrollHeight
+      textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
+      textareaRef.current.style.maxHeight = `${maxHeight}px`
+    } else {
+      if (!value || value.trim() === "") {
+        textareaRef.current.style.height = "1.5rem"
+        textareaRef.current.style.maxHeight = "1.5rem"
+        return
+      }
+
+      textareaRef.current.style.height = "1.5rem"
+      const scrollHeight = textareaRef.current.scrollHeight
+
+      let displayLines = 1
+      if (scrollHeight > lineHeight + 1) {
+        if (scrollHeight <= lineHeight * 2 + 1) {
+          displayLines = 2
+        } else {
+          displayLines = 3
+        }
+      }
+
+      const displayHeight = displayLines * lineHeight
+      textareaRef.current.style.height = `${displayHeight}px`
+      textareaRef.current.style.maxHeight = `${displayHeight}px`
+    }
+  }, [isFocused, value, lineHeight, maxHeight])
+
+  useEffect(() => {
+    adjustHeight()
+  }, [adjustHeight])
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    onChange(e)
+    setTimeout(() => {
+      adjustHeight()
+    }, 0)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      textareaRef.current?.blur()
+      if (onBlur) onBlur()
+      return
+    }
+    if (onKeyDown) onKeyDown(e)
+  }
+
+  return (
+    <Textarea
+      ref={textareaRef}
+      value={value}
+      onChange={handleChange}
+      onKeyDown={handleKeyDown}
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => {
+        setIsFocused(false)
+        if (onBlur) onBlur()
+      }}
+      placeholder={placeholder}
+      className={cn(
+        "text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0 resize-none whitespace-pre-wrap break-words py-1 px-0",
+        isFocused ? "overflow-y-auto min-h-[7.5rem]" : "overflow-hidden"
+      )}
+      style={{
+        lineHeight: "1.5rem",
+        height: (!value || value.trim() === "") && !isFocused ? "1.5rem" : undefined,
+        minHeight: isFocused ? "7.5rem" : "1.5rem",
+      }}
+    />
+  )
+}
+
+type StudyTag = {
+  id: number
+  user_id: number
+  subject_id: number
+  name: string
+  created_at: string
 }
 
 // My規範・My論点のデータ型
@@ -129,7 +236,7 @@ function SortableRow({
         isDragging && "opacity-50 bg-amber-50"
       )}
     >
-      <TableCell className="py-1.5 px-1 w-8 relative">
+      <TableCell className="py-1.5 px-1 w-6 relative">
         <button
           {...attributes}
           {...listeners}
@@ -401,6 +508,7 @@ function SubjectPage() {
 
   const [norms, setNorms] = useState<StudyItem[]>([])
   const [points, setPoints] = useState<StudyItem[]>([])
+  const [availableTags, setAvailableTags] = useState<StudyTag[]>([])
 
   // タグ管理（既存タグの一覧を取得）
   const getAllTags = (items: StudyItem[]): string[] => {
@@ -416,6 +524,25 @@ function SubjectPage() {
     })
     return Array.from(tagSet).sort()
   }
+
+  // 科目別タグ候補を取得（DB）
+  useEffect(() => {
+    const fetchStudyTags = async () => {
+      try {
+        const subjectId = getSubjectId(selectedSubject)
+        if (!subjectId) {
+          setAvailableTags([])
+          return
+        }
+        const tags = await apiClient.get<StudyTag[]>(`/api/study-tags?subject_id=${subjectId}`)
+        setAvailableTags(Array.isArray(tags) ? tags : [])
+      } catch (e) {
+        console.error("Failed to fetch study tags:", e)
+        setAvailableTags([])
+      }
+    }
+    fetchStudyTags()
+  }, [selectedSubject])
 
   // タグのPopover状態
   const [tagsPopoverOpen, setTagsPopoverOpen] = useState<Record<number, boolean>>({})
@@ -441,19 +568,21 @@ function SubjectPage() {
   const [draftPointsRows, setDraftPointsRows] = useState<Record<string, Partial<StudyItem>>>({})
 
   // 空行数の計算（デフォルト3行、draftRowsも考慮）
-  const getEmptyRowsCount = (dataLength: number, draftRowsCount: number) => {
-    const baseCount = dataLength === 0 ? 3 : dataLength === 1 ? 2 : dataLength === 2 ? 1 : 0
-    return Math.max(baseCount, draftRowsCount)
+  // Dashboardと同じ空行仕様：0件→2行、1件→1行、それ以外→0行（追加ボタン分は別キーで増やす）
+  const getEmptyRowsCount = (dataLength: number) => {
+    if (dataLength === 0) return 2
+    if (dataLength === 1) return 1
+    return 0
   }
 
   // 空行の配列を生成（draftRowsのキーとインデックスの組み合わせ）
-  const emptyNormsRowsCount = getEmptyRowsCount(norms.length, Object.keys(draftNormsRows).length)
+  const emptyNormsRowsCount = getEmptyRowsCount(norms.length)
   const emptyNormsRows = Array.from({ length: emptyNormsRowsCount }, (_, i) => {
     const existingKeys = Object.keys(draftNormsRows).filter(key => key.startsWith('norms-'))
     return existingKeys[i] || `norms-${i}`
   })
 
-  const emptyPointsRowsCount = getEmptyRowsCount(points.length, Object.keys(draftPointsRows).length)
+  const emptyPointsRowsCount = getEmptyRowsCount(points.length)
   const emptyPointsRows = Array.from({ length: emptyPointsRowsCount }, (_, i) => {
     const existingKeys = Object.keys(draftPointsRows).filter(key => key.startsWith('points-'))
     return existingKeys[i] || `points-${i}`
@@ -664,7 +793,7 @@ function SubjectPage() {
     return (
       <TableRow key={`empty-norms-${key}`}>
         {/* 操作列（ドラッグ列のダミー） */}
-        <TableCell className="py-1.5 px-1 w-8" />
+        <TableCell className="py-1.5 px-1 w-6" />
         <TableCell className="text-xs align-top">
           <Input
             value={draft.item || ""}
@@ -733,25 +862,21 @@ function SubjectPage() {
           </Select>
         </TableCell>
         <TableCell className="text-xs align-top">
-          <Textarea
+          <MemoField
             value={draft.content || ""}
             onChange={(e) => updateDraft("content", e.target.value)}
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             placeholder="内容を入力..."
-            className="min-h-[28px] text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0 resize-none"
-            rows={1}
           />
         </TableCell>
         <TableCell className="text-xs align-top">
-          <Textarea
+          <MemoField
             value={draft.memo || ""}
             onChange={(e) => updateDraft("memo", e.target.value)}
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             placeholder="メモを入力..."
-            className="min-h-[28px] text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0 resize-none"
-            rows={1}
           />
         </TableCell>
         <TableCell className="text-xs align-top">
@@ -828,7 +953,7 @@ function SubjectPage() {
     return (
       <TableRow key={`empty-points-${key}`}>
         {/* 操作列（ドラッグ列のダミー） */}
-        <TableCell className="py-1.5 px-1 w-8" />
+        <TableCell className="py-1.5 px-1 w-6" />
         <TableCell className="text-xs align-top">
           <Input
             value={draft.item || ""}
@@ -897,25 +1022,21 @@ function SubjectPage() {
           </Select>
         </TableCell>
         <TableCell className="text-xs align-top">
-          <Textarea
+          <MemoField
             value={draft.content || ""}
             onChange={(e) => updateDraft("content", e.target.value)}
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             placeholder="内容を入力..."
-            className="min-h-[28px] text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0 resize-none"
-            rows={1}
           />
         </TableCell>
         <TableCell className="text-xs align-top">
-          <Textarea
+          <MemoField
             value={draft.memo || ""}
             onChange={(e) => updateDraft("memo", e.target.value)}
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             placeholder="メモを入力..."
-            className="min-h-[28px] text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0 resize-none"
-            rows={1}
           />
         </TableCell>
         <TableCell className="text-xs align-top">
@@ -1187,7 +1308,7 @@ function SubjectPage() {
                             <Table className="min-w-[980px] table-fixed">
                               {/* 列幅は % だとズレやすいので、pxベースで固定 */}
                               <colgroup>
-                                <col className="w-8" />          {/* 操作 */}
+                                <col className="w-6" />          {/* 操作 */}
                                 <col className="w-[180px]" />    {/* 項目 */}
                                 <col className="w-[92px]" />     {/* 重要度 */}
                                 <col className="w-[92px]" />     {/* 理解度 */}
@@ -1198,7 +1319,7 @@ function SubjectPage() {
                               </colgroup>
                               <TableHeader>
                                 <TableRow>
-                                  <TableHead className="w-8 sticky top-0 bg-white z-10"></TableHead>
+                                  <TableHead className="w-6 sticky top-0 bg-white z-10"></TableHead>
                                   <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">項目</TableHead>
                                   <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">重要度</TableHead>
                                   <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">理解度</TableHead>
@@ -1214,8 +1335,8 @@ function SubjectPage() {
                                   strategy={verticalListSortingStrategy}
                                 >
                                   {norms.map((norm) => {
-                                    const allTags = getAllTags(norms)
                                     const normTags = norm.tags || []
+                                    const allTags = Array.from(new Set([...(availableTags.map(t => t.name)), ...normTags])).sort()
                                     return (
                                       <SortableRow
                                         key={norm.id}
@@ -1348,6 +1469,18 @@ function SubjectPage() {
                                                       const input = e.currentTarget
                                                       const newTag = input.value.trim()
                                                       if (newTag && !normTags.includes(newTag)) {
+                                                        // DBにも登録（科目別タグ候補）
+                                                        const subjectId = getSubjectId(selectedSubject)
+                                                        if (subjectId) {
+                                                          apiClient.post<StudyTag>("/api/study-tags", { subject_id: subjectId, name: newTag })
+                                                            .then((created) => {
+                                                              setAvailableTags(prev => {
+                                                                if (prev.some(t => t.id === created.id)) return prev
+                                                                return [...prev, created].sort((a, b) => a.name.localeCompare(b.name))
+                                                              })
+                                                            })
+                                                            .catch((err) => console.error("Failed to create study tag:", err))
+                                                        }
                                                         const updatedNorms = norms.map(n =>
                                                           n.id === norm.id ? { ...n, tags: [...normTags, newTag] } : n
                                                         )
@@ -1456,7 +1589,7 @@ function SubjectPage() {
                           >
                             <Table className="min-w-[980px] table-fixed">
                               <colgroup>
-                                <col className="w-8" />
+                                <col className="w-6" />
                                 <col className="w-[180px]" />
                                 <col className="w-[92px]" />
                                 <col className="w-[92px]" />
@@ -1467,7 +1600,7 @@ function SubjectPage() {
                               </colgroup>
                               <TableHeader>
                                 <TableRow>
-                                  <TableHead className="w-8 sticky top-0 bg-white z-10"></TableHead>
+                                  <TableHead className="w-6 sticky top-0 bg-white z-10"></TableHead>
                                   <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">項目</TableHead>
                                   <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">重要度</TableHead>
                                   <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">理解度</TableHead>
@@ -1483,8 +1616,8 @@ function SubjectPage() {
                                   strategy={verticalListSortingStrategy}
                                 >
                                   {points.map((point) => {
-                                    const allTags = getAllTags(points)
                                     const pointTags = point.tags || []
+                                    const allTags = Array.from(new Set([...(availableTags.map(t => t.name)), ...pointTags])).sort()
                                     return (
                                       <SortableRow
                                         key={point.id}
@@ -1617,6 +1750,18 @@ function SubjectPage() {
                                                       const input = e.currentTarget
                                                       const newTag = input.value.trim()
                                                       if (newTag && !pointTags.includes(newTag)) {
+                                                        // DBにも登録（科目別タグ候補）
+                                                        const subjectId = getSubjectId(selectedSubject)
+                                                        if (subjectId) {
+                                                          apiClient.post<StudyTag>("/api/study-tags", { subject_id: subjectId, name: newTag })
+                                                            .then((created) => {
+                                                              setAvailableTags(prev => {
+                                                                if (prev.some(t => t.id === created.id)) return prev
+                                                                return [...prev, created].sort((a, b) => a.name.localeCompare(b.name))
+                                                              })
+                                                            })
+                                                            .catch((err) => console.error("Failed to create study tag:", err))
+                                                        }
                                                         const updatedPoints = points.map(p =>
                                                           p.id === point.id ? { ...p, tags: [...pointTags, newTag] } : p
                                                         )

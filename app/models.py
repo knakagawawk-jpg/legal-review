@@ -1017,3 +1017,33 @@ class StudyItem(Base):
         Index('idx_study_items_favorite', 'user_id', 'is_favorite', 'deleted_at'),
         Index('idx_study_items_last_viewed', 'user_id', 'last_viewed_at'),
     )
+
+
+# ============================================================================
+# My規範・My論点: 科目別タグマスタ
+# ============================================================================
+
+class StudyTag(Base):
+    """
+    科目別タグマスタ（ユーザーごと）
+
+    目的:
+    - タグの候補（マルチセレクト）を科目ごとに分けて管理する
+    - StudyItemのtags（JSON配列）とは独立して、候補リストを永続化
+    """
+    __tablename__ = "study_tags"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    subject_id = Column(Integer, nullable=False, index=True)  # 1-18
+    name = Column(String(100), nullable=False)  # 表示名
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+    __table_args__ = (
+        CheckConstraint("subject_id BETWEEN 1 AND 18", name="ck_study_tags_subject"),
+        UniqueConstraint("user_id", "subject_id", "name", name="uq_study_tags_user_subject_name"),
+        Index("idx_study_tags_user_subject", "user_id", "subject_id"),
+    )
