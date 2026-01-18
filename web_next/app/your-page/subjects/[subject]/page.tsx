@@ -129,7 +129,7 @@ function SortableRow({
         isDragging && "opacity-50 bg-amber-50"
       )}
     >
-      <TableCell className="py-1.5 px-1 w-6 relative">
+      <TableCell className="py-1.5 px-1 w-8 relative">
         <button
           {...attributes}
           {...listeners}
@@ -358,12 +358,10 @@ function SubjectPage() {
 
   // 重要度オプション定義
   const IMPORTANCE_OPTIONS = [
-    // 重要度は 1〜5 を維持（1が最重要）
-    { value: 1, label: "1", color: "bg-pink-600 text-white" },
-    { value: 2, label: "2", color: "bg-rose-600 text-white" },
-    { value: 3, label: "3", color: "bg-amber-600 text-white" },
-    { value: 4, label: "4", color: "bg-lime-600 text-white" },
-    { value: 5, label: "5", color: "bg-cyan-600 text-white" },
+    // 重要度は 1〜3 を維持（表示は High〜Low）
+    { value: 1, label: "High", color: "bg-pink-600 text-white" },
+    { value: 2, label: "Middle", color: "bg-lime-600 text-white" },
+    { value: 3, label: "Low", color: "bg-cyan-600 text-white" },
   ]
 
   // 重要度の表示用関数
@@ -665,6 +663,8 @@ function SubjectPage() {
 
     return (
       <TableRow key={`empty-norms-${key}`}>
+        {/* 操作列（ドラッグ列のダミー） */}
+        <TableCell className="py-1.5 px-1 w-8" />
         <TableCell className="text-xs align-top">
           <Input
             value={draft.item || ""}
@@ -827,6 +827,8 @@ function SubjectPage() {
 
     return (
       <TableRow key={`empty-points-${key}`}>
+        {/* 操作列（ドラッグ列のダミー） */}
+        <TableCell className="py-1.5 px-1 w-8" />
         <TableCell className="text-xs align-top">
           <Input
             value={draft.item || ""}
