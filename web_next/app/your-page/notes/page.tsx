@@ -56,7 +56,7 @@ function NotesPage() {
   }
 
   return (
-    <div 
+    <div
       className="min-h-screen bg-gradient-to-b from-background to-muted/20 transition-all duration-300"
       style={{
         marginLeft: isOpen ? '208px' : '0',
