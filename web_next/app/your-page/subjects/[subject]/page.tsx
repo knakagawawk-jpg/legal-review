@@ -14,6 +14,7 @@ import { withAuth } from "@/components/auth/with-auth"
 import { apiClient } from "@/lib/api-client"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 type NotebookWithPages = Notebook & {
   pages?: NotePage[]
@@ -129,7 +130,6 @@ function SubjectPage() {
 
   const [selectedSubject, setSelectedSubject] = useState<string>(getInitialSubject())
   const [mainTab, setMainTab] = useState<"study" | "notes" | null>(null)
-  const [studyTab, setStudyTab] = useState<"norms" | "points">("norms")
   const [notebooks, setNotebooks] = useState<NotebookWithPages[]>([])
   const [loadingNotebooks, setLoadingNotebooks] = useState(false)
   const [expandedNotebooks, setExpandedNotebooks] = useState<Set<number>>(new Set())
@@ -140,8 +140,29 @@ function SubjectPage() {
   type StudyItem = {
     id: number
     item: string  // 項目
+    importance: number  // 重要度 (1=High, 2=Middle, 3=Low)
     content: string  // 内容
     memo: string  // メモ
+    createdAt: string  // 作成日 (mm/dd形式)
+  }
+
+  // 重要度オプション定義
+  const IMPORTANCE_OPTIONS = [
+    { value: 1, label: "High", color: "bg-pink-600 text-white" },  // 濃いピンク（赤寄り）
+    { value: 2, label: "Middle", color: "bg-lime-600 text-white" },  // 濃い黄緑
+    { value: 3, label: "Low", color: "bg-cyan-600 text-white" },  // 濃い水色
+  ]
+
+  // 重要度の表示用関数
+  const getImportanceLabel = (importance: number): string => {
+    const option = IMPORTANCE_OPTIONS.find(opt => opt.value === importance)
+    return option ? option.label : ""
+  }
+
+  // 重要度の色取得関数
+  const getImportanceColor = (importance: number): string => {
+    const option = IMPORTANCE_OPTIONS.find(opt => opt.value === importance)
+    return option ? option.color : ""
   }
 
   const [norms, setNorms] = useState<StudyItem[]>([])
@@ -354,15 +375,6 @@ function SubjectPage() {
                   </TabsTrigger>
                 </TabsList>
               </Tabs>
-              {mainTab && (
-                <button
-                  onClick={() => setMainTab(null)}
-                  className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-amber-200/40 transition-colors text-amber-600"
-                  aria-label="タブを閉じる"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
             </div>
           </div>
         </div>
@@ -372,104 +384,155 @@ function SubjectPage() {
       <main className="container mx-auto px-20 py-4 max-w-6xl">
         <Card className="shadow-sm border-amber-200/60">
           <CardContent className="p-4">
-            {/* My規範・My論点タブ */}
+            {/* My規範・My論点 */}
             {mainTab === "study" && (
-              <Tabs value={studyTab} onValueChange={(v) => setStudyTab(v as "norms" | "points")} className="w-full">
-                <TabsList className="mb-6">
-                  <TabsTrigger value="norms" className="text-xs">
-                    <BookOpen className="h-3 w-3 mr-1.5" />
-                    My 規範
-                  </TabsTrigger>
-                  <TabsTrigger value="points" className="text-xs">
-                    <FileText className="h-3 w-3 mr-1.5" />
-                    My 論点
-                  </TabsTrigger>
-                </TabsList>
-                <TabsContent value="norms">
-                  <div className="border border-amber-200/60 rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-4">
-                      <BookOpen className="h-4 w-4 text-amber-600" />
-                      <h3 className="text-sm font-semibold text-amber-900/80">My 規範</h3>
-                    </div>
-                    {loadingStudyData ? (
-                      <div className="text-xs text-muted-foreground text-center py-8">
-                        読み込み中...
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead className="w-[20%] text-xs font-semibold text-amber-900/80">項目</TableHead>
-                              <TableHead className="w-[60%] text-xs font-semibold text-amber-900/80">内容</TableHead>
-                              <TableHead className="w-[20%] text-xs font-semibold text-amber-900/80">メモ</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {norms.length === 0 ? (
-                              <TableRow>
-                                <TableCell colSpan={3} className="text-xs text-muted-foreground text-center py-8">
-                                  データがありません
-                                </TableCell>
-                              </TableRow>
-                            ) : (
-                              norms.map((norm) => (
-                                <TableRow key={norm.id}>
-                                  <TableCell className="text-xs align-top">{norm.item}</TableCell>
-                                  <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{norm.content}</TableCell>
-                                  <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{norm.memo}</TableCell>
-                                </TableRow>
-                              ))
-                            )}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    )}
+              <div className="space-y-6">
+                {/* 規範一覧 */}
+                <div className="border border-amber-200/60 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <BookOpen className="h-4 w-4 text-amber-600" />
+                    <h3 className="text-sm font-semibold text-amber-900/80">規範一覧</h3>
                   </div>
-                </TabsContent>
-                <TabsContent value="points">
-                  <div className="border border-amber-200/60 rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-4">
-                      <FileText className="h-4 w-4 text-amber-600" />
-                      <h3 className="text-sm font-semibold text-amber-900/80">My 論点</h3>
+                  {loadingStudyData ? (
+                    <div className="text-xs text-muted-foreground text-center py-8">
+                      読み込み中...
                     </div>
-                    {loadingStudyData ? (
-                      <div className="text-xs text-muted-foreground text-center py-8">
-                        読み込み中...
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <Table>
-                          <TableHeader>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-[15%] text-xs font-semibold text-amber-900/80">項目</TableHead>
+                            <TableHead className="w-[10%] text-xs font-semibold text-amber-900/80">重要度</TableHead>
+                            <TableHead className="w-[40%] text-xs font-semibold text-amber-900/80">内容</TableHead>
+                            <TableHead className="w-[20%] text-xs font-semibold text-amber-900/80">メモ</TableHead>
+                            <TableHead className="w-[15%] text-xs font-semibold text-amber-900/80">作成日</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {norms.length === 0 ? (
                             <TableRow>
-                              <TableHead className="w-[20%] text-xs font-semibold text-amber-900/80">項目</TableHead>
-                              <TableHead className="w-[60%] text-xs font-semibold text-amber-900/80">内容</TableHead>
-                              <TableHead className="w-[20%] text-xs font-semibold text-amber-900/80">メモ</TableHead>
+                              <TableCell colSpan={5} className="text-xs text-muted-foreground text-center py-8">
+                                データがありません
+                              </TableCell>
                             </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {points.length === 0 ? (
-                              <TableRow>
-                                <TableCell colSpan={3} className="text-xs text-muted-foreground text-center py-8">
-                                  データがありません
+                          ) : (
+                            norms.map((norm) => (
+                              <TableRow key={norm.id}>
+                                <TableCell className="text-xs align-top">{norm.item}</TableCell>
+                                <TableCell className="text-xs align-top">
+                                  <Select
+                                    value={norm.importance.toString()}
+                                    onValueChange={(value) => {
+                                      const updatedNorms = norms.map(n => 
+                                        n.id === norm.id ? { ...n, importance: parseInt(value) } : n
+                                      )
+                                      setNorms(updatedNorms)
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-20">
+                                      {norm.importance ? (
+                                        <span className={`px-1.5 py-0.5 rounded ${getImportanceColor(norm.importance)}`}>
+                                          {getImportanceLabel(norm.importance)}
+                                        </span>
+                                      ) : (
+                                        <SelectValue placeholder="--" />
+                                      )}
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {IMPORTANCE_OPTIONS.map((opt) => (
+                                        <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                                          <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
                                 </TableCell>
+                                <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{norm.content}</TableCell>
+                                <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{norm.memo}</TableCell>
+                                <TableCell className="text-xs align-top">{norm.createdAt}</TableCell>
                               </TableRow>
-                            ) : (
-                              points.map((point) => (
-                                <TableRow key={point.id}>
-                                  <TableCell className="text-xs align-top">{point.item}</TableCell>
-                                  <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{point.content}</TableCell>
-                                  <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{point.memo}</TableCell>
-                                </TableRow>
-                              ))
-                            )}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    )}
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </div>
+
+                {/* 論点一覧 */}
+                <div className="border border-amber-200/60 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <FileText className="h-4 w-4 text-amber-600" />
+                    <h3 className="text-sm font-semibold text-amber-900/80">論点一覧</h3>
                   </div>
-                </TabsContent>
-              </Tabs>
+                  {loadingStudyData ? (
+                    <div className="text-xs text-muted-foreground text-center py-8">
+                      読み込み中...
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-[15%] text-xs font-semibold text-amber-900/80">項目</TableHead>
+                            <TableHead className="w-[10%] text-xs font-semibold text-amber-900/80">重要度</TableHead>
+                            <TableHead className="w-[40%] text-xs font-semibold text-amber-900/80">内容</TableHead>
+                            <TableHead className="w-[20%] text-xs font-semibold text-amber-900/80">メモ</TableHead>
+                            <TableHead className="w-[15%] text-xs font-semibold text-amber-900/80">作成日</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {points.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={5} className="text-xs text-muted-foreground text-center py-8">
+                                データがありません
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            points.map((point) => (
+                              <TableRow key={point.id}>
+                                <TableCell className="text-xs align-top">{point.item}</TableCell>
+                                <TableCell className="text-xs align-top">
+                                  <Select
+                                    value={point.importance.toString()}
+                                    onValueChange={(value) => {
+                                      const updatedPoints = points.map(p => 
+                                        p.id === point.id ? { ...p, importance: parseInt(value) } : p
+                                      )
+                                      setPoints(updatedPoints)
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-20">
+                                      {point.importance ? (
+                                        <span className={`px-1.5 py-0.5 rounded ${getImportanceColor(point.importance)}`}>
+                                          {getImportanceLabel(point.importance)}
+                                        </span>
+                                      ) : (
+                                        <SelectValue placeholder="--" />
+                                      )}
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {IMPORTANCE_OPTIONS.map((opt) => (
+                                        <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                                          <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </TableCell>
+                                <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{point.content}</TableCell>
+                                <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{point.memo}</TableCell>
+                                <TableCell className="text-xs align-top">{point.createdAt}</TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
 
             {/* ノートタブ */}
