@@ -43,7 +43,7 @@ function SubjectPage() {
     }
     return "憲法"
   }
-  
+
   const currentSubject = (params.subject as string) || getDefaultSubject()
   const [selectedSubject, setSelectedSubject] = useState<string>(currentSubject)
   const [mainTab, setMainTab] = useState<"study" | "notes" | null>(null)
@@ -53,7 +53,7 @@ function SubjectPage() {
   const [expandedNotebooks, setExpandedNotebooks] = useState<Set<number>>(new Set())
   const [selectedPageId, setSelectedPageId] = useState<number | null>(null)
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true)
-  
+
   // My規範・My論点のデータ（モック）
   type StudyItem = {
     id: number
@@ -61,7 +61,7 @@ function SubjectPage() {
     content: string  // 内容
     memo: string  // メモ
   }
-  
+
   const [norms, setNorms] = useState<StudyItem[]>([])
   const [points, setPoints] = useState<StudyItem[]>([])
   const [loadingStudyData, setLoadingStudyData] = useState(false)
@@ -86,16 +86,16 @@ function SubjectPage() {
         const historyKey = 'recent_subject_pages'
         const historyStr = localStorage.getItem(historyKey)
         const history: Array<{ subject: string; timestamp: number }> = historyStr ? JSON.parse(historyStr) : []
-        
+
         // 現在の科目を履歴から削除（重複を避ける）
         const filteredHistory = history.filter(item => item.subject !== selectedSubject)
-        
+
         // 現在の科目を先頭に追加
         const newHistory = [
           { subject: selectedSubject, timestamp: Date.now() },
           ...filteredHistory
         ].slice(0, 5) // 最大5件まで保持
-        
+
         localStorage.setItem(historyKey, JSON.stringify(newHistory))
       } catch (error) {
         console.error('Failed to save recent subject page:', error)
@@ -155,7 +155,7 @@ function SubjectPage() {
           // const pointsData = await apiClient.get<StudyItem[]>(`/api/points?subject=${selectedSubject}`)
           // setNorms(normsData)
           // setPoints(pointsData)
-          
+
           // モックデータ（後で削除）
           setNorms([])
           setPoints([])
@@ -192,7 +192,7 @@ function SubjectPage() {
     .find(page => page.id === selectedPageId)
 
   return (
-    <div 
+    <div
       className={cn(
         "min-h-screen bg-gradient-to-b from-amber-50/80 to-orange-50/30 transition-all duration-300",
         isRightSidebarOpen && mainTab === "notes" && "mr-64"
