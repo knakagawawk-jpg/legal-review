@@ -1,5 +1,5 @@
 サーバーに入る
-ssh -i $HOME\.ssh\id_ed25519_sakura [ubuntu@160.16.50.238](mailto:ubuntu@160.16.50.238)
+ssh -i $HOME\.ssh\id_ed25519_sakura ubuntu@160.16.50.238
 
 cd /opt/law-review
 

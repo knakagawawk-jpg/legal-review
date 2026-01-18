@@ -4,7 +4,6 @@ import { useState, useEffect } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
@@ -14,9 +13,67 @@ import type { Notebook, NotePage } from "@/types/api"
 import { withAuth } from "@/components/auth/with-auth"
 import { apiClient } from "@/lib/api-client"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 type NotebookWithPages = Notebook & {
   pages?: NotePage[]
+}
+
+/**
+ * 科目と色の対応:
+ * 
+ * 【憲法系（赤系）】
+ * - 憲法: bg-red-100 text-red-700
+ * - 行政法: bg-rose-100 text-rose-700
+ * - 国際関係法（公法系）: bg-pink-100 text-pink-700
+ * 
+ * 【民事系（青系）】
+ * - 民法: bg-blue-100 text-blue-700
+ * - 商法: bg-cyan-100 text-cyan-700
+ * - 民事訴訟法: bg-sky-100 text-sky-700
+ * - 実務基礎（民事）: bg-indigo-100 text-indigo-700
+ * - 倒産法: bg-teal-100 text-teal-700
+ * - 租税法: bg-blue-200 text-blue-800
+ * - 知的財産法: bg-sky-200 text-sky-800
+ * - 労働法: bg-indigo-200 text-indigo-800
+ * - 国際関係法（私法系）: bg-blue-300 text-blue-900
+ * 
+ * 【刑事系（緑系）】
+ * - 刑法: bg-green-100 text-green-700
+ * - 刑事訴訟法: bg-emerald-100 text-emerald-700
+ * - 実務基礎（刑事）: bg-lime-100 text-lime-700
+ * 
+ * 【その他】
+ * - 経済法: bg-yellow-100 text-yellow-700
+ * - 環境法: bg-amber-100 text-amber-700
+ * - 一般教養科目: bg-gray-100 text-gray-700
+ */
+const SUBJECT_COLORS: Record<string, string> = {
+  // 憲法系（赤系）
+  "憲法": "bg-red-100 text-red-700",
+  "行政法": "bg-rose-100 text-rose-700",
+  "国際関係法（公法系）": "bg-pink-100 text-pink-700",
+
+  // 民事系（青系）
+  "民法": "bg-blue-100 text-blue-700",
+  "商法": "bg-cyan-100 text-cyan-700",
+  "民事訴訟法": "bg-sky-100 text-sky-700",
+  "実務基礎（民事）": "bg-indigo-100 text-indigo-700",
+  "倒産法": "bg-teal-100 text-teal-700",
+  "租税法": "bg-blue-200 text-blue-800",
+  "知的財産法": "bg-sky-200 text-sky-800",
+  "労働法": "bg-indigo-200 text-indigo-800",
+  "国際関係法（私法系）": "bg-blue-300 text-blue-900",
+
+  // 刑事系（緑系）
+  "刑法": "bg-green-100 text-green-700",
+  "刑事訴訟法": "bg-emerald-100 text-emerald-700",
+  "実務基礎（刑事）": "bg-lime-100 text-lime-700",
+
+  // その他
+  "経済法": "bg-yellow-100 text-yellow-700",
+  "環境法": "bg-amber-100 text-amber-700",
+  "一般教養科目": "bg-gray-100 text-gray-700",
 }
 
 function SubjectPage() {
@@ -65,7 +122,6 @@ function SubjectPage() {
   const [norms, setNorms] = useState<StudyItem[]>([])
   const [points, setPoints] = useState<StudyItem[]>([])
   const [loadingStudyData, setLoadingStudyData] = useState(false)
-  const [isSubjectSelectorOpen, setIsSubjectSelectorOpen] = useState(true)
 
   // URLパラメータが変更されたときに状態を更新、またはデフォルトで憲法にリダイレクト
   useEffect(() => {
@@ -215,40 +271,39 @@ function SubjectPage() {
       <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-amber-200/60 shadow-sm">
         <div className="container mx-auto px-20 py-3 max-w-6xl">
           <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <StickyNote className="h-4 w-4 text-amber-600" />
-              <h1 className="text-base font-semibold text-amber-900">Your Note</h1>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setIsSubjectSelectorOpen(!isSubjectSelectorOpen)}
-                className="flex items-center gap-1.5 text-xs text-amber-900/80 hover:text-amber-900 transition-colors"
-              >
-                {isSubjectSelectorOpen ? (
-                  <ChevronDown className="h-3.5 w-3.5" />
-                ) : (
-                  <ChevronRight className="h-3.5 w-3.5" />
-                )}
-                <span>{selectedSubject}</span>
-              </button>
-              {isSubjectSelectorOpen && (
-                <Tabs value={selectedSubject} onValueChange={handleSubjectChange}>
-                  <ScrollArea className="w-full">
-                    <TabsList className="inline-flex w-max h-8 bg-amber-100/60 p-0.5">
-                      {FIXED_SUBJECTS.map((subject) => (
-                        <TabsTrigger
-                          key={subject}
-                          value={subject}
-                          className="text-xs px-2.5 py-1 data-[state=active]:bg-white data-[state=active]:text-amber-800 data-[state=active]:shadow-sm"
-                        >
-                          {subject}
-                        </TabsTrigger>
-                      ))}
-                    </TabsList>
-                    <ScrollBar orientation="horizontal" className="h-1.5" />
-                  </ScrollArea>
-                </Tabs>
-              )}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <StickyNote className="h-4 w-4 text-amber-600" />
+                <h1 className="text-base font-semibold text-amber-900">Your Note</h1>
+              </div>
+              <div className="flex items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className={cn(
+                      "flex items-center gap-1.5 text-xs transition-colors px-2 py-1 rounded-md hover:opacity-80",
+                      SUBJECT_COLORS[selectedSubject] || "bg-amber-100 text-amber-900"
+                    )}>
+                      <span>{selectedSubject}</span>
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" side="bottom" className="w-32">
+                    {FIXED_SUBJECTS.map((subject) => (
+                      <DropdownMenuItem
+                        key={subject}
+                        onClick={() => handleSubjectChange(subject)}
+                        className={cn(
+                          "text-xs cursor-pointer rounded-sm",
+                          SUBJECT_COLORS[subject] || "bg-gray-100 text-gray-700",
+                          selectedSubject === subject && "ring-2 ring-offset-1 ring-amber-500 font-medium"
+                        )}
+                      >
+                        {subject}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <Tabs value={mainTab || ""} onValueChange={(v) => {
