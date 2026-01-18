@@ -2,13 +2,24 @@ import { NextRequest, NextResponse } from "next/server"
 
 const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:8000"
 
+// 動的ルートとしてマーク（認証処理のため）
+export const dynamic = 'force-dynamic'
+
 // GET /api/notebooks - ノートブック一覧を取得
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const response = await fetch(`${BACKEND_URL}/v1/notebooks`, {
+    const authHeader = request.headers.get("authorization")
+    if (!authHeader) {
+      return NextResponse.json({ error: "認証が必要です" }, { status: 401 })
+    }
+
+    const { search } = new URL(request.url)
+
+    const response = await fetch(`${BACKEND_URL}/v1/notebooks${search}`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
+        "Authorization": authHeader,
       },
       cache: "no-store",
     })
@@ -39,12 +50,18 @@ export async function GET() {
 // POST /api/notebooks - ノートブックを作成
 export async function POST(request: NextRequest) {
   try {
+    const authHeader = request.headers.get("authorization")
+    if (!authHeader) {
+      return NextResponse.json({ error: "認証が必要です" }, { status: 401 })
+    }
+
     const body = await request.json()
 
     const response = await fetch(`${BACKEND_URL}/v1/notebooks`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "Authorization": authHeader,
       },
       body: JSON.stringify(body),
       cache: "no-store",

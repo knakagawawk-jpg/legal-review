@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils"
 import { Plus, FileText, Folder, ChevronRight, ChevronDown } from "lucide-react"
 import type { Notebook, NoteSection, NotePage } from "@/types/api"
 import { withAuth } from "@/components/auth/with-auth"
+import { apiClient } from "@/lib/api-client"
 
 function NotesPage() {
   const { isOpen } = useSidebar()
@@ -21,11 +22,8 @@ function NotesPage() {
     // ノートブック一覧を取得
     const fetchNotebooks = async () => {
       try {
-        const res = await fetch("/api/notebooks")
-        if (res.ok) {
-          const data = await res.json()
-          setNotebooks(data || [])
-        }
+        const data = await apiClient.get<Notebook[]>("/api/notebooks")
+        setNotebooks(data || [])
       } catch (err) {
         console.error("Failed to fetch notebooks:", err)
       } finally {

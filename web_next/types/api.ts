@@ -137,7 +137,7 @@ export interface ShortAnswerAnswer {
 // 過去の記録関連の型定義
 export interface SubmissionHistory {
   id: number
-  subject: string
+  subject: number | null
   question_text?: string | null
   answer_text: string
   created_at: string
@@ -176,6 +176,7 @@ export interface ShortAnswerHistory {
 // ノート機能関連の型定義
 export interface Notebook {
   id: number
+  subject_id: number
   title: string
   description?: string | null
   color?: string | null
@@ -196,7 +197,7 @@ export interface NoteSection {
 export interface NotePage {
   id: number
   section_id: number
-  title: string
+  title?: string | null
   content?: string | null
   display_order: number
   created_at: string

@@ -359,7 +359,8 @@ class Problem(Base):
     id = Column(Integer, primary_key=True, index=True)
     exam_type = Column(String(20), nullable=False)  # "司法試験" or "予備試験"
     year = Column(Integer, nullable=False)  # 年度（例: 2024）
-    subject = Column(String(50), nullable=False)  # 科目
+    # 科目ID（1-18）で管理（サービス全体の強制ルール）
+    subject = Column(Integer, nullable=False)  # 科目ID
     question_text = Column(Text, nullable=False)  # 問題文
     scoring_notes = Column(Text, nullable=True)  # 採点実感
     purpose = Column(Text, nullable=True)  # 出題趣旨
@@ -370,6 +371,11 @@ class Problem(Base):
 
     # 既存のSubmissionとの互換性のため、relationshipは残す
     old_submissions = relationship("Submission", foreign_keys="Submission.problem_id", back_populates="problem")
+    
+    __table_args__ = (
+        CheckConstraint("subject BETWEEN 1 AND 18", name="ck_problem_subject"),
+        Index("idx_problems_exam_year_subject", "exam_type", "year", "subject"),
+    )
 
 class Submission(Base):
     __tablename__ = "submissions"
@@ -596,7 +602,9 @@ class Notebook(Base):
     __tablename__ = "notebooks"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)  # 認証OFF時はNULL
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # 科目ID（1-18）で管理（サービス全体の強制ルール）
+    subject_id = Column(Integer, nullable=False, index=True)
     title = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
     color = Column(String(20), nullable=True)  # カラーコード（例: "#FF5733"）
@@ -610,7 +618,9 @@ class Notebook(Base):
     sections = relationship("NoteSection", back_populates="notebook", cascade="all, delete-orphan", order_by="NoteSection.display_order")
     
     __table_args__ = (
+        CheckConstraint("subject_id BETWEEN 1 AND 18", name="ck_notebooks_subject_id"),
         Index('idx_user_notebooks', 'user_id', 'created_at'),
+        Index('idx_user_subject_notebooks', 'user_id', 'subject_id', 'created_at'),
     )
 
 class NoteSection(Base):
@@ -640,7 +650,7 @@ class NotePage(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     section_id = Column(Integer, ForeignKey("note_sections.id", ondelete="CASCADE"), nullable=False, index=True)
-    title = Column(String(200), nullable=False)
+    title = Column(String(200), nullable=True)
     content = Column(Text, nullable=True)  # Markdown形式で保存
     display_order = Column(Integer, default=0, nullable=False)
     

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 
 const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:8000"
 
+export const dynamic = 'force-dynamic'
+
 // PUT /api/note-pages/[id] - ノートページを更新
 export async function PUT(
   request: NextRequest,
@@ -9,12 +11,18 @@ export async function PUT(
 ) {
   try {
     const pageId = params.id
+    const authHeader = request.headers.get("authorization")
+
+    if (!authHeader) {
+      return NextResponse.json({ error: "認証が必要です" }, { status: 401 })
+    }
     const body = await request.json()
 
     const response = await fetch(`${BACKEND_URL}/v1/note-pages/${pageId}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
+        "Authorization": authHeader,
       },
       body: JSON.stringify(body),
       cache: "no-store",
@@ -46,11 +54,17 @@ export async function DELETE(
 ) {
   try {
     const pageId = params.id
+    const authHeader = request.headers.get("authorization")
+
+    if (!authHeader) {
+      return NextResponse.json({ error: "認証が必要です" }, { status: 401 })
+    }
 
     const response = await fetch(`${BACKEND_URL}/v1/note-pages/${pageId}`, {
       method: "DELETE",
       headers: {
         "Content-Type": "application/json",
+        "Authorization": authHeader,
       },
       cache: "no-store",
     })

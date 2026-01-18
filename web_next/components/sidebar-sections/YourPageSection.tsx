@@ -56,6 +56,10 @@ function YourPageSectionInner() {
   // 直近アクセスした科目ページ（最大5件）
   const [recentSubjects, setRecentSubjects] = useState<Array<{ subject: string; timestamp: number }>>([])
   const [isRecentSubjectsOpen, setIsRecentSubjectsOpen] = useState(false)
+
+  // 直近アクセスしたノートページ（最大5件）
+  const [recentNotePages, setRecentNotePages] = useState<Array<{ subject: string; pageId: number; title: string; timestamp: number }>>([])
+  const [isRecentNotePagesOpen, setIsRecentNotePagesOpen] = useState(false)
   
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -72,8 +76,23 @@ function YourPageSectionInner() {
       } catch (error) {
         console.error('Failed to load recent subject pages:', error)
       }
+
+      try {
+        const historyStr = localStorage.getItem("recent_note_pages")
+        if (historyStr) {
+          const history: Array<{ subject: string; pageId: number; title: string; timestamp: number }> = JSON.parse(historyStr)
+          const validHistory = history.filter(item =>
+            FIXED_SUBJECTS.includes(item.subject as typeof FIXED_SUBJECTS[number]) &&
+            typeof item.pageId === "number" &&
+            Number.isFinite(item.pageId)
+          )
+          setRecentNotePages(validHistory.slice(0, 5))
+        }
+      } catch (error) {
+        console.error("Failed to load recent note pages:", error)
+      }
     }
-  }, [pathname]) // pathnameが変更されたときに再読み込み
+  }, [pathname, searchParams]) // クエリ変更でも再読み込み
 
   // 過去5日分の日付を計算
   const dateOptions = useMemo(() => {
@@ -105,8 +124,16 @@ function YourPageSectionInner() {
   return (
     <div className="space-y-1 px-2">
       {yourPageNav.map((item) => {
-        const isActive = pathname === item.href || (item.href !== "/your-page/dashboard" && pathname.startsWith(item.href))
+        const isActive = (() => {
+          if (item.href === "/your-page/dashboard") return isDashboardActive
+          if (item.href === "/your-page/past-questions") return isPastQuestionsActive
+          // `yourPageNav`上はデフォルトのリンク先が「/your-page/subjects/憲法」だが、
+          // アクティブ判定は「各科目ページ配下」全体で行う
+          if (item.href.startsWith("/your-page/subjects/")) return isSubjectsActive
+          return pathname === item.href || pathname.startsWith(item.href)
+        })()
         const isDashboard = item.href === "/your-page/dashboard"
+        const isSubjectsNavItem = item.href.startsWith("/your-page/subjects/")
         
         return (
           <div key={item.href}>
@@ -152,8 +179,9 @@ function YourPageSectionInner() {
               </Collapsible>
             )}
             
-            {/* 各科目ページ配下では直近アクセスした科目ページを表示（折りたたみ可能） */}
-            {isSubjectsActive && isYourPageActive && recentSubjects.length > 0 && (
+            {/* YourPage配下では直近アクセスした科目ページを表示（デフォルト折りたたみ） */}
+            {/* Dashboard/過去問管理の下には不要なので「各科目ページ」メニューの下にのみ表示 */}
+            {isSubjectsNavItem && isYourPageActive && recentSubjects.length > 0 && (
               <Collapsible open={isRecentSubjectsOpen} onOpenChange={setIsRecentSubjectsOpen}>
                 <CollapsibleTrigger className="mt-1 ml-7 flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors w-full px-2 py-1 rounded">
                   <ChevronDown className={cn("h-3 w-3 transition-transform", isRecentSubjectsOpen && "rotate-180")} />
@@ -175,6 +203,43 @@ function YourPageSectionInner() {
                         )}
                       >
                         {item.subject}
+                      </Link>
+                    )
+                  })}
+                </CollapsibleContent>
+              </Collapsible>
+            )}
+
+            {/* 各科目ページ内の note_page 直近アクセス（最大5件） */}
+            {isSubjectsNavItem && isYourPageActive && recentNotePages.length > 0 && (
+              <Collapsible open={isRecentNotePagesOpen} onOpenChange={setIsRecentNotePagesOpen}>
+                <CollapsibleTrigger className="mt-1 ml-7 flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors w-full px-2 py-1 rounded">
+                  <ChevronDown className={cn("h-3 w-3 transition-transform", isRecentNotePagesOpen && "rotate-180")} />
+                  <StickyNote className="h-3 w-3" />
+                  <span>ノート直近アクセス</span>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-0.5 ml-7 space-y-0.5">
+                  {recentNotePages.map((item) => {
+                    const encodedSubject = encodeURIComponent(item.subject)
+                    const href = `/your-page/subjects/${encodedSubject}?tab=notes&pageId=${encodeURIComponent(String(item.pageId))}`
+                    const isSelected =
+                      pathname?.startsWith(`/your-page/subjects/`) &&
+                      searchParams.get("tab") === "notes" &&
+                      searchParams.get("pageId") === String(item.pageId)
+
+                    return (
+                      <Link
+                        key={`${item.subject}-${item.pageId}`}
+                        href={href}
+                        className={cn(
+                          "block w-full text-left px-2 py-1 text-xs rounded transition-colors",
+                          isSelected
+                            ? "bg-blue-200/60 text-blue-800 font-medium"
+                            : "text-slate-500 hover:bg-blue-50/60 hover:text-slate-700"
+                        )}
+                        title={`${item.subject} / ${item.title || "無題"}`}
+                      >
+                        <span className="block truncate">{item.title || "無題"}</span>
                       </Link>
                     )
                   })}

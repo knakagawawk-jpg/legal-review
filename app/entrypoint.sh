@@ -9,6 +9,18 @@ if ! python3 /app/app/migrate_threads_tables.py; then
     echo "WARNING: Threads migration failed, but continuing..."
 fi
 
+# problems.subject を数字化（1-18）するマイグレーション（後方互換）
+echo "Running problems.subject migration..."
+if ! python3 /app/app/migrate_problem_subject_to_int.py; then
+    echo "WARNING: problems.subject migration failed, but continuing..."
+fi
+
+# ノートDBマイグレーション（科目別ノート対応）
+echo "Running note DB migration..."
+if ! python3 /app/app/migrate_note_db.py; then
+    echo "WARNING: Note DB migration failed, but continuing..."
+fi
+
 # データベース初期化スクリプトを実行
 echo "Running database initialization..."
 if ! python3 /app/app/init_db.py; then

@@ -1,13 +1,13 @@
 "use client"
 
 import React, { useState, useEffect, useRef } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
-import { FIXED_SUBJECTS } from "@/lib/subjects"
+import { FIXED_SUBJECTS, getSubjectId } from "@/lib/subjects"
 import { BookOpen, FileText, StickyNote, Plus, Folder, ChevronRight, ChevronDown, ChevronLeft, X, Menu, GripVertical, Trash2, CalendarDays } from "lucide-react"
 import type { Notebook, NotePage } from "@/types/api"
 import { withAuth } from "@/components/auth/with-auth"
@@ -242,6 +242,7 @@ const SUBJECT_COLORS: Record<string, string> = {
 function SubjectPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { isOpen, setIsOpen } = useSidebar()
 
   // URLパラメータをデコードする関数
@@ -292,10 +293,15 @@ function SubjectPage() {
 
   const [selectedSubject, setSelectedSubject] = useState<string>(getInitialSubject())
   
-  // デフォルトは"study"（規範論点）、またはlocalStorageから直近アクセスしたタブを取得
+  // デフォルトは"study"（規範論点）、またはlocalStorageから直近アクセスしたタブを取得。
+  // URLクエリ（tab=study|notes）があればそれを優先。
   const getInitialMainTab = (): "study" | "notes" => {
     if (typeof window === 'undefined') return "study"
     try {
+      const urlTab = searchParams.get("tab")
+      if (urlTab === "study" || urlTab === "notes") {
+        return urlTab
+      }
       const lastTab = localStorage.getItem('last_main_tab')
       if (lastTab === "study" || lastTab === "notes") {
         return lastTab
@@ -316,8 +322,38 @@ function SubjectPage() {
   const [notebooks, setNotebooks] = useState<NotebookWithPages[]>([])
   const [loadingNotebooks, setLoadingNotebooks] = useState(false)
   const [expandedNotebooks, setExpandedNotebooks] = useState<Set<number>>(new Set())
-  const [selectedPageId, setSelectedPageId] = useState<number | null>(null)
+  const getInitialSelectedPageId = (): number | null => {
+    if (typeof window === "undefined") return null
+    try {
+      const raw = searchParams.get("pageId")
+      if (!raw) return null
+      const n = Number(raw)
+      return Number.isFinite(n) ? n : null
+    } catch (error) {
+      console.error("Failed to load initial pageId:", error)
+      return null
+    }
+  }
+
+  const [selectedPageId, setSelectedPageId] = useState<number | null>(() => getInitialSelectedPageId())
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true)
+
+  // URLクエリと状態を同期（サイドパネルの「直近アクセス」から復元できるようにする）
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const urlTab = searchParams.get("tab")
+    if (urlTab === "study" || urlTab === "notes") {
+      setMainTab(urlTab)
+    }
+    const raw = searchParams.get("pageId")
+    if (!raw) {
+      setSelectedPageId(null)
+    } else {
+      const n = Number(raw)
+      setSelectedPageId(Number.isFinite(n) ? n : null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
 
   // 重要度オプション定義
@@ -472,7 +508,14 @@ function SubjectPage() {
       const fetchNotebooks = async () => {
         setLoadingNotebooks(true)
         try {
-          const notebooksData = await apiClient.get<Notebook[]>("/api/notebooks")
+          const subjectId = getSubjectId(selectedSubject)
+          if (!subjectId) {
+            setNotebooks([])
+            return
+          }
+          const notebooksData = await apiClient.get<Notebook[]>(
+            `/api/notebooks?subject_id=${subjectId}`
+          )
           // 各ノートブックの詳細（ページを含む）を取得
           const notebooksWithPages = await Promise.all(
             notebooksData.map(async (notebook) => {
@@ -537,7 +580,11 @@ function SubjectPage() {
   const handleSubjectChange = (value: string) => {
     setSelectedSubject(value)
     const encodedValue = encodeURIComponent(value)
-    router.push(`/your-page/subjects/${encodedValue}`)
+    // 科目を変えるとpageIdは無効になりうるためクリア。タブだけは引き継ぐ。
+    const nextParams = new URLSearchParams(searchParams.toString())
+    nextParams.set("tab", mainTab)
+    nextParams.delete("pageId")
+    router.push(`/your-page/subjects/${encodedValue}?${nextParams.toString()}`)
   }
 
   // 空行のレンダリング関数（規範用）
@@ -945,6 +992,30 @@ function SubjectPage() {
     .flatMap(nb => nb.pages || [])
     .find(page => page.id === selectedPageId)
 
+  // note_pageの直近アクセス履歴（最大5件）をlocalStorageに保存
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    if (mainTab !== "notes") return
+    if (!selectedSubject) return
+    if (!selectedPageId) return
+    if (!selectedPage) return
+
+    try {
+      const historyKey = "recent_note_pages"
+      const historyStr = localStorage.getItem(historyKey)
+      const history: Array<{ subject: string; pageId: number; title: string; timestamp: number }> = historyStr
+        ? JSON.parse(historyStr)
+        : []
+
+      const title = selectedPage.title || "無題"
+      const filtered = history.filter(item => !(item.subject === selectedSubject && item.pageId === selectedPageId))
+      const next = [{ subject: selectedSubject, pageId: selectedPageId, title, timestamp: Date.now() }, ...filtered].slice(0, 5)
+      localStorage.setItem(historyKey, JSON.stringify(next))
+    } catch (error) {
+      console.error("Failed to save recent note page:", error)
+    }
+  }, [mainTab, selectedSubject, selectedPageId, selectedPage])
+
   return (
     <div
       className={cn(
@@ -1008,6 +1079,16 @@ function SubjectPage() {
                     localStorage.setItem('last_main_tab', v)
                   } catch (error) {
                     console.error('Failed to save last main tab:', error)
+                  }
+                  // URLにも同期（notes以外ではpageIdを外す）
+                  try {
+                    const params = new URLSearchParams(searchParams.toString())
+                    params.set("tab", v)
+                    if (v !== "notes") params.delete("pageId")
+                    const encodedSubject = encodeURIComponent(selectedSubject)
+                    router.replace(`/your-page/subjects/${encodedSubject}?${params.toString()}`)
+                  } catch (error) {
+                    console.error("Failed to sync tab to URL:", error)
                   }
                 }
               }}>
@@ -1083,17 +1164,27 @@ function SubjectPage() {
                           onDragEnd={handleDragEndNorms}
                         >
                           <div className="overflow-x-auto">
-                            <Table>
+                            <Table className="table-fixed">
+                              <colgroup>
+                                <col className="w-6" />
+                                <col className="w-[15%]" />
+                                <col className="w-[7%]" />
+                                <col className="w-[7%]" />
+                                <col className="w-[38%]" />
+                                <col className="w-[18%]" />
+                                <col className="w-[10%]" />
+                                <col className="w-[10%]" />
+                              </colgroup>
                               <TableHeader>
                                 <TableRow>
                                   <TableHead className="w-6"></TableHead>
-                                  <TableHead className="w-[15%] text-xs font-semibold text-amber-900/80">項目</TableHead>
-                                  <TableHead className="w-[7%] text-xs font-semibold text-amber-900/80">重要度</TableHead>
-                                  <TableHead className="w-[7%] text-xs font-semibold text-amber-900/80">理解度</TableHead>
-                                  <TableHead className="w-[38%] text-xs font-semibold text-amber-900/80">内容</TableHead>
-                                  <TableHead className="w-[18%] text-xs font-semibold text-amber-900/80">メモ</TableHead>
-                                  <TableHead className="w-[10%] text-xs font-semibold text-amber-900/80">タグ</TableHead>
-                                  <TableHead className="w-[10%] text-xs font-semibold text-amber-900/80">作成日</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80">項目</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80">重要度</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80">理解度</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80">内容</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80">メモ</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80">タグ</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80">作成日</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -1339,17 +1430,27 @@ function SubjectPage() {
                           onDragEnd={handleDragEndPoints}
                         >
                           <div className="overflow-x-auto">
-                            <Table>
+                            <Table className="table-fixed">
+                              <colgroup>
+                                <col className="w-6" />
+                                <col className="w-[15%]" />
+                                <col className="w-[7%]" />
+                                <col className="w-[7%]" />
+                                <col className="w-[38%]" />
+                                <col className="w-[18%]" />
+                                <col className="w-[10%]" />
+                                <col className="w-[10%]" />
+                              </colgroup>
                               <TableHeader>
                                 <TableRow>
                                   <TableHead className="w-6"></TableHead>
-                                  <TableHead className="w-[15%] text-xs font-semibold text-amber-900/80">項目</TableHead>
-                                  <TableHead className="w-[7%] text-xs font-semibold text-amber-900/80">重要度</TableHead>
-                                  <TableHead className="w-[7%] text-xs font-semibold text-amber-900/80">理解度</TableHead>
-                                  <TableHead className="w-[38%] text-xs font-semibold text-amber-900/80">内容</TableHead>
-                                  <TableHead className="w-[18%] text-xs font-semibold text-amber-900/80">メモ</TableHead>
-                                  <TableHead className="w-[10%] text-xs font-semibold text-amber-900/80">タグ</TableHead>
-                                  <TableHead className="w-[10%] text-xs font-semibold text-amber-900/80">作成日</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80">項目</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80">重要度</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80">理解度</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80">内容</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80">メモ</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80">タグ</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80">作成日</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -1562,7 +1663,7 @@ function SubjectPage() {
                   {selectedPage ? (
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-semibold text-amber-900/80">{selectedPage.title}</h3>
+                        <h3 className="text-sm font-semibold text-amber-900/80">{selectedPage.title || "無題"}</h3>
                         <Button
                           size="sm"
                           variant="ghost"
@@ -1697,7 +1798,19 @@ function SubjectPage() {
                               return (
                                 <button
                                   key={page.id}
-                                  onClick={() => setSelectedPageId(page.id)}
+                                  onClick={() => {
+                                    setSelectedPageId(page.id)
+                                    // URLにも反映（サイドバーの直近アクセスから復元できるようにする）
+                                    try {
+                                      const params = new URLSearchParams(searchParams.toString())
+                                      params.set("tab", "notes")
+                                      params.set("pageId", String(page.id))
+                                      const encodedSubject = encodeURIComponent(selectedSubject)
+                                      router.replace(`/your-page/subjects/${encodedSubject}?${params.toString()}`)
+                                    } catch (error) {
+                                      console.error("Failed to sync pageId to URL:", error)
+                                    }
+                                  }}
                                   className={cn(
                                     "w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs rounded transition-colors",
                                     isSelected
@@ -1706,7 +1819,7 @@ function SubjectPage() {
                                   )}
                                 >
                                   <FileText className="h-3 w-3 text-amber-600 shrink-0" />
-                                  <span className="truncate">{page.title}</span>
+                                  <span className="truncate">{page.title || "無題"}</span>
                                 </button>
                               )
                             })

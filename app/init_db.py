@@ -24,6 +24,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from app.db import SessionLocal, engine, Base
 from app.models import Problem, ProblemMetadata, ProblemDetails, Submission, Review, User
+from config.subjects import get_subject_id
 from sqlalchemy import text
 
 def year_to_int(year_str: str) -> int:
@@ -87,7 +88,8 @@ def import_all_json_files():
                 
                 year_str = data.get("year", "")
                 exam_type = data.get("exam_type", "")
-                subject = data.get("subject", "").strip()
+                subject_raw = data.get("subject", "")
+                subject_str = str(subject_raw).strip()
                 text = data.get("text", "")
                 purpose = data.get("purpose", "")
                 source_pdf = data.get("source_pdf", "")
@@ -105,8 +107,15 @@ def import_all_json_files():
                 elif exam_type == "司法":
                     exam_type = "司法試験"
                 
+                # 科目をID（1-18）に変換して保持
+                subject_id = get_subject_id(subject_str) if not subject_str.isdigit() else int(subject_str)
+                if not subject_id or not (1 <= subject_id <= 18):
+                    logger.error(f"Invalid subject in {json_file.name}: {subject_str}")
+                    error_count += 1
+                    continue
+
                 # 既存の問題をチェック
-                key = (exam_type, year, subject)
+                key = (exam_type, year, subject_id)
                 if key in existing_problems:
                     skipped_count += 1
                     continue
@@ -115,7 +124,7 @@ def import_all_json_files():
                 problem = Problem(
                     exam_type=exam_type,
                     year=year,
-                    subject=subject,
+                    subject=subject_id,
                     question_text=text,
                     purpose=purpose if purpose else None,
                     pdf_path=source_pdf

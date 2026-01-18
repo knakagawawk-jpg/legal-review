@@ -64,7 +64,7 @@ class ProblemDetailsUpdate(BaseModel):
 class ProblemCreate(BaseModel):
     exam_type: str  # "司法試験" or "予備試験"
     year: int
-    subject: str
+    subject: int  # 科目ID（1-18）
     question_text: str
     scoring_notes: Optional[str] = None
     purpose: Optional[str] = None
@@ -74,7 +74,7 @@ class ProblemCreate(BaseModel):
 class ProblemUpdate(BaseModel):
     exam_type: Optional[str] = None
     year: Optional[int] = None
-    subject: Optional[str] = None
+    subject: Optional[int] = None  # 科目ID（1-18）
     question_text: Optional[str] = None
     scoring_notes: Optional[str] = None
     purpose: Optional[str] = None
@@ -84,7 +84,8 @@ class ProblemResponse(BaseModel):
     id: int
     exam_type: str
     year: int
-    subject: str
+    subject: int  # 科目ID（1-18）
+    subject_name: str  # 表示用（DBは数字で保持）
     question_text: str
     scoring_notes: Optional[str] = None
     purpose: Optional[str] = None
@@ -235,11 +236,13 @@ class ShortAnswerAnswerResponse(BaseModel):
 
 # ノート機能関連のスキーマ
 class NotebookCreate(BaseModel):
+    subject_id: int  # 科目ID（1-18）
     title: str
     description: Optional[str] = None
     color: Optional[str] = None
 
 class NotebookUpdate(BaseModel):
+    subject_id: Optional[int] = None  # 科目ID（1-18）
     title: Optional[str] = None
     description: Optional[str] = None
     color: Optional[str] = None
@@ -247,6 +250,7 @@ class NotebookUpdate(BaseModel):
 class NotebookResponse(BaseModel):
     id: int
     user_id: Optional[int]
+    subject_id: int
     title: str
     description: Optional[str]
     color: Optional[str]
@@ -278,7 +282,7 @@ class NoteSectionResponse(BaseModel):
 
 class NotePageCreate(BaseModel):
     section_id: int
-    title: str
+    title: Optional[str] = None
     content: Optional[str] = None
     display_order: Optional[int] = 0
 
@@ -290,7 +294,7 @@ class NotePageUpdate(BaseModel):
 class NotePageResponse(BaseModel):
     id: int
     section_id: int
-    title: str
+    title: Optional[str] = None
     content: Optional[str]
     display_order: int
     created_at: datetime
@@ -308,7 +312,7 @@ class NotebookDetailResponse(NotebookResponse):
 # 過去の記録取得用スキーマ
 class SubmissionHistoryResponse(BaseModel):
     id: int
-    subject: str
+    subject: Optional[int] = None  # 科目ID（1-18）
     question_text: Optional[str]
     answer_text: str
     created_at: datetime

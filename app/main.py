@@ -238,6 +238,7 @@ def problem_to_response(problem: Problem) -> ProblemResponse:
         exam_type=problem.exam_type,
         year=problem.year,
         subject=problem.subject,
+        subject_name=get_subject_name(problem.subject),
         question_text=problem.question_text,
         scoring_notes=problem.scoring_notes,
         purpose=problem.purpose,
@@ -252,7 +253,7 @@ def problem_to_response(problem: Problem) -> ProblemResponse:
 def list_problems(
     exam_type: Optional[str] = Query(None, description="試験種別（司法試験/予備試験）"),
     year: Optional[int] = Query(None, description="年度"),
-    subject: Optional[str] = Query(None, description="科目"),
+    subject: Optional[int] = Query(None, description="科目ID（1-18）"),
     db: Session = Depends(get_db)
 ):
     """問題一覧を取得"""
@@ -430,6 +431,8 @@ def get_problem(problem_id: int, db: Session = Depends(get_db)):
 @app.post("/v1/problems", response_model=ProblemResponse)
 def create_problem(problem: ProblemCreate, db: Session = Depends(get_db)):
     """問題を作成"""
+    if not (1 <= problem.subject <= 18):
+        raise HTTPException(status_code=400, detail="Invalid subject (must be 1-18)")
     db_problem = Problem(
         exam_type=problem.exam_type,
         year=problem.year,
@@ -453,6 +456,9 @@ def update_problem(problem_id: int, problem: ProblemUpdate, db: Session = Depend
         raise HTTPException(status_code=404, detail="Problem not found")
     
     update_data = problem.model_dump(exclude_unset=True)
+    if "subject" in update_data and update_data["subject"] is not None:
+        if not (1 <= int(update_data["subject"]) <= 18):
+            raise HTTPException(status_code=400, detail="Invalid subject (must be 1-18)")
     if "other_info" in update_data and update_data["other_info"] is not None:
         update_data["other_info"] = json.dumps(update_data["other_info"], ensure_ascii=False)
     
@@ -472,6 +478,8 @@ def create_problems_bulk(problems: List[ProblemCreate], db: Session = Depends(ge
     
     for idx, problem in enumerate(problems):
         try:
+            if not (1 <= problem.subject <= 18):
+                raise HTTPException(status_code=400, detail="Invalid subject (must be 1-18)")
             db_problem = Problem(
                 exam_type=problem.exam_type,
                 year=problem.year,
@@ -1320,14 +1328,31 @@ async def get_my_review_history(
 # ノート機能のエンドポイント
 @app.get("/v1/notebooks", response_model=List[NotebookResponse])
 async def list_notebooks(
+    subject_id: Optional[int] = Query(None, ge=1, le=18),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
     """ノートブック一覧を取得（認証必須）"""
     query = db.query(Notebook).filter(Notebook.user_id == current_user.id)
+
+    # 科目で絞り込み（各科目ページのノート用）
+    if subject_id is not None:
+        query = query.filter(Notebook.subject_id == subject_id)
     
     notebooks = query.order_by(Notebook.created_at.desc()).all()
-    return [NotebookResponse.model_validate(nb) for nb in notebooks]
+    return [
+        NotebookResponse(
+            id=nb.id,
+            user_id=nb.user_id,
+            subject_id=nb.subject_id,
+            title=nb.title,
+            description=nb.description,
+            color=nb.color,
+            created_at=nb.created_at,
+            updated_at=nb.updated_at,
+        )
+        for nb in notebooks
+    ]
 
 @app.post("/v1/notebooks", response_model=NotebookResponse)
 async def create_notebook(
@@ -1336,9 +1361,12 @@ async def create_notebook(
     db: Session = Depends(get_db)
 ):
     """ノートブックを作成（認証必須）"""
-    
+    if not (1 <= notebook_data.subject_id <= 18):
+        raise HTTPException(status_code=400, detail="Invalid subject_id (must be 1-18)")
+
     notebook = Notebook(
         user_id=current_user.id,
+        subject_id=notebook_data.subject_id,
         title=notebook_data.title,
         description=notebook_data.description,
         color=notebook_data.color
@@ -1347,7 +1375,18 @@ async def create_notebook(
     db.commit()
     db.refresh(notebook)
     
-    return NotebookResponse.model_validate(notebook)@app.get("/v1/notebooks/{notebook_id}", response_model=NotebookDetailResponse)
+    return NotebookResponse(
+        id=notebook.id,
+        user_id=notebook.user_id,
+        subject_id=notebook.subject_id,
+        title=notebook.title,
+        description=notebook.description,
+        color=notebook.color,
+        created_at=notebook.created_at,
+        updated_at=notebook.updated_at,
+    )
+
+@app.get("/v1/notebooks/{notebook_id}", response_model=NotebookDetailResponse)
 async def get_notebook(
     notebook_id: int,
     current_user: User = Depends(get_current_user_required),
@@ -1371,8 +1410,17 @@ async def get_notebook(
         section_detail.pages = [NotePageResponse.model_validate(p) for p in pages]
         section_details.append(section_detail)
     
-    notebook_detail = NotebookDetailResponse.model_validate(notebook)
-    notebook_detail.sections = section_details
+    notebook_detail = NotebookDetailResponse(
+        id=notebook.id,
+        user_id=notebook.user_id,
+        subject_id=notebook.subject_id,
+        title=notebook.title,
+        description=notebook.description,
+        color=notebook.color,
+        created_at=notebook.created_at,
+        updated_at=notebook.updated_at,
+        sections=section_details,
+    )
     
     return notebook_detail
 
@@ -1391,6 +1439,11 @@ async def update_notebook(
     if notebook.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     
+    if notebook_data.subject_id is not None:
+        if not (1 <= notebook_data.subject_id <= 18):
+            raise HTTPException(status_code=400, detail="Invalid subject_id (must be 1-18)")
+        notebook.subject_id = notebook_data.subject_id
+
     if notebook_data.title is not None:
         notebook.title = notebook_data.title
     if notebook_data.description is not None:
@@ -1401,7 +1454,16 @@ async def update_notebook(
     db.commit()
     db.refresh(notebook)
     
-    return NotebookResponse.model_validate(notebook)
+    return NotebookResponse(
+        id=notebook.id,
+        user_id=notebook.user_id,
+        subject_id=notebook.subject_id,
+        title=notebook.title,
+        description=notebook.description,
+        color=notebook.color,
+        created_at=notebook.created_at,
+        updated_at=notebook.updated_at,
+    )
 
 @app.delete("/v1/notebooks/{notebook_id}")
 async def delete_notebook(
