@@ -8,8 +8,18 @@ import { ConditionalSidebar } from "@/components/conditional-sidebar"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "答案講評生成システム",
-  description: "法律試験の答案をAIで講評します",
+  title: "Juristutor-AI",
+  description: "答案のAI講評、勉強管理含めた次世代の勉強用プラットフォーム",
+  openGraph: {
+    title: "Juristutor-AI",
+    description: "答案のAI講評、勉強管理含めた次世代の勉強用プラットフォーム",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Juristutor-AI",
+    description: "答案のAI講評、勉強管理含めた次世代の勉強用プラットフォーム",
+  },
 }
 
 export default function RootLayout({
