@@ -1,16 +1,28 @@
 import { NextRequest, NextResponse } from "next/server"
+import { cookies } from "next/headers"
 
 const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:8000"
+
+// cookiesを参照するため動的ルート扱い
+export const dynamic = "force-dynamic"
 
 // POST /api/review/chat - 講評に関する質問に答える
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
+    const cookieStore = await cookies()
+    const token = cookieStore.get("auth_token")?.value
+    const authHeader = request.headers.get("authorization") || (token ? `Bearer ${token}` : null)
+
+    if (!authHeader) {
+      return NextResponse.json({ error: "認証が必要です" }, { status: 401 })
+    }
 
     const response = await fetch(`${BACKEND_URL}/v1/review/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "Authorization": authHeader,
       },
       body: JSON.stringify(body),
       cache: "no-store",

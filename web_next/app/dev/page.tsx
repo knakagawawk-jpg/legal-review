@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils"
 import { getSubjectName } from "@/lib/subjects"
 
 type DevReviewData = {
-  submission_id?: number
+  review_id?: number
   answer_text: string
   question_text: string
   purpose: string
@@ -76,7 +76,7 @@ function ReviewResultVerify() {
     subject: "",
     review_markdown: "",
     review_json: {},
-    submission_id: 99999,
+    review_id: 99999,
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -84,7 +84,7 @@ function ReviewResultVerify() {
   const [panelRatio, setPanelRatio] = useState(4)
 
   const handleLoadReview = async () => {
-    if (!data.submission_id) {
+    if (!data.review_id) {
       setError("講評IDを入力してください")
       return
     }
@@ -93,12 +93,10 @@ function ReviewResultVerify() {
     setError(null)
 
     try {
-      const res = await fetch(`/api/review/${data.submission_id}`)
-      if (!res.ok) throw new Error("講評の取得に失敗しました")
-
-      const reviewData: ReviewResponse = await res.json()
+      // review_idベースで取得
+      const reviewData: ReviewResponse = await (await fetch(`/api/reviews/${data.review_id}`)).json()
       setData({
-        submission_id: data.submission_id,
+        review_id: data.review_id,
         answer_text: reviewData.answer_text || "",
         question_text: reviewData.question_text || "",
         purpose: reviewData.purpose || "",
@@ -125,7 +123,7 @@ function ReviewResultVerify() {
       subject: "",
       review_markdown: "",
       review_json: {},
-      submission_id: 99999,
+      review_id: 99999,
     })
     setError(null)
   }
@@ -152,9 +150,9 @@ function ReviewResultVerify() {
                 <Input
                   type="number"
                   min={1}
-                  value={data.submission_id || ""}
+                  value={data.review_id || ""}
                   onChange={(e) =>
-                    setData({ ...data, submission_id: parseInt(e.target.value) || undefined })
+                    setData({ ...data, review_id: parseInt(e.target.value) || undefined })
                   }
                   placeholder="講評ID"
                 />
@@ -262,15 +260,15 @@ function ReviewResultVerify() {
 
             <TabsContent value="other" className="space-y-4">
               <div>
-                <label className="text-sm font-medium mb-2 block">表示用Submission ID</label>
+                <label className="text-sm font-medium mb-2 block">表示用Review ID</label>
                 <Input
                   type="number"
                   min={1}
-                  value={data.submission_id || ""}
+                  value={data.review_id || ""}
                   onChange={(e) =>
-                    setData({ ...data, submission_id: parseInt(e.target.value) || undefined })
+                    setData({ ...data, review_id: parseInt(e.target.value) || undefined })
                   }
-                  placeholder="表示用のSubmission ID（チャット機能で使用）"
+                  placeholder="表示用のReview ID（チャット機能で使用）"
                 />
               </div>
             </TabsContent>
@@ -384,7 +382,7 @@ function ReviewResultVerify() {
                   )}
                   <Alert>
                     <AlertDescription>
-                      📝 提出ID: {data.submission_id || "未設定"}
+                      📝 講評ID: {data.review_id || "未設定"}
                     </AlertDescription>
                   </Alert>
                 </CardContent>
@@ -447,7 +445,7 @@ function ReviewResultVerify() {
       </div>
 
       {/* チャット機能の検証 */}
-      {data.submission_id && (
+      {data.review_id && (
         <Card>
           <CardHeader>
             <CardTitle>💬 チャット機能の検証</CardTitle>
@@ -456,7 +454,7 @@ function ReviewResultVerify() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <DevChatSection submissionId={data.submission_id} />
+            <DevChatSection reviewId={data.review_id} />
           </CardContent>
         </Card>
       )}
@@ -464,7 +462,7 @@ function ReviewResultVerify() {
   )
 }
 
-function DevChatSection({ submissionId }: { submissionId: number }) {
+function DevChatSection({ reviewId }: { reviewId: number }) {
   const [messages, setMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>(
     []
   )
@@ -493,7 +491,7 @@ function DevChatSection({ submissionId }: { submissionId: number }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          submission_id: submissionId,
+          review_id: reviewId,
           question: userMessage,
           chat_history: apiChatHistory.length > 0 ? apiChatHistory : undefined,
         }),
@@ -610,7 +608,8 @@ function SubmissionList() {
   )
 
   const handleView = (submissionId: number) => {
-    router.push(`/review/${submissionId}`)
+    // submissions一覧はreview_idと紐付かないため、遷移は廃止（必要ならreview-historyを使う）
+    router.push(`/dev`)
   }
 
   return (

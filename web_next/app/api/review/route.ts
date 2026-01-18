@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { cookies } from "next/headers"
 
 const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:8000"
 // 講評生成のタイムアウト（デフォルト: 10分 = 600000ms）
@@ -10,18 +11,27 @@ const REVIEW_TIMEOUT_MS = parseInt(process.env.REVIEW_TIMEOUT_MS || "600000", 10
 // 注意: この値はユーザーが明示的に指定したものです。AIが勝手に変更しないでください。
 export const maxDuration = 600 // 10分（秒単位）
 
+// cookiesを参照するため動的ルート扱い
+export const dynamic = "force-dynamic"
+
 // POST /api/review - 講評を生成
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const authHeader = request.headers.get("authorization")
+    const cookieStore = await cookies()
+    const token = cookieStore.get("auth_token")?.value
+    const authHeader = request.headers.get("authorization") || (token ? `Bearer ${token}` : null)
+
+    if (!authHeader) {
+      return NextResponse.json({ error: "認証が必要です" }, { status: 401 })
+    }
 
     // FastAPIの /v1/review にリクエストを転送
     const response = await fetch(`${BACKEND_URL}/v1/review`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(authHeader && { "Authorization": authHeader }),
+        "Authorization": authHeader,
       },
       body: JSON.stringify(body),
       // タイムアウト（環境変数 REVIEW_TIMEOUT_MS で設定可能、デフォルト: 600秒 = 10分）

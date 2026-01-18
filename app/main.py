@@ -766,70 +766,18 @@ async def create_review(
             detail=f"予期しないエラーが発生しました: {str(e)}"
         )
 
-@app.get("/v1/review/{submission_id}", response_model=ReviewResponse)
-async def get_review(
-    submission_id: int,
+@app.get("/v1/review/{review_id}", response_model=ReviewResponse)
+async def get_review_legacy(
+    review_id: int,
     current_user: User = Depends(get_current_user_required),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """講評を取得（認証必須）"""
-    submission = db.query(Submission).filter(Submission.id == submission_id).first()
-    if not submission:
-        raise HTTPException(status_code=404, detail="Submission not found")
-    
-    # ユーザー所有チェック
-    if submission.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
-    
-    review = db.query(Review).filter(Review.submission_id == submission_id).first()
-    if not review:
-        raise HTTPException(status_code=404, detail="Review not found")
-    
-    try:
-        review_json = json.loads(review.review_json)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Review JSON is invalid")
-    
-    # 問題情報を取得（新しい構造を優先、既存構造は後方互換性のため）
-    purpose_text = None
-    question_text = submission.question_text
-    
-    # 新しい構造を使用する場合（優先）
-    if submission.problem_details_id:
-        detail = db.query(ProblemDetails).filter(ProblemDetails.id == submission.problem_details_id).first()
-        if detail:
-            question_text = detail.question_text
-            purpose_text = detail.purpose
-    elif submission.problem_metadata_id:
-        # メタデータのみが設定されている場合、最初の設問を取得
-        detail = db.query(ProblemDetails).filter(
-            ProblemDetails.problem_metadata_id == submission.problem_metadata_id
-        ).order_by(ProblemDetails.question_number).first()
-        if detail:
-            question_text = detail.question_text
-            purpose_text = detail.purpose
-    
-    # 既存構造を使用する場合（後方互換性）
-    elif submission.problem_id:
-        problem = db.query(Problem).filter(Problem.id == submission.problem_id).first()
-        if problem:
-            question_text = problem.question_text
-            purpose_text = problem.purpose
-    
-    # 科目IDから科目名を取得
-    subject_id = submission.subject  # 科目ID（1-18）
-    subject_name = get_subject_name(subject_id)
-    
-    return ReviewResponse(
-        submission_id=submission.id,
-        review_markdown=review.review_markdown,
-        review_json=review_json,
-        answer_text=submission.answer_text,
-        question_text=question_text,
-        subject=subject_id,  # 科目ID（1-18）
-        subject_name=subject_name,  # 科目名（表示用）
-        purpose=purpose_text,
-    )
+    """
+    旧: /v1/review/{submission_id}
+
+    現在は review_id ベースのため、/v1/reviews/{review_id} のエイリアスとして扱う。
+    """
+    return await get_review_by_id(review_id=review_id, current_user=current_user, db=db)
 
 @app.get("/v1/reviews/{review_id}", response_model=ReviewResponse)
 async def get_review_by_id(
@@ -912,30 +860,54 @@ async def chat_review(
     db: Session = Depends(get_db)
 ):
     """講評に関する質問に答える（認証必須）"""
-    # SubmissionとReviewを取得
-    submission = db.query(Submission).filter(Submission.id == req.submission_id).first()
-    if not submission:
-        raise HTTPException(status_code=404, detail="Submission not found")
-    
-    # ユーザー所有チェック
-    if submission.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
-    
-    review = db.query(Review).filter(Review.submission_id == req.submission_id).first()
-    if not review:
-        raise HTTPException(status_code=404, detail="Review not found")
-    
-    # LLMでチャット回答を生成
-    answer = chat_about_review(
-        submission_id=req.submission_id,
-        question=req.question,
-        question_text=submission.question_text or "",
-        answer_text=submission.answer_text,
-        review_markdown=review.review_markdown,
-        chat_history=req.chat_history
-    )
-    
-    return ReviewChatResponse(answer=answer)
+    # review_id優先（現行）
+    if req.review_id is not None:
+        review = db.query(Review).filter(Review.id == req.review_id).first()
+        if not review:
+            raise HTTPException(status_code=404, detail="Review not found")
+        if review.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # 科目/問題文/出題趣旨（reference含む）を復元
+        question_text = review.custom_question_text or ""
+        purpose_text = None
+        subject_id = None
+
+        if review.official_question_id:
+            official_q = db.query(OfficialQuestion).filter(OfficialQuestion.id == review.official_question_id).first()
+            if official_q:
+                question_text = official_q.text or ""
+                purpose_text = official_q.syutudaisyusi
+                subject_id = official_q.subject_id
+
+        history = db.query(UserReviewHistory).filter(UserReviewHistory.review_id == req.review_id).first()
+        if history:
+            if subject_id is None and history.subject:
+                subject_id = history.subject
+            if review.source_type == "custom" and history.reference_text:
+                purpose_text = history.reference_text
+
+        # kouhyo_kekka → markdown復元
+        try:
+            review_json = json.loads(review.kouhyo_kekka) if isinstance(review.kouhyo_kekka, str) else (review.kouhyo_kekka or {})
+        except Exception:
+            review_json = {}
+        from .llm_service import _format_markdown  # 既存の整形関数を利用
+        subject_name = get_subject_name(subject_id) if subject_id is not None else "不明"
+        review_markdown = _format_markdown(subject_name, review_json)
+
+        answer = chat_about_review(
+            submission_id=req.review_id,  # 互換のため引数名はそのまま
+            question=req.question,
+            question_text=question_text,
+            answer_text=review.answer_text,
+            review_markdown=review_markdown,
+            chat_history=req.chat_history
+        )
+        return ReviewChatResponse(answer=answer)
+
+    # 旧: submission_id（互換。必要なら後で対応拡張）
+    raise HTTPException(status_code=400, detail="review_id is required")
 
 # 短答式問題関連のエンドポイント
 @app.get("/v1/short-answer/problems", response_model=ShortAnswerProblemListResponse)
@@ -1188,14 +1160,8 @@ async def get_my_submissions(
     
     result = []
     for sub in submissions:
+        # Reviewはreview_id中心で、Submissionとは紐付けない設計のためここでは返さない
         review_data = None
-        review = db.query(Review).filter(Review.submission_id == sub.id).first()
-        if review:
-            try:
-                review_data = json.loads(review.review_json)
-            except:
-                pass
-        
         result.append(SubmissionHistoryResponse(
             id=sub.id,
             subject=sub.subject,
@@ -1219,14 +1185,8 @@ def get_all_submissions_dev(
     
     result = []
     for sub in submissions:
+        # Reviewはreview_id中心で、Submissionとは紐付けない設計のためここでは返さない
         review_data = None
-        review = db.query(Review).filter(Review.submission_id == sub.id).first()
-        if review:
-            try:
-                review_data = json.loads(review.review_json)
-            except:
-                pass
-        
         result.append(SubmissionHistoryResponse(
             id=sub.id,
             subject=sub.subject,

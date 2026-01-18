@@ -107,10 +107,10 @@ function EmptyState() {
       </div>
       <h3 className="text-xl font-semibold text-foreground mb-2">AIとのチャットで勉強を捗らせよう</h3>
       <p className="text-center text-sm text-muted-foreground max-w-md mb-8 leading-relaxed">
-        勉強中に気になったことを自由に聞くことができます。
+        勉強中に気になったことを最新のLLMを組み込んだAIに自由に聞くことができます。
         <br />
         <br />
-        *注：回答はAIが生成したものであり正確性は担保されません。
+        *注：回答はAIが生成したものであり正確性は担保されません。あくまで勉強の補助としてお使いください。
       </p>
     </div>
   )

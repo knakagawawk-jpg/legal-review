@@ -8,7 +8,8 @@ try:
     # プロジェクトルートの.envファイルを読み込む
     env_path = Path(__file__).parent.parent / ".env"
     if env_path.exists():
-        load_dotenv(env_path)
+        # Docker Compose側で空文字が入るケースでも .env を優先できるように override=True
+        load_dotenv(env_path, override=True)
 except ImportError:
     # python-dotenvがインストールされていない場合はスキップ
     pass

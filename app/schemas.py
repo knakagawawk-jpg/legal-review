@@ -142,7 +142,9 @@ class ReviewResponse(BaseModel):
     question_title: Optional[str] = None  # 問題タイトル（新規問題の場合）
 
 class ReviewChatRequest(BaseModel):
-    submission_id: int
+    # 旧: submission_idベース（現在はreview_id中心のため非推奨）
+    submission_id: Optional[int] = None
+    review_id: Optional[int] = None
     question: str
     chat_history: Optional[List[Dict[str, str]]] = None  # [{"role": "user", "content": "..."}, ...]
 

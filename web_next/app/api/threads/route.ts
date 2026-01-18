@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { cookies } from "next/headers"
 
 const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:8000"
 
@@ -8,7 +9,9 @@ export const dynamic = 'force-dynamic'
 // GET /api/threads - スレッド一覧を取得
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization")
+    const cookieStore = await cookies()
+    const token = cookieStore.get("auth_token")?.value
+    const authHeader = request.headers.get("authorization") || (token ? `Bearer ${token}` : null)
     
     if (!authHeader) {
       return NextResponse.json(
@@ -54,7 +57,9 @@ export async function GET(request: NextRequest) {
 // POST /api/threads - 新しいスレッドを作成
 export async function POST(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization")
+    const cookieStore = await cookies()
+    const token = cookieStore.get("auth_token")?.value
+    const authHeader = request.headers.get("authorization") || (token ? `Bearer ${token}` : null)
     
     if (!authHeader) {
       return NextResponse.json(
