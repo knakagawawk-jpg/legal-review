@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, FileText, BookOpen, StickyNote, ChevronDown, Clock } from "lucide-react"
+import { LayoutDashboard, FileText, BookOpen, StickyNote, ChevronDown } from "lucide-react"
 import { useMemo, Suspense, useState, useEffect } from "react"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { FIXED_SUBJECTS } from "@/lib/subjects"
@@ -15,14 +15,14 @@ const yourPageNav = [
     icon: LayoutDashboard,
   },
   {
-    name: "過去問管理",
-    href: "/your-page/past-questions",
-    icon: FileText,
-  },
-  {
     name: "各科目ページ",
     href: "/your-page/subjects/憲法",
     icon: BookOpen,
+  },
+  {
+    name: "過去問管理",
+    href: "/your-page/past-questions",
+    icon: FileText,
   },
 ]
 
@@ -53,30 +53,12 @@ function YourPageSectionInner() {
   // 過去5日分は常にデフォルトで閉じた状態
   const [isDateListOpen, setIsDateListOpen] = useState(false)
   
-  // 直近アクセスした科目ページ（最大5件）
-  const [recentSubjects, setRecentSubjects] = useState<Array<{ subject: string; timestamp: number }>>([])
-  const [isRecentSubjectsOpen, setIsRecentSubjectsOpen] = useState(false)
-
   // 直近アクセスしたノートページ（最大5件）
   const [recentNotePages, setRecentNotePages] = useState<Array<{ subject: string; pageId: number; title: string; timestamp: number }>>([])
   const [isRecentNotePagesOpen, setIsRecentNotePagesOpen] = useState(false)
   
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      try {
-        const historyStr = localStorage.getItem('recent_subject_pages')
-        if (historyStr) {
-          const history: Array<{ subject: string; timestamp: number }> = JSON.parse(historyStr)
-          // 有効な科目のみをフィルタリング（型アサーションを使用）
-          const validHistory = history.filter(item => 
-            FIXED_SUBJECTS.includes(item.subject as typeof FIXED_SUBJECTS[number])
-          )
-          setRecentSubjects(validHistory.slice(0, 5))
-        }
-      } catch (error) {
-        console.error('Failed to load recent subject pages:', error)
-      }
-
       try {
         const historyStr = localStorage.getItem("recent_note_pages")
         if (historyStr) {
@@ -179,49 +161,13 @@ function YourPageSectionInner() {
               </Collapsible>
             )}
             
-            {/* 直近アクセスは「各科目ページ」メニュー配下だけで表示（デフォルト折りたたみ） */}
-            {/* Your Page配下にいる限り、各科目ページを開いていなくても常に表示 */}
-            {isSubjectsNavItem && (
-              <Collapsible open={isRecentSubjectsOpen} onOpenChange={setIsRecentSubjectsOpen}>
-                <CollapsibleTrigger className="mt-1 ml-7 flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors w-full px-2 py-1 rounded">
-                  <ChevronDown className={cn("h-3 w-3 transition-transform", isRecentSubjectsOpen && "rotate-180")} />
-                  <Clock className="h-3 w-3" />
-                  <span>直近アクセス</span>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="mt-0.5 ml-7 space-y-0.5">
-                  {recentSubjects.length === 0 ? (
-                    <div className="px-2 py-1 text-[10px] text-slate-400">履歴がありません</div>
-                  ) : (
-                    recentSubjects.map((item) => {
-                      const encodedSubject = encodeURIComponent(item.subject)
-                      const isSelected = pathname === `/your-page/subjects/${encodedSubject}`
-                      return (
-                        <Link
-                          key={item.subject}
-                          href={`/your-page/subjects/${encodedSubject}`}
-                          className={cn(
-                            "block w-full text-left px-2 py-1 text-xs rounded transition-colors",
-                            isSelected
-                              ? "bg-blue-200/60 text-blue-800 font-medium"
-                              : "text-slate-500 hover:bg-blue-50/60 hover:text-slate-700"
-                          )}
-                        >
-                          {item.subject}
-                        </Link>
-                      )
-                    })
-                  )}
-                </CollapsibleContent>
-              </Collapsible>
-            )}
-
-            {/* 各科目ページ内の note_page 直近アクセス（最大5件） */}
+            {/* 各科目ページ内の note_page 直近閲覧ページ（最大5件） */}
             {isSubjectsNavItem && (
               <Collapsible open={isRecentNotePagesOpen} onOpenChange={setIsRecentNotePagesOpen}>
                 <CollapsibleTrigger className="mt-1 ml-7 flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 transition-colors w-full px-2 py-1 rounded">
                   <ChevronDown className={cn("h-3 w-3 transition-transform", isRecentNotePagesOpen && "rotate-180")} />
                   <StickyNote className="h-3 w-3" />
-                  <span>ノート直近アクセス</span>
+                  <span>直近閲覧ページ</span>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="mt-0.5 ml-7 space-y-0.5">
                   {recentNotePages.length === 0 ? (

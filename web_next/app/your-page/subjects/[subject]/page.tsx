@@ -1346,7 +1346,17 @@ function SubjectPage() {
                                           setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
                                         }}
                                       >
-                                        <TableCell className="text-xs align-top">{norm.item}</TableCell>
+                                        {/* 項目：確定後も編集可能（Dashboard仕様に合わせる） */}
+                                        <TableCell className="text-xs align-top">
+                                          <Input
+                                            value={norm.item}
+                                            onChange={(e) => {
+                                              setNorms(prev => prev.map(n => n.id === norm.id ? { ...n, item: e.target.value } : n))
+                                            }}
+                                            placeholder="項目を入力..."
+                                            className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
+                                          />
+                                        </TableCell>
                                         <TableCell className="text-xs align-top">
                                           <Select
                                             value={norm.importance.toString()}
@@ -1404,8 +1414,25 @@ function SubjectPage() {
                                             </SelectContent>
                                           </Select>
                                         </TableCell>
-                                        <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{norm.content}</TableCell>
-                                        <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{norm.memo}</TableCell>
+                                        {/* 内容/メモ：入力時は最大5行、表示時は1〜3行（Dashboardと同じ） */}
+                                        <TableCell className="text-xs align-top">
+                                          <MemoField
+                                            value={norm.content}
+                                            onChange={(e) => {
+                                              setNorms(prev => prev.map(n => n.id === norm.id ? { ...n, content: e.target.value } : n))
+                                            }}
+                                            placeholder="内容を入力..."
+                                          />
+                                        </TableCell>
+                                        <TableCell className="text-xs align-top">
+                                          <MemoField
+                                            value={norm.memo}
+                                            onChange={(e) => {
+                                              setNorms(prev => prev.map(n => n.id === norm.id ? { ...n, memo: e.target.value } : n))
+                                            }}
+                                            placeholder="メモを入力..."
+                                          />
+                                        </TableCell>
                                         <TableCell className="text-xs align-top">
                                           <Popover
                                             open={tagsPopoverOpen[norm.id] || false}
@@ -1627,7 +1654,17 @@ function SubjectPage() {
                                           setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
                                         }}
                                       >
-                                        <TableCell className="text-xs align-top">{point.item}</TableCell>
+                                        {/* 項目：確定後も編集可能（Dashboard仕様に合わせる） */}
+                                        <TableCell className="text-xs align-top">
+                                          <Input
+                                            value={point.item}
+                                            onChange={(e) => {
+                                              setPoints(prev => prev.map(p => p.id === point.id ? { ...p, item: e.target.value } : p))
+                                            }}
+                                            placeholder="項目を入力..."
+                                            className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
+                                          />
+                                        </TableCell>
                                         <TableCell className="text-xs align-top">
                                           <Select
                                             value={point.importance.toString()}
@@ -1685,8 +1722,25 @@ function SubjectPage() {
                                             </SelectContent>
                                           </Select>
                                         </TableCell>
-                                        <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{point.content}</TableCell>
-                                        <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{point.memo}</TableCell>
+                                        {/* 内容/メモ：入力時は最大5行、表示時は1〜3行（Dashboardと同じ） */}
+                                        <TableCell className="text-xs align-top">
+                                          <MemoField
+                                            value={point.content}
+                                            onChange={(e) => {
+                                              setPoints(prev => prev.map(p => p.id === point.id ? { ...p, content: e.target.value } : p))
+                                            }}
+                                            placeholder="内容を入力..."
+                                          />
+                                        </TableCell>
+                                        <TableCell className="text-xs align-top">
+                                          <MemoField
+                                            value={point.memo}
+                                            onChange={(e) => {
+                                              setPoints(prev => prev.map(p => p.id === point.id ? { ...p, memo: e.target.value } : p))
+                                            }}
+                                            placeholder="メモを入力..."
+                                          />
+                                        </TableCell>
                                         <TableCell className="text-xs align-top">
                                           <Popover
                                             open={tagsPopoverOpen[point.id] || false}
