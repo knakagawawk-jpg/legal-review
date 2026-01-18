@@ -48,10 +48,10 @@ type StudyItem = {
   id: number
   item: string  // 項目
   importance: number  // 重要度 (1=High, 2=Middle, 3=Low)
-  masteryLevel: number | null  // 理解度 (1=未習得, 2=初級, 3=中級, 4=上級, 5=完全習得)
+  masteryLevel?: number | null  // 理解度 (1=未習得, 2=初級, 3=中級, 4=上級, 5=完全習得)
   content: string  // 内容
   memo: string  // メモ
-  tags: string[]  // タグ（配列）
+  tags?: string[]  // タグ（配列）
   createdAt: string  // 作成日 (mm/dd形式)
 }
 
@@ -291,7 +291,28 @@ function SubjectPage() {
   }
 
   const [selectedSubject, setSelectedSubject] = useState<string>(getInitialSubject())
-  const [mainTab, setMainTab] = useState<"study" | "notes" | null>(null)
+  
+  // デフォルトは"study"（規範論点）、またはlocalStorageから直近アクセスしたタブを取得
+  const getInitialMainTab = (): "study" | "notes" => {
+    if (typeof window === 'undefined') return "study"
+    try {
+      const lastTab = localStorage.getItem('last_main_tab')
+      if (lastTab === "study" || lastTab === "notes") {
+        return lastTab
+      }
+    } catch (error) {
+      console.error('Failed to load last main tab:', error)
+    }
+    return "study"
+  }
+  
+  const [mainTab, setMainTab] = useState<"study" | "notes">(() => {
+    // クライアントサイドでのみ実行
+    if (typeof window !== 'undefined') {
+      return getInitialMainTab()
+    }
+    return "study"
+  })
   const [notebooks, setNotebooks] = useState<NotebookWithPages[]>([])
   const [loadingNotebooks, setLoadingNotebooks] = useState(false)
   const [expandedNotebooks, setExpandedNotebooks] = useState<Set<number>>(new Set())
@@ -348,7 +369,13 @@ function SubjectPage() {
   const getAllTags = (items: StudyItem[]): string[] => {
     const tagSet = new Set<string>()
     items.forEach(item => {
-      item.tags?.forEach(tag => tagSet.add(tag))
+      if (item.tags && Array.isArray(item.tags)) {
+        item.tags.forEach(tag => {
+          if (tag && typeof tag === 'string') {
+            tagSet.add(tag)
+          }
+        })
+      }
     })
     return Array.from(tagSet).sort()
   }
@@ -616,8 +643,8 @@ function SubjectPage() {
         </TableCell>
         <TableCell className="text-xs align-top">
           <Select
-            value={draft.masteryLevel?.toString() || ""}
-            onValueChange={(value) => updateDraft("masteryLevel", value ? parseInt(value) : null)}
+            value={draft.masteryLevel?.toString() ?? "none"}
+            onValueChange={(value) => updateDraft("masteryLevel", value === "none" ? null : parseInt(value))}
             onOpenChange={(open) => {
               if (!open) {
                 setTimeout(handleBlur, 100)
@@ -634,7 +661,7 @@ function SubjectPage() {
               )}
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="" className="text-xs">--</SelectItem>
+              <SelectItem value="none" className="text-xs">--</SelectItem>
               {MASTERY_LEVEL_OPTIONS.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
                   <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
@@ -778,8 +805,8 @@ function SubjectPage() {
         </TableCell>
         <TableCell className="text-xs align-top">
           <Select
-            value={draft.masteryLevel?.toString() || ""}
-            onValueChange={(value) => updateDraft("masteryLevel", value ? parseInt(value) : null)}
+            value={draft.masteryLevel?.toString() ?? "none"}
+            onValueChange={(value) => updateDraft("masteryLevel", value === "none" ? null : parseInt(value))}
             onOpenChange={(open) => {
               if (!open) {
                 setTimeout(handleBlur, 100)
@@ -796,7 +823,7 @@ function SubjectPage() {
               )}
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="" className="text-xs">--</SelectItem>
+              <SelectItem value="none" className="text-xs">--</SelectItem>
               {MASTERY_LEVEL_OPTIONS.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
                   <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
@@ -973,11 +1000,15 @@ function SubjectPage() {
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Tabs value={mainTab || ""} onValueChange={(v) => {
+              <Tabs value={mainTab} onValueChange={(v) => {
                 if (v === "study" || v === "notes") {
                   setMainTab(v)
-                } else {
-                  setMainTab(null)
+                  // localStorageに保存
+                  try {
+                    localStorage.setItem('last_main_tab', v)
+                  } catch (error) {
+                    console.error('Failed to save last main tab:', error)
+                  }
                 }
               }}>
                 <TabsList className="inline-flex w-max h-8 bg-amber-100/60 p-0.5">
@@ -1066,7 +1097,10 @@ function SubjectPage() {
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                <SortableContext items={norms.map(n => n.id.toString())} strategy={verticalListSortingStrategy}>
+                                <SortableContext 
+                                  items={norms.length > 0 ? norms.map(n => n.id.toString()) : []} 
+                                  strategy={verticalListSortingStrategy}
+                                >
                                   {norms.map((norm) => {
                                     const allTags = getAllTags(norms)
                                     const normTags = norm.tags || []
@@ -1110,10 +1144,10 @@ function SubjectPage() {
                                         </TableCell>
                                         <TableCell className="text-xs align-top">
                                           <Select
-                                            value={norm.masteryLevel?.toString() || ""}
+                                            value={norm.masteryLevel?.toString() ?? "none"}
                                             onValueChange={(value) => {
                                               const updatedNorms = norms.map(n =>
-                                                n.id === norm.id ? { ...n, masteryLevel: value ? parseInt(value) : null } : n
+                                                n.id === norm.id ? { ...n, masteryLevel: value === "none" ? null : parseInt(value) } : n
                                               )
                                               setNorms(updatedNorms)
                                             }}
@@ -1128,7 +1162,7 @@ function SubjectPage() {
                                               )}
                                             </SelectTrigger>
                                             <SelectContent>
-                                              <SelectItem value="" className="text-xs">--</SelectItem>
+                                              <SelectItem value="none" className="text-xs">--</SelectItem>
                                               {MASTERY_LEVEL_OPTIONS.map((opt) => (
                                                 <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
                                                   <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
@@ -1319,7 +1353,10 @@ function SubjectPage() {
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                <SortableContext items={points.map(p => p.id.toString())} strategy={verticalListSortingStrategy}>
+                                <SortableContext 
+                                  items={points.length > 0 ? points.map(p => p.id.toString()) : []} 
+                                  strategy={verticalListSortingStrategy}
+                                >
                                   {points.map((point) => {
                                     const allTags = getAllTags(points)
                                     const pointTags = point.tags || []
@@ -1363,10 +1400,10 @@ function SubjectPage() {
                                         </TableCell>
                                         <TableCell className="text-xs align-top">
                                           <Select
-                                            value={point.masteryLevel?.toString() || ""}
+                                            value={point.masteryLevel?.toString() ?? "none"}
                                             onValueChange={(value) => {
                                               const updatedPoints = points.map(p =>
-                                                p.id === point.id ? { ...p, masteryLevel: value ? parseInt(value) : null } : p
+                                                p.id === point.id ? { ...p, masteryLevel: value === "none" ? null : parseInt(value) } : p
                                               )
                                               setPoints(updatedPoints)
                                             }}
@@ -1381,7 +1418,7 @@ function SubjectPage() {
                                               )}
                                             </SelectTrigger>
                                             <SelectContent>
-                                              <SelectItem value="" className="text-xs">--</SelectItem>
+                                              <SelectItem value="none" className="text-xs">--</SelectItem>
                                               {MASTERY_LEVEL_OPTIONS.map((opt) => (
                                                 <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
                                                   <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>

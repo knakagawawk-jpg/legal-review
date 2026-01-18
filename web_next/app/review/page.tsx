@@ -553,10 +553,10 @@ export default function ReviewPage() {
                         }
                         return (
                           <Select
-                            value={newSubjectId !== null ? String(newSubjectId) : ""}
+                            value={newSubjectId !== null ? String(newSubjectId) : "none"}
                             onValueChange={(value) => {
                               try {
-                                if (value === "") {
+                                if (value === "none") {
                                   setNewSubjectId(null)
                                 } else {
                                   const subjectId = parseInt(value, 10)
@@ -578,7 +578,7 @@ export default function ReviewPage() {
                               <SelectValue placeholder="科目を選択（未選択可）" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">未選択</SelectItem>
+                              <SelectItem value="none">未選択</SelectItem>
                               {FIXED_SUBJECTS.map((subjectName, index) => (
                                 <SelectItem key={index + 1} value={String(index + 1)}>
                                   {subjectName}
