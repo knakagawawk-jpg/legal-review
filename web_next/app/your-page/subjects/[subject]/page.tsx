@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -8,16 +8,175 @@ import { Button } from "@/components/ui/button"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { FIXED_SUBJECTS } from "@/lib/subjects"
-import { BookOpen, FileText, StickyNote, Plus, Folder, ChevronRight, ChevronDown, ChevronLeft, X, Menu } from "lucide-react"
+import { BookOpen, FileText, StickyNote, Plus, Folder, ChevronRight, ChevronDown, ChevronLeft, X, Menu, GripVertical, Trash2, CalendarDays } from "lucide-react"
 import type { Notebook, NotePage } from "@/types/api"
 import { withAuth } from "@/components/auth/with-auth"
 import { apiClient } from "@/lib/api-client"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar, DatePickerCalendar } from "@/components/ui/calendar"
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core"
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
 
 type NotebookWithPages = Notebook & {
   pages?: NotePage[]
+}
+
+// My規範・My論点のデータ型
+type StudyItem = {
+  id: number
+  item: string  // 項目
+  importance: number  // 重要度 (1=High, 2=Middle, 3=Low)
+  content: string  // 内容
+  memo: string  // メモ
+  createdAt: string  // 作成日 (mm/dd形式)
+}
+
+// Sortable Row Component
+function SortableRow({
+  item,
+  children,
+  onDelete,
+  onEditCreatedDate,
+}: {
+  item: StudyItem
+  children: React.ReactNode
+  onDelete: (id: number) => void
+  onEditCreatedDate?: (id: number) => void
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.id.toString() })
+  const [showMenu, setShowMenu] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const clickStartPos = useRef<{ x: number; y: number } | null>(null)
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowMenu(false)
+      }
+    }
+
+    if (showMenu) {
+      document.addEventListener("mousedown", handleClickOutside)
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutside)
+      }
+    }
+  }, [showMenu])
+
+  // Handle mouse down to track click position
+  const handleMouseDown = (e: React.MouseEvent) => {
+    clickStartPos.current = { x: e.clientX, y: e.clientY }
+  }
+
+  // Handle click on drag handle
+  const handleClick = (e: React.MouseEvent) => {
+    // マウスが動いていない場合（クリック）のみメニューを表示
+    if (clickStartPos.current) {
+      const deltaX = Math.abs(e.clientX - clickStartPos.current.x)
+      const deltaY = Math.abs(e.clientY - clickStartPos.current.y)
+      if (deltaX < 5 && deltaY < 5) {
+        e.stopPropagation()
+        e.preventDefault()
+        setShowMenu(true)
+      }
+      clickStartPos.current = null
+    }
+  }
+
+  return (
+    <TableRow
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "border-b border-border/50 hover:bg-amber-50/30 transition-colors",
+        isDragging && "opacity-50 bg-amber-50"
+      )}
+    >
+      <TableCell className="py-1.5 px-1 w-6 relative">
+        <button
+          {...attributes}
+          {...listeners}
+          onMouseDown={handleMouseDown}
+          onClick={handleClick}
+          className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-muted rounded"
+        >
+          <GripVertical className="h-3 w-3 text-muted-foreground" />
+        </button>
+        {showMenu && (
+          <div
+            ref={menuRef}
+            className="absolute left-6 top-1/2 -translate-y-1/2 z-10 flex gap-1 bg-card border rounded shadow-lg p-1"
+          >
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                onDelete(item.id)
+                setShowMenu(false)
+              }}
+              className="h-6 w-6 bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+              title="削除"
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
+            {onEditCreatedDate && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  onEditCreatedDate(item.id)
+                  setShowMenu(false)
+                }}
+                className="h-6 w-6 bg-muted hover:bg-muted/80"
+                title="作成日の編集"
+              >
+                <CalendarDays className="h-3 w-3" />
+              </Button>
+            )}
+          </div>
+        )}
+      </TableCell>
+      {children}
+    </TableRow>
+  )
 }
 
 /**
@@ -136,15 +295,6 @@ function SubjectPage() {
   const [selectedPageId, setSelectedPageId] = useState<number | null>(null)
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true)
 
-  // My規範・My論点のデータ（モック）
-  type StudyItem = {
-    id: number
-    item: string  // 項目
-    importance: number  // 重要度 (1=High, 2=Middle, 3=Low)
-    content: string  // 内容
-    memo: string  // メモ
-    createdAt: string  // 作成日 (mm/dd形式)
-  }
 
   // 重要度オプション定義
   const IMPORTANCE_OPTIONS = [
@@ -168,6 +318,50 @@ function SubjectPage() {
   const [norms, setNorms] = useState<StudyItem[]>([])
   const [points, setPoints] = useState<StudyItem[]>([])
   const [loadingStudyData, setLoadingStudyData] = useState(false)
+
+  // フォールディング状態
+  const [normsOpen, setNormsOpen] = useState(true)
+  const [pointsOpen, setPointsOpen] = useState(true)
+
+  // 作成日編集用のPopover状態
+  const [createdDatePickerOpen, setCreatedDatePickerOpen] = useState<Record<number, boolean>>({})
+
+  // DnD sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
+
+  // 空行の管理（draftRows）
+  const [draftNormsRows, setDraftNormsRows] = useState<Record<string, Partial<StudyItem>>>({})
+  const [draftPointsRows, setDraftPointsRows] = useState<Record<string, Partial<StudyItem>>>({})
+
+  // 空行数の計算（デフォルト3行、draftRowsも考慮）
+  const getEmptyRowsCount = (dataLength: number, draftRowsCount: number) => {
+    const baseCount = dataLength === 0 ? 3 : dataLength === 1 ? 2 : dataLength === 2 ? 1 : 0
+    return Math.max(baseCount, draftRowsCount)
+  }
+
+  // 空行の配列を生成（draftRowsのキーとインデックスの組み合わせ）
+  const emptyNormsRowsCount = getEmptyRowsCount(norms.length, Object.keys(draftNormsRows).length)
+  const emptyNormsRows = Array.from({ length: emptyNormsRowsCount }, (_, i) => {
+    const existingKeys = Object.keys(draftNormsRows).filter(key => key.startsWith('norms-'))
+    return existingKeys[i] || `norms-${i}`
+  })
+
+  const emptyPointsRowsCount = getEmptyRowsCount(points.length, Object.keys(draftPointsRows).length)
+  const emptyPointsRows = Array.from({ length: emptyPointsRowsCount }, (_, i) => {
+    const existingKeys = Object.keys(draftPointsRows).filter(key => key.startsWith('points-'))
+    return existingKeys[i] || `points-${i}`
+  })
+
+  // 次のIDを生成（簡易版）
+  const getNextId = (items: StudyItem[]) => {
+    if (items.length === 0) return 1
+    return Math.max(...items.map(item => item.id)) + 1
+  }
 
   // URLパラメータが変更されたときに状態を更新、またはデフォルトで憲法にリダイレクト
   useEffect(() => {
@@ -281,6 +475,328 @@ function SubjectPage() {
     router.push(`/your-page/subjects/${encodedValue}`)
   }
 
+  // 空行のレンダリング関数（規範用）
+  const renderEmptyNormsRow = (rowKey: string | number) => {
+    const key = typeof rowKey === 'string' ? rowKey : `norms-${rowKey}`
+    const draft = draftNormsRows[key] || {}
+
+    const updateDraft = (field: keyof StudyItem, value: any) => {
+      setDraftNormsRows(prev => ({
+        ...prev,
+        [key]: {
+          ...prev[key],
+          [field]: value,
+        }
+      }))
+    }
+
+    const hasValidDraft = () => {
+      const item = draft.item
+      const content = draft.content
+      return (item && item.trim() !== '') || (content && content.trim() !== '')
+    }
+
+    const confirmDraft = () => {
+      if (!hasValidDraft()) {
+        setDraftNormsRows(prev => {
+          const newDraft = { ...prev }
+          delete newDraft[key]
+          return newDraft
+        })
+        return
+      }
+
+      const newItem: StudyItem = {
+        id: getNextId(norms),
+        item: draft.item || "",
+        importance: draft.importance || 1,
+        content: draft.content || "",
+        memo: draft.memo || "",
+        createdAt: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' })
+      }
+
+      setNorms([...norms, newItem])
+      setDraftNormsRows(prev => {
+        const newDraft = { ...prev }
+        delete newDraft[key]
+        return newDraft
+      })
+    }
+
+    const handleBlur = () => {
+      confirmDraft()
+    }
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        confirmDraft()
+      }
+    }
+
+    return (
+      <TableRow key={`empty-norms-${key}`}>
+        <TableCell className="text-xs align-top">
+          <Input
+            value={draft.item || ""}
+            onChange={(e) => updateDraft("item", e.target.value)}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            placeholder="項目を入力..."
+            className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
+          />
+        </TableCell>
+        <TableCell className="text-xs align-top">
+          <Select
+            value={draft.importance?.toString() || "1"}
+            onValueChange={(value) => updateDraft("importance", parseInt(value))}
+            onOpenChange={(open) => {
+              if (!open) {
+                setTimeout(handleBlur, 100)
+              }
+            }}
+          >
+            <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-20">
+              {draft.importance ? (
+                <span className={`px-1.5 py-0.5 rounded ${getImportanceColor(draft.importance)}`}>
+                  {getImportanceLabel(draft.importance)}
+                </span>
+              ) : (
+                <SelectValue placeholder="--" />
+              )}
+            </SelectTrigger>
+            <SelectContent>
+              {IMPORTANCE_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                  <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </TableCell>
+        <TableCell className="text-xs align-top">
+          <Textarea
+            value={draft.content || ""}
+            onChange={(e) => updateDraft("content", e.target.value)}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            placeholder="内容を入力..."
+            className="min-h-[28px] text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0 resize-none"
+            rows={1}
+          />
+        </TableCell>
+        <TableCell className="text-xs align-top">
+          <Textarea
+            value={draft.memo || ""}
+            onChange={(e) => updateDraft("memo", e.target.value)}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            placeholder="メモを入力..."
+            className="min-h-[28px] text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0 resize-none"
+            rows={1}
+          />
+        </TableCell>
+        <TableCell className="text-xs align-top">
+          <span className="text-muted-foreground">--</span>
+        </TableCell>
+      </TableRow>
+    )
+  }
+
+  // 空行のレンダリング関数（論点用）
+  const renderEmptyPointsRow = (rowKey: string | number) => {
+    const key = typeof rowKey === 'string' ? rowKey : `points-${rowKey}`
+    const draft = draftPointsRows[key] || {}
+
+    const updateDraft = (field: keyof StudyItem, value: any) => {
+      setDraftPointsRows(prev => ({
+        ...prev,
+        [key]: {
+          ...prev[key],
+          [field]: value,
+        }
+      }))
+    }
+
+    const hasValidDraft = () => {
+      const item = draft.item
+      const content = draft.content
+      return (item && item.trim() !== '') || (content && content.trim() !== '')
+    }
+
+    const confirmDraft = () => {
+      if (!hasValidDraft()) {
+        setDraftPointsRows(prev => {
+          const newDraft = { ...prev }
+          delete newDraft[key]
+          return newDraft
+        })
+        return
+      }
+
+      const newItem: StudyItem = {
+        id: getNextId(points),
+        item: draft.item || "",
+        importance: draft.importance || 1,
+        content: draft.content || "",
+        memo: draft.memo || "",
+        createdAt: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' })
+      }
+
+      setPoints([...points, newItem])
+      setDraftPointsRows(prev => {
+        const newDraft = { ...prev }
+        delete newDraft[key]
+        return newDraft
+      })
+    }
+
+    const handleBlur = () => {
+      confirmDraft()
+    }
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        confirmDraft()
+      }
+    }
+
+    return (
+      <TableRow key={`empty-points-${key}`}>
+        <TableCell className="text-xs align-top">
+          <Input
+            value={draft.item || ""}
+            onChange={(e) => updateDraft("item", e.target.value)}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            placeholder="項目を入力..."
+            className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
+          />
+        </TableCell>
+        <TableCell className="text-xs align-top">
+          <Select
+            value={draft.importance?.toString() || "1"}
+            onValueChange={(value) => updateDraft("importance", parseInt(value))}
+            onOpenChange={(open) => {
+              if (!open) {
+                setTimeout(handleBlur, 100)
+              }
+            }}
+          >
+            <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-20">
+              {draft.importance ? (
+                <span className={`px-1.5 py-0.5 rounded ${getImportanceColor(draft.importance)}`}>
+                  {getImportanceLabel(draft.importance)}
+                </span>
+              ) : (
+                <SelectValue placeholder="--" />
+              )}
+            </SelectTrigger>
+            <SelectContent>
+              {IMPORTANCE_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                  <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </TableCell>
+        <TableCell className="text-xs align-top">
+          <Textarea
+            value={draft.content || ""}
+            onChange={(e) => updateDraft("content", e.target.value)}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            placeholder="内容を入力..."
+            className="min-h-[28px] text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0 resize-none"
+            rows={1}
+          />
+        </TableCell>
+        <TableCell className="text-xs align-top">
+          <Textarea
+            value={draft.memo || ""}
+            onChange={(e) => updateDraft("memo", e.target.value)}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            placeholder="メモを入力..."
+            className="min-h-[28px] text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0 resize-none"
+            rows={1}
+          />
+        </TableCell>
+        <TableCell className="text-xs align-top">
+          <span className="text-muted-foreground">--</span>
+        </TableCell>
+      </TableRow>
+    )
+  }
+
+  // 行追加関数（空行を追加）
+  const addNormsRow = () => {
+    const newRowKey = `norms-${Date.now()}-${Math.random()}`
+    setDraftNormsRows(prev => ({
+      ...prev,
+      [newRowKey]: { importance: 1 }
+    }))
+  }
+
+  const addPointsRow = () => {
+    const newRowKey = `points-${Date.now()}-${Math.random()}`
+    setDraftPointsRows(prev => ({
+      ...prev,
+      [newRowKey]: { importance: 1 }
+    }))
+  }
+
+  // 削除関数
+  const deleteNormsItem = (id: number) => {
+    setNorms(prev => prev.filter(item => item.id !== id))
+  }
+
+  const deletePointsItem = (id: number) => {
+    setPoints(prev => prev.filter(item => item.id !== id))
+  }
+
+  // ドラッグエンド処理（規範）
+  const handleDragEndNorms = (event: DragEndEvent) => {
+    const { active, over } = event
+
+    if (over && active.id !== over.id) {
+      const oldIndex = norms.findIndex((item) => item.id.toString() === active.id)
+      const newIndex = norms.findIndex((item) => item.id.toString() === over.id)
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const newNorms = arrayMove(norms, oldIndex, newIndex)
+        setNorms(newNorms)
+      }
+    }
+  }
+
+  // ドラッグエンド処理（論点）
+  const handleDragEndPoints = (event: DragEndEvent) => {
+    const { active, over } = event
+
+    if (over && active.id !== over.id) {
+      const oldIndex = points.findIndex((item) => item.id.toString() === active.id)
+      const newIndex = points.findIndex((item) => item.id.toString() === over.id)
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const newPoints = arrayMove(points, oldIndex, newIndex)
+        setPoints(newPoints)
+      }
+    }
+  }
+
+  // 作成日を更新する関数
+  const updateCreatedDate = (id: number, date: Date, type: "norms" | "points") => {
+    const dateStr = date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' })
+    if (type === "norms") {
+      setNorms(prev => prev.map(item => item.id === id ? { ...item, createdAt: dateStr } : item))
+    } else {
+      setPoints(prev => prev.map(item => item.id === id ? { ...item, createdAt: dateStr } : item))
+    }
+  }
+
   const toggleNotebook = (notebookId: number) => {
     const newExpanded = new Set(expandedNotebooks)
     if (newExpanded.has(notebookId)) {
@@ -389,148 +905,286 @@ function SubjectPage() {
               <div className="space-y-6">
                 {/* 規範一覧 */}
                 <div className="border border-amber-200/60 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-4">
-                    <BookOpen className="h-4 w-4 text-amber-600" />
-                    <h3 className="text-sm font-semibold text-amber-900/80">規範一覧</h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="h-4 w-4 text-amber-600" />
+                      <h3 className="text-sm font-semibold text-amber-900/80">規範一覧</h3>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs"
+                        onClick={addNormsRow}
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        追加
+                      </Button>
+                      <Collapsible open={normsOpen} onOpenChange={setNormsOpen}>
+                        <CollapsibleTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 text-xs p-0"
+                          >
+                            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", normsOpen && "rotate-180")} />
+                          </Button>
+                        </CollapsibleTrigger>
+                      </Collapsible>
+                    </div>
                   </div>
-                  {loadingStudyData ? (
-                    <div className="text-xs text-muted-foreground text-center py-8">
-                      読み込み中...
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-[15%] text-xs font-semibold text-amber-900/80">項目</TableHead>
-                            <TableHead className="w-[10%] text-xs font-semibold text-amber-900/80">重要度</TableHead>
-                            <TableHead className="w-[40%] text-xs font-semibold text-amber-900/80">内容</TableHead>
-                            <TableHead className="w-[20%] text-xs font-semibold text-amber-900/80">メモ</TableHead>
-                            <TableHead className="w-[15%] text-xs font-semibold text-amber-900/80">作成日</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {norms.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={5} className="text-xs text-muted-foreground text-center py-8">
-                                データがありません
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            norms.map((norm) => (
-                              <TableRow key={norm.id}>
-                                <TableCell className="text-xs align-top">{norm.item}</TableCell>
-                                <TableCell className="text-xs align-top">
-                                  <Select
-                                    value={norm.importance.toString()}
-                                    onValueChange={(value) => {
-                                      const updatedNorms = norms.map(n =>
-                                        n.id === norm.id ? { ...n, importance: parseInt(value) } : n
-                                      )
-                                      setNorms(updatedNorms)
-                                    }}
-                                  >
-                                    <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-20">
-                                      {norm.importance ? (
-                                        <span className={`px-1.5 py-0.5 rounded ${getImportanceColor(norm.importance)}`}>
-                                          {getImportanceLabel(norm.importance)}
-                                        </span>
-                                      ) : (
-                                        <SelectValue placeholder="--" />
-                                      )}
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {IMPORTANCE_OPTIONS.map((opt) => (
-                                        <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
-                                          <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </TableCell>
-                                <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{norm.content}</TableCell>
-                                <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{norm.memo}</TableCell>
-                                <TableCell className="text-xs align-top">{norm.createdAt}</TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  )}
+                  <Collapsible open={normsOpen} onOpenChange={setNormsOpen}>
+                    <CollapsibleContent>
+                      {loadingStudyData ? (
+                        <div className="text-xs text-muted-foreground text-center py-8">
+                          読み込み中...
+                        </div>
+                      ) : (
+                        <DndContext
+                          sensors={sensors}
+                          collisionDetection={closestCenter}
+                          onDragEnd={handleDragEndNorms}
+                        >
+                          <div className="overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-6"></TableHead>
+                                  <TableHead className="w-[15%] text-xs font-semibold text-amber-900/80">項目</TableHead>
+                                  <TableHead className="w-[10%] text-xs font-semibold text-amber-900/80">重要度</TableHead>
+                                  <TableHead className="w-[40%] text-xs font-semibold text-amber-900/80">内容</TableHead>
+                                  <TableHead className="w-[20%] text-xs font-semibold text-amber-900/80">メモ</TableHead>
+                                  <TableHead className="w-[15%] text-xs font-semibold text-amber-900/80">作成日</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                <SortableContext items={norms.map(n => n.id.toString())} strategy={verticalListSortingStrategy}>
+                                  {norms.map((norm) => (
+                                    <SortableRow
+                                      key={norm.id}
+                                      item={norm}
+                                      onDelete={deleteNormsItem}
+                                      onEditCreatedDate={(id) => {
+                                        setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
+                                      }}
+                                    >
+                                      <TableCell className="text-xs align-top">{norm.item}</TableCell>
+                                      <TableCell className="text-xs align-top">
+                                        <Select
+                                          value={norm.importance.toString()}
+                                          onValueChange={(value) => {
+                                            const updatedNorms = norms.map(n =>
+                                              n.id === norm.id ? { ...n, importance: parseInt(value) } : n
+                                            )
+                                            setNorms(updatedNorms)
+                                          }}
+                                        >
+                                          <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-20">
+                                            {norm.importance ? (
+                                              <span className={`px-1.5 py-0.5 rounded ${getImportanceColor(norm.importance)}`}>
+                                                {getImportanceLabel(norm.importance)}
+                                              </span>
+                                            ) : (
+                                              <SelectValue placeholder="--" />
+                                            )}
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {IMPORTANCE_OPTIONS.map((opt) => (
+                                              <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                                                <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </TableCell>
+                                      <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{norm.content}</TableCell>
+                                      <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{norm.memo}</TableCell>
+                                      <TableCell className="text-xs align-top">
+                                        <Popover
+                                          open={createdDatePickerOpen[norm.id] || false}
+                                          onOpenChange={(open) => {
+                                            setCreatedDatePickerOpen(prev => ({ ...prev, [norm.id]: open }))
+                                          }}
+                                        >
+                                          <PopoverTrigger asChild>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              className="h-7 text-xs px-2 hover:bg-muted/50"
+                                            >
+                                              {norm.createdAt}
+                                            </Button>
+                                          </PopoverTrigger>
+                                          <PopoverContent className="w-auto p-3" align="start">
+                                            <DatePickerCalendar
+                                              selectedDate={norm.createdAt ? (() => {
+                                                const [month, day] = norm.createdAt.split('/')
+                                                const currentYear = new Date().getFullYear()
+                                                return new Date(currentYear, parseInt(month) - 1, parseInt(day))
+                                              })() : null}
+                                              onSelect={(date) => {
+                                                if (date) {
+                                                  updateCreatedDate(norm.id, date, "norms")
+                                                  setCreatedDatePickerOpen(prev => ({ ...prev, [norm.id]: false }))
+                                                }
+                                              }}
+                                            />
+                                          </PopoverContent>
+                                        </Popover>
+                                      </TableCell>
+                                    </SortableRow>
+                                  ))}
+                                </SortableContext>
+                                {emptyNormsRows.map((index) => renderEmptyNormsRow(index))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </DndContext>
+                      )}
+                    </CollapsibleContent>
+                  </Collapsible>
                 </div>
 
                 {/* 論点一覧 */}
                 <div className="border border-amber-200/60 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-4">
-                    <FileText className="h-4 w-4 text-amber-600" />
-                    <h3 className="text-sm font-semibold text-amber-900/80">論点一覧</h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-amber-600" />
+                      <h3 className="text-sm font-semibold text-amber-900/80">論点一覧</h3>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs"
+                        onClick={addPointsRow}
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        追加
+                      </Button>
+                      <Collapsible open={pointsOpen} onOpenChange={setPointsOpen}>
+                        <CollapsibleTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 text-xs p-0"
+                          >
+                            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", pointsOpen && "rotate-180")} />
+                          </Button>
+                        </CollapsibleTrigger>
+                      </Collapsible>
+                    </div>
                   </div>
-                  {loadingStudyData ? (
-                    <div className="text-xs text-muted-foreground text-center py-8">
-                      読み込み中...
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-[15%] text-xs font-semibold text-amber-900/80">項目</TableHead>
-                            <TableHead className="w-[10%] text-xs font-semibold text-amber-900/80">重要度</TableHead>
-                            <TableHead className="w-[40%] text-xs font-semibold text-amber-900/80">内容</TableHead>
-                            <TableHead className="w-[20%] text-xs font-semibold text-amber-900/80">メモ</TableHead>
-                            <TableHead className="w-[15%] text-xs font-semibold text-amber-900/80">作成日</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {points.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={5} className="text-xs text-muted-foreground text-center py-8">
-                                データがありません
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            points.map((point) => (
-                              <TableRow key={point.id}>
-                                <TableCell className="text-xs align-top">{point.item}</TableCell>
-                                <TableCell className="text-xs align-top">
-                                  <Select
-                                    value={point.importance.toString()}
-                                    onValueChange={(value) => {
-                                      const updatedPoints = points.map(p =>
-                                        p.id === point.id ? { ...p, importance: parseInt(value) } : p
-                                      )
-                                      setPoints(updatedPoints)
-                                    }}
-                                  >
-                                    <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-20">
-                                      {point.importance ? (
-                                        <span className={`px-1.5 py-0.5 rounded ${getImportanceColor(point.importance)}`}>
-                                          {getImportanceLabel(point.importance)}
-                                        </span>
-                                      ) : (
-                                        <SelectValue placeholder="--" />
-                                      )}
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {IMPORTANCE_OPTIONS.map((opt) => (
-                                        <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
-                                          <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </TableCell>
-                                <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{point.content}</TableCell>
-                                <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{point.memo}</TableCell>
-                                <TableCell className="text-xs align-top">{point.createdAt}</TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  )}
+                  <Collapsible open={pointsOpen} onOpenChange={setPointsOpen}>
+                    <CollapsibleContent>
+                      {loadingStudyData ? (
+                        <div className="text-xs text-muted-foreground text-center py-8">
+                          読み込み中...
+                        </div>
+                      ) : (
+                        <DndContext
+                          sensors={sensors}
+                          collisionDetection={closestCenter}
+                          onDragEnd={handleDragEndPoints}
+                        >
+                          <div className="overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-6"></TableHead>
+                                  <TableHead className="w-[15%] text-xs font-semibold text-amber-900/80">項目</TableHead>
+                                  <TableHead className="w-[10%] text-xs font-semibold text-amber-900/80">重要度</TableHead>
+                                  <TableHead className="w-[40%] text-xs font-semibold text-amber-900/80">内容</TableHead>
+                                  <TableHead className="w-[20%] text-xs font-semibold text-amber-900/80">メモ</TableHead>
+                                  <TableHead className="w-[15%] text-xs font-semibold text-amber-900/80">作成日</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                <SortableContext items={points.map(p => p.id.toString())} strategy={verticalListSortingStrategy}>
+                                  {points.map((point) => (
+                                    <SortableRow
+                                      key={point.id}
+                                      item={point}
+                                      onDelete={deletePointsItem}
+                                      onEditCreatedDate={(id) => {
+                                        setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
+                                      }}
+                                    >
+                                      <TableCell className="text-xs align-top">{point.item}</TableCell>
+                                      <TableCell className="text-xs align-top">
+                                        <Select
+                                          value={point.importance.toString()}
+                                          onValueChange={(value) => {
+                                            const updatedPoints = points.map(p =>
+                                              p.id === point.id ? { ...p, importance: parseInt(value) } : p
+                                            )
+                                            setPoints(updatedPoints)
+                                          }}
+                                        >
+                                          <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-20">
+                                            {point.importance ? (
+                                              <span className={`px-1.5 py-0.5 rounded ${getImportanceColor(point.importance)}`}>
+                                                {getImportanceLabel(point.importance)}
+                                              </span>
+                                            ) : (
+                                              <SelectValue placeholder="--" />
+                                            )}
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {IMPORTANCE_OPTIONS.map((opt) => (
+                                              <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                                                <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </TableCell>
+                                      <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{point.content}</TableCell>
+                                      <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{point.memo}</TableCell>
+                                      <TableCell className="text-xs align-top">
+                                        <Popover
+                                          open={createdDatePickerOpen[point.id] || false}
+                                          onOpenChange={(open) => {
+                                            setCreatedDatePickerOpen(prev => ({ ...prev, [point.id]: open }))
+                                          }}
+                                        >
+                                          <PopoverTrigger asChild>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              className="h-7 text-xs px-2 hover:bg-muted/50"
+                                            >
+                                              {point.createdAt}
+                                            </Button>
+                                          </PopoverTrigger>
+                                          <PopoverContent className="w-auto p-3" align="start">
+                                            <DatePickerCalendar
+                                              selectedDate={point.createdAt ? (() => {
+                                                const [month, day] = point.createdAt.split('/')
+                                                const currentYear = new Date().getFullYear()
+                                                return new Date(currentYear, parseInt(month) - 1, parseInt(day))
+                                              })() : null}
+                                              onSelect={(date) => {
+                                                if (date) {
+                                                  updateCreatedDate(point.id, date, "points")
+                                                  setCreatedDatePickerOpen(prev => ({ ...prev, [point.id]: false }))
+                                                }
+                                              }}
+                                            />
+                                          </PopoverContent>
+                                        </Popover>
+                                      </TableCell>
+                                    </SortableRow>
+                                  ))}
+                                </SortableContext>
+                                {emptyPointsRows.map((index) => renderEmptyPointsRow(index))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </DndContext>
+                      )}
+                    </CollapsibleContent>
+                  </Collapsible>
                 </div>
               </div>
             )}
