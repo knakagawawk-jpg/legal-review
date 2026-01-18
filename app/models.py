@@ -500,6 +500,7 @@ class User(Base):
     dashboard_history = relationship("UserDashboardHistory", back_populates="user", order_by="desc(UserDashboardHistory.date)")
     review_history = relationship("UserReviewHistory", back_populates="user", order_by="desc(UserReviewHistory.created_at)")
     dashboard_items = relationship("DashboardItem", back_populates="user", order_by="DashboardItem.position")
+    study_items = relationship("StudyItem", back_populates="user", order_by="StudyItem.position")
     timer_sessions = relationship("TimerSession", back_populates="user", order_by="desc(TimerSession.started_at_utc)")
     timer_daily_chunks = relationship("TimerDailyChunk", back_populates="user")
     timer_daily_stats = relationship("TimerDailyStats", back_populates="user")
@@ -649,6 +650,7 @@ class NotePage(Base):
     
     # リレーションシップ
     section = relationship("NoteSection", back_populates="pages")
+    study_items = relationship("StudyItem", foreign_keys="StudyItem.note_page_id", back_populates="note_page")
     
     __table_args__ = (
         Index('idx_section_pages', 'section_id', 'display_order'),
@@ -928,4 +930,80 @@ class TimerDailyStats(Base):
     
     __table_args__ = (
         Index('idx_timer_daily_stats_user_date', 'user_id', 'study_date'),
+    )
+
+
+# ============================================================================
+# My規範・My論点管理
+# ============================================================================
+
+class StudyItem(Base):
+    """
+    My規範・My論点テーブル
+    
+    設計のポイント:
+    - 規範（norm）と論点（point）を1テーブルで管理
+    - entry_type: 1=規範(norm), 2=論点(point)
+    - subject_id: 科目ID（1-18、NULL可）
+    - importance: 重要度（1=High, 2=Middle, 3=Low）
+    - mastery_level: 理解度（1=未習得, 2=初級, 3=中級, 4=上級, 5=完全習得）
+    - position: 並び順（間隔方式：10,20,30...）
+    - created_date: 作成日（Date型、mm/dd表示はフロントエンドで変換）
+    - tags: タグ（JSON配列形式で保存、マルチセレクト対応）
+    - ソフト削除対応（deleted_at）
+    """
+    __tablename__ = "study_items"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # 種類と科目
+    entry_type = Column(Integer, nullable=False)  # 1=規範(norm), 2=論点(point)
+    subject_id = Column(Integer, nullable=True, index=True)  # 科目ID（1-18、NULL可）
+    
+    # 内容
+    item = Column(String(500), nullable=False)  # 項目
+    importance = Column(Integer, nullable=False, default=1)  # 重要度（1=High, 2=Middle, 3=Low）
+    content = Column(Text, nullable=False)  # 内容
+    memo = Column(Text, nullable=True)  # メモ
+    
+    # 関連リソース
+    official_question_id = Column(BigInteger, ForeignKey("official_questions.id", ondelete="SET NULL"), nullable=True, index=True)  # 関連する問題
+    note_page_id = Column(Integer, ForeignKey("note_pages.id", ondelete="SET NULL"), nullable=True, index=True)  # 関連するノートページ
+    
+    # 学習管理・進捗
+    is_favorite = Column(Boolean, nullable=False, default=False, index=True)  # お気に入りフラグ
+    mastery_level = Column(Integer, nullable=True)  # 理解度（1=未習得, 2=初級, 3=中級, 4=上級, 5=完全習得）
+    view_count = Column(Integer, nullable=False, default=0)  # 参照回数
+    last_viewed_at = Column(DateTime(timezone=True), nullable=True)  # 最終閲覧日時
+    
+    # 分類・検索
+    tags = Column(Text, nullable=True)  # タグ（JSON配列形式: ["重要", "頻出"]など、マルチセレクト対応）
+    
+    # 日付と並び順
+    created_date = Column(DateTime(timezone=True), nullable=False)  # 作成日（Date型）
+    position = Column(Integer, nullable=False)  # 並び順（間隔方式：10,20,30...）
+    
+    # タイムスタンプ
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)  # ソフト削除日時
+    
+    # リレーションシップ
+    user = relationship("User", back_populates="study_items", foreign_keys=[user_id])
+    official_question = relationship("OfficialQuestion", foreign_keys=[official_question_id])
+    note_page = relationship("NotePage", foreign_keys=[note_page_id])
+    
+    __table_args__ = (
+        CheckConstraint("entry_type IN (1, 2)", name="ck_study_item_entry_type"),
+        CheckConstraint("subject_id IS NULL OR (subject_id BETWEEN 1 AND 18)", name="ck_study_item_subject"),
+        CheckConstraint("importance BETWEEN 1 AND 3", name="ck_study_item_importance"),
+        CheckConstraint("mastery_level IS NULL OR (mastery_level BETWEEN 1 AND 5)", name="ck_study_item_mastery"),
+        
+        # インデックス
+        Index('idx_study_items_user_subject_type', 'user_id', 'subject_id', 'entry_type', 'deleted_at'),
+        Index('idx_study_items_user_type_deleted', 'user_id', 'entry_type', 'deleted_at'),
+        Index('idx_study_items_position', 'user_id', 'subject_id', 'entry_type', 'position'),
+        Index('idx_study_items_favorite', 'user_id', 'is_favorite', 'deleted_at'),
+        Index('idx_study_items_last_viewed', 'user_id', 'last_viewed_at'),
     )

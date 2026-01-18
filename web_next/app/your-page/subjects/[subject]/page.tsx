@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar, DatePickerCalendar } from "@/components/ui/calendar"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   DndContext,
   closestCenter,
@@ -47,8 +48,10 @@ type StudyItem = {
   id: number
   item: string  // 項目
   importance: number  // 重要度 (1=High, 2=Middle, 3=Low)
+  masteryLevel: number | null  // 理解度 (1=未習得, 2=初級, 3=中級, 4=上級, 5=完全習得)
   content: string  // 内容
   memo: string  // メモ
+  tags: string[]  // タグ（配列）
   createdAt: string  // 作成日 (mm/dd形式)
 }
 
@@ -315,8 +318,43 @@ function SubjectPage() {
     return option ? option.color : ""
   }
 
+  // 理解度オプション定義
+  const MASTERY_LEVEL_OPTIONS = [
+    { value: 1, label: "1", description: "未習得", color: "bg-gray-100 text-gray-700" },
+    { value: 2, label: "2", description: "初級", color: "bg-blue-100 text-blue-700" },
+    { value: 3, label: "3", description: "中級", color: "bg-yellow-100 text-yellow-700" },
+    { value: 4, label: "4", description: "上級", color: "bg-green-100 text-green-700" },
+    { value: 5, label: "5", description: "完全習得", color: "bg-purple-100 text-purple-700" },
+  ]
+
+  // 理解度の表示用関数
+  const getMasteryLevelLabel = (masteryLevel: number | null): string => {
+    if (!masteryLevel) return ""
+    const option = MASTERY_LEVEL_OPTIONS.find(opt => opt.value === masteryLevel)
+    return option ? option.label : ""
+  }
+
+  // 理解度の色取得関数
+  const getMasteryLevelColor = (masteryLevel: number | null): string => {
+    if (!masteryLevel) return ""
+    const option = MASTERY_LEVEL_OPTIONS.find(opt => opt.value === masteryLevel)
+    return option ? option.color : ""
+  }
+
   const [norms, setNorms] = useState<StudyItem[]>([])
   const [points, setPoints] = useState<StudyItem[]>([])
+
+  // タグ管理（既存タグの一覧を取得）
+  const getAllTags = (items: StudyItem[]): string[] => {
+    const tagSet = new Set<string>()
+    items.forEach(item => {
+      item.tags?.forEach(tag => tagSet.add(tag))
+    })
+    return Array.from(tagSet).sort()
+  }
+
+  // タグのPopover状態
+  const [tagsPopoverOpen, setTagsPopoverOpen] = useState<Record<number, boolean>>({})
   const [loadingStudyData, setLoadingStudyData] = useState(false)
 
   // フォールディング状態
@@ -510,8 +548,10 @@ function SubjectPage() {
         id: getNextId(norms),
         item: draft.item || "",
         importance: draft.importance || 1,
+        masteryLevel: draft.masteryLevel || null,
         content: draft.content || "",
         memo: draft.memo || "",
+        tags: draft.tags || [],
         createdAt: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' })
       }
 
@@ -556,7 +596,7 @@ function SubjectPage() {
               }
             }}
           >
-            <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-20">
+            <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-16">
               {draft.importance ? (
                 <span className={`px-1.5 py-0.5 rounded ${getImportanceColor(draft.importance)}`}>
                   {getImportanceLabel(draft.importance)}
@@ -567,6 +607,35 @@ function SubjectPage() {
             </SelectTrigger>
             <SelectContent>
               {IMPORTANCE_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                  <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </TableCell>
+        <TableCell className="text-xs align-top">
+          <Select
+            value={draft.masteryLevel?.toString() || ""}
+            onValueChange={(value) => updateDraft("masteryLevel", value ? parseInt(value) : null)}
+            onOpenChange={(open) => {
+              if (!open) {
+                setTimeout(handleBlur, 100)
+              }
+            }}
+          >
+            <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-16">
+              {draft.masteryLevel ? (
+                <span className={`px-1.5 py-0.5 rounded ${getMasteryLevelColor(draft.masteryLevel)}`}>
+                  {getMasteryLevelLabel(draft.masteryLevel)}
+                </span>
+              ) : (
+                <SelectValue placeholder="--" />
+              )}
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="" className="text-xs">--</SelectItem>
+              {MASTERY_LEVEL_OPTIONS.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
                   <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
                 </SelectItem>
@@ -595,6 +664,9 @@ function SubjectPage() {
             className="min-h-[28px] text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0 resize-none"
             rows={1}
           />
+        </TableCell>
+        <TableCell className="text-xs align-top">
+          <span className="text-muted-foreground">--</span>
         </TableCell>
         <TableCell className="text-xs align-top">
           <span className="text-muted-foreground">--</span>
@@ -638,8 +710,10 @@ function SubjectPage() {
         id: getNextId(points),
         item: draft.item || "",
         importance: draft.importance || 1,
+        masteryLevel: draft.masteryLevel || null,
         content: draft.content || "",
         memo: draft.memo || "",
+        tags: draft.tags || [],
         createdAt: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' })
       }
 
@@ -684,7 +758,7 @@ function SubjectPage() {
               }
             }}
           >
-            <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-20">
+            <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-16">
               {draft.importance ? (
                 <span className={`px-1.5 py-0.5 rounded ${getImportanceColor(draft.importance)}`}>
                   {getImportanceLabel(draft.importance)}
@@ -695,6 +769,35 @@ function SubjectPage() {
             </SelectTrigger>
             <SelectContent>
               {IMPORTANCE_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                  <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </TableCell>
+        <TableCell className="text-xs align-top">
+          <Select
+            value={draft.masteryLevel?.toString() || ""}
+            onValueChange={(value) => updateDraft("masteryLevel", value ? parseInt(value) : null)}
+            onOpenChange={(open) => {
+              if (!open) {
+                setTimeout(handleBlur, 100)
+              }
+            }}
+          >
+            <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-16">
+              {draft.masteryLevel ? (
+                <span className={`px-1.5 py-0.5 rounded ${getMasteryLevelColor(draft.masteryLevel)}`}>
+                  {getMasteryLevelLabel(draft.masteryLevel)}
+                </span>
+              ) : (
+                <SelectValue placeholder="--" />
+              )}
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="" className="text-xs">--</SelectItem>
+              {MASTERY_LEVEL_OPTIONS.map((opt) => (
                 <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
                   <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
                 </SelectItem>
@@ -723,6 +826,9 @@ function SubjectPage() {
             className="min-h-[28px] text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0 resize-none"
             rows={1}
           />
+        </TableCell>
+        <TableCell className="text-xs align-top">
+          <span className="text-muted-foreground">--</span>
         </TableCell>
         <TableCell className="text-xs align-top">
           <span className="text-muted-foreground">--</span>
@@ -951,89 +1057,200 @@ function SubjectPage() {
                                 <TableRow>
                                   <TableHead className="w-6"></TableHead>
                                   <TableHead className="w-[15%] text-xs font-semibold text-amber-900/80">項目</TableHead>
-                                  <TableHead className="w-[10%] text-xs font-semibold text-amber-900/80">重要度</TableHead>
-                                  <TableHead className="w-[40%] text-xs font-semibold text-amber-900/80">内容</TableHead>
-                                  <TableHead className="w-[20%] text-xs font-semibold text-amber-900/80">メモ</TableHead>
-                                  <TableHead className="w-[15%] text-xs font-semibold text-amber-900/80">作成日</TableHead>
+                                  <TableHead className="w-[7%] text-xs font-semibold text-amber-900/80">重要度</TableHead>
+                                  <TableHead className="w-[7%] text-xs font-semibold text-amber-900/80">理解度</TableHead>
+                                  <TableHead className="w-[38%] text-xs font-semibold text-amber-900/80">内容</TableHead>
+                                  <TableHead className="w-[18%] text-xs font-semibold text-amber-900/80">メモ</TableHead>
+                                  <TableHead className="w-[10%] text-xs font-semibold text-amber-900/80">タグ</TableHead>
+                                  <TableHead className="w-[10%] text-xs font-semibold text-amber-900/80">作成日</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
                                 <SortableContext items={norms.map(n => n.id.toString())} strategy={verticalListSortingStrategy}>
-                                  {norms.map((norm) => (
-                                    <SortableRow
-                                      key={norm.id}
-                                      item={norm}
-                                      onDelete={deleteNormsItem}
-                                      onEditCreatedDate={(id) => {
-                                        setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
-                                      }}
-                                    >
-                                      <TableCell className="text-xs align-top">{norm.item}</TableCell>
-                                      <TableCell className="text-xs align-top">
-                                        <Select
-                                          value={norm.importance.toString()}
-                                          onValueChange={(value) => {
-                                            const updatedNorms = norms.map(n =>
-                                              n.id === norm.id ? { ...n, importance: parseInt(value) } : n
-                                            )
-                                            setNorms(updatedNorms)
-                                          }}
-                                        >
-                                          <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-20">
-                                            {norm.importance ? (
-                                              <span className={`px-1.5 py-0.5 rounded ${getImportanceColor(norm.importance)}`}>
-                                                {getImportanceLabel(norm.importance)}
-                                              </span>
-                                            ) : (
-                                              <SelectValue placeholder="--" />
-                                            )}
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {IMPORTANCE_OPTIONS.map((opt) => (
-                                              <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
-                                                <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
-                                      </TableCell>
-                                      <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{norm.content}</TableCell>
-                                      <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{norm.memo}</TableCell>
-                                      <TableCell className="text-xs align-top">
-                                        <Popover
-                                          open={createdDatePickerOpen[norm.id] || false}
-                                          onOpenChange={(open) => {
-                                            setCreatedDatePickerOpen(prev => ({ ...prev, [norm.id]: open }))
-                                          }}
-                                        >
-                                          <PopoverTrigger asChild>
-                                            <Button
-                                              variant="ghost"
-                                              size="sm"
-                                              className="h-7 text-xs px-2 hover:bg-muted/50"
-                                            >
-                                              {norm.createdAt}
-                                            </Button>
-                                          </PopoverTrigger>
-                                          <PopoverContent className="w-auto p-3" align="start">
-                                            <DatePickerCalendar
-                                              selectedDate={norm.createdAt ? (() => {
-                                                const [month, day] = norm.createdAt.split('/')
-                                                const currentYear = new Date().getFullYear()
-                                                return new Date(currentYear, parseInt(month) - 1, parseInt(day))
-                                              })() : null}
-                                              onSelect={(date) => {
-                                                if (date) {
-                                                  updateCreatedDate(norm.id, date, "norms")
-                                                  setCreatedDatePickerOpen(prev => ({ ...prev, [norm.id]: false }))
-                                                }
-                                              }}
-                                            />
-                                          </PopoverContent>
-                                        </Popover>
-                                      </TableCell>
-                                    </SortableRow>
-                                  ))}
+                                  {norms.map((norm) => {
+                                    const allTags = getAllTags(norms)
+                                    const normTags = norm.tags || []
+                                    return (
+                                      <SortableRow
+                                        key={norm.id}
+                                        item={norm}
+                                        onDelete={deleteNormsItem}
+                                        onEditCreatedDate={(id) => {
+                                          setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
+                                        }}
+                                      >
+                                        <TableCell className="text-xs align-top">{norm.item}</TableCell>
+                                        <TableCell className="text-xs align-top">
+                                          <Select
+                                            value={norm.importance.toString()}
+                                            onValueChange={(value) => {
+                                              const updatedNorms = norms.map(n =>
+                                                n.id === norm.id ? { ...n, importance: parseInt(value) } : n
+                                              )
+                                              setNorms(updatedNorms)
+                                            }}
+                                          >
+                                            <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-16">
+                                              {norm.importance ? (
+                                                <span className={`px-1.5 py-0.5 rounded ${getImportanceColor(norm.importance)}`}>
+                                                  {getImportanceLabel(norm.importance)}
+                                                </span>
+                                              ) : (
+                                                <SelectValue placeholder="--" />
+                                              )}
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {IMPORTANCE_OPTIONS.map((opt) => (
+                                                <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                                                  <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </TableCell>
+                                        <TableCell className="text-xs align-top">
+                                          <Select
+                                            value={norm.masteryLevel?.toString() || ""}
+                                            onValueChange={(value) => {
+                                              const updatedNorms = norms.map(n =>
+                                                n.id === norm.id ? { ...n, masteryLevel: value ? parseInt(value) : null } : n
+                                              )
+                                              setNorms(updatedNorms)
+                                            }}
+                                          >
+                                            <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-16">
+                                              {norm.masteryLevel ? (
+                                                <span className={`px-1.5 py-0.5 rounded ${getMasteryLevelColor(norm.masteryLevel)}`}>
+                                                  {getMasteryLevelLabel(norm.masteryLevel)}
+                                                </span>
+                                              ) : (
+                                                <SelectValue placeholder="--" />
+                                              )}
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="" className="text-xs">--</SelectItem>
+                                              {MASTERY_LEVEL_OPTIONS.map((opt) => (
+                                                <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                                                  <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </TableCell>
+                                        <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{norm.content}</TableCell>
+                                        <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{norm.memo}</TableCell>
+                                        <TableCell className="text-xs align-top">
+                                          <Popover
+                                            open={tagsPopoverOpen[norm.id] || false}
+                                            onOpenChange={(open) => {
+                                              setTagsPopoverOpen(prev => ({ ...prev, [norm.id]: open }))
+                                            }}
+                                          >
+                                            <PopoverTrigger asChild>
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-7 text-xs px-2 hover:bg-muted/50"
+                                              >
+                                                {normTags.length > 0 ? (
+                                                  <span className="truncate max-w-[80px]">
+                                                    {normTags.slice(0, 2).join(", ")}
+                                                    {normTags.length > 2 && ` +${normTags.length - 2}`}
+                                                  </span>
+                                                ) : (
+                                                  "タグを選択"
+                                                )}
+                                              </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-64 p-3" align="start">
+                                              <div className="space-y-2">
+                                                <div className="text-xs font-semibold mb-2">タグを選択</div>
+                                                <div className="max-h-48 overflow-y-auto space-y-2">
+                                                  {allTags.length === 0 ? (
+                                                    <div className="text-xs text-muted-foreground">タグがありません</div>
+                                                  ) : (
+                                                    allTags.map((tag) => (
+                                                      <div key={tag} className="flex items-center space-x-2">
+                                                        <Checkbox
+                                                          id={`tag-${norm.id}-${tag}`}
+                                                          checked={normTags.includes(tag)}
+                                                          onCheckedChange={(checked: boolean) => {
+                                                            const updatedTags = checked
+                                                              ? [...normTags, tag]
+                                                              : normTags.filter(t => t !== tag)
+                                                            const updatedNorms = norms.map(n =>
+                                                              n.id === norm.id ? { ...n, tags: updatedTags } : n
+                                                            )
+                                                            setNorms(updatedNorms)
+                                                          }}
+                                                        />
+                                                        <label
+                                                          htmlFor={`tag-${norm.id}-${tag}`}
+                                                          className="text-xs cursor-pointer flex-1"
+                                                        >
+                                                          {tag}
+                                                        </label>
+                                                      </div>
+                                                    ))
+                                                  )}
+                                                </div>
+                                                <Input
+                                                  placeholder="新規タグを追加..."
+                                                  className="h-7 text-xs mt-2"
+                                                  onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                      const input = e.currentTarget
+                                                      const newTag = input.value.trim()
+                                                      if (newTag && !normTags.includes(newTag)) {
+                                                        const updatedNorms = norms.map(n =>
+                                                          n.id === norm.id ? { ...n, tags: [...normTags, newTag] } : n
+                                                        )
+                                                        setNorms(updatedNorms)
+                                                        input.value = ""
+                                                      }
+                                                    }
+                                                  }}
+                                                />
+                                              </div>
+                                            </PopoverContent>
+                                          </Popover>
+                                        </TableCell>
+                                        <TableCell className="text-xs align-top">
+                                          <Popover
+                                            open={createdDatePickerOpen[norm.id] || false}
+                                            onOpenChange={(open) => {
+                                              setCreatedDatePickerOpen(prev => ({ ...prev, [norm.id]: open }))
+                                            }}
+                                          >
+                                            <PopoverTrigger asChild>
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-7 text-xs px-2 hover:bg-muted/50"
+                                              >
+                                                {norm.createdAt}
+                                              </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-auto p-3" align="start">
+                                              <DatePickerCalendar
+                                                selectedDate={norm.createdAt ? (() => {
+                                                  const [month, day] = norm.createdAt.split('/')
+                                                  const currentYear = new Date().getFullYear()
+                                                  return new Date(currentYear, parseInt(month) - 1, parseInt(day))
+                                                })() : null}
+                                                onSelect={(date) => {
+                                                  if (date) {
+                                                    updateCreatedDate(norm.id, date, "norms")
+                                                    setCreatedDatePickerOpen(prev => ({ ...prev, [norm.id]: false }))
+                                                  }
+                                                }}
+                                              />
+                                            </PopoverContent>
+                                          </Popover>
+                                        </TableCell>
+                                      </SortableRow>
+                                    )
+                                  })}
                                 </SortableContext>
                                 {emptyNormsRows.map((index) => renderEmptyNormsRow(index))}
                               </TableBody>
@@ -1093,89 +1310,200 @@ function SubjectPage() {
                                 <TableRow>
                                   <TableHead className="w-6"></TableHead>
                                   <TableHead className="w-[15%] text-xs font-semibold text-amber-900/80">項目</TableHead>
-                                  <TableHead className="w-[10%] text-xs font-semibold text-amber-900/80">重要度</TableHead>
-                                  <TableHead className="w-[40%] text-xs font-semibold text-amber-900/80">内容</TableHead>
-                                  <TableHead className="w-[20%] text-xs font-semibold text-amber-900/80">メモ</TableHead>
-                                  <TableHead className="w-[15%] text-xs font-semibold text-amber-900/80">作成日</TableHead>
+                                  <TableHead className="w-[7%] text-xs font-semibold text-amber-900/80">重要度</TableHead>
+                                  <TableHead className="w-[7%] text-xs font-semibold text-amber-900/80">理解度</TableHead>
+                                  <TableHead className="w-[38%] text-xs font-semibold text-amber-900/80">内容</TableHead>
+                                  <TableHead className="w-[18%] text-xs font-semibold text-amber-900/80">メモ</TableHead>
+                                  <TableHead className="w-[10%] text-xs font-semibold text-amber-900/80">タグ</TableHead>
+                                  <TableHead className="w-[10%] text-xs font-semibold text-amber-900/80">作成日</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
                                 <SortableContext items={points.map(p => p.id.toString())} strategy={verticalListSortingStrategy}>
-                                  {points.map((point) => (
-                                    <SortableRow
-                                      key={point.id}
-                                      item={point}
-                                      onDelete={deletePointsItem}
-                                      onEditCreatedDate={(id) => {
-                                        setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
-                                      }}
-                                    >
-                                      <TableCell className="text-xs align-top">{point.item}</TableCell>
-                                      <TableCell className="text-xs align-top">
-                                        <Select
-                                          value={point.importance.toString()}
-                                          onValueChange={(value) => {
-                                            const updatedPoints = points.map(p =>
-                                              p.id === point.id ? { ...p, importance: parseInt(value) } : p
-                                            )
-                                            setPoints(updatedPoints)
-                                          }}
-                                        >
-                                          <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-20">
-                                            {point.importance ? (
-                                              <span className={`px-1.5 py-0.5 rounded ${getImportanceColor(point.importance)}`}>
-                                                {getImportanceLabel(point.importance)}
-                                              </span>
-                                            ) : (
-                                              <SelectValue placeholder="--" />
-                                            )}
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {IMPORTANCE_OPTIONS.map((opt) => (
-                                              <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
-                                                <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
-                                              </SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
-                                      </TableCell>
-                                      <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{point.content}</TableCell>
-                                      <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{point.memo}</TableCell>
-                                      <TableCell className="text-xs align-top">
-                                        <Popover
-                                          open={createdDatePickerOpen[point.id] || false}
-                                          onOpenChange={(open) => {
-                                            setCreatedDatePickerOpen(prev => ({ ...prev, [point.id]: open }))
-                                          }}
-                                        >
-                                          <PopoverTrigger asChild>
-                                            <Button
-                                              variant="ghost"
-                                              size="sm"
-                                              className="h-7 text-xs px-2 hover:bg-muted/50"
-                                            >
-                                              {point.createdAt}
-                                            </Button>
-                                          </PopoverTrigger>
-                                          <PopoverContent className="w-auto p-3" align="start">
-                                            <DatePickerCalendar
-                                              selectedDate={point.createdAt ? (() => {
-                                                const [month, day] = point.createdAt.split('/')
-                                                const currentYear = new Date().getFullYear()
-                                                return new Date(currentYear, parseInt(month) - 1, parseInt(day))
-                                              })() : null}
-                                              onSelect={(date) => {
-                                                if (date) {
-                                                  updateCreatedDate(point.id, date, "points")
-                                                  setCreatedDatePickerOpen(prev => ({ ...prev, [point.id]: false }))
-                                                }
-                                              }}
-                                            />
-                                          </PopoverContent>
-                                        </Popover>
-                                      </TableCell>
-                                    </SortableRow>
-                                  ))}
+                                  {points.map((point) => {
+                                    const allTags = getAllTags(points)
+                                    const pointTags = point.tags || []
+                                    return (
+                                      <SortableRow
+                                        key={point.id}
+                                        item={point}
+                                        onDelete={deletePointsItem}
+                                        onEditCreatedDate={(id) => {
+                                          setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
+                                        }}
+                                      >
+                                        <TableCell className="text-xs align-top">{point.item}</TableCell>
+                                        <TableCell className="text-xs align-top">
+                                          <Select
+                                            value={point.importance.toString()}
+                                            onValueChange={(value) => {
+                                              const updatedPoints = points.map(p =>
+                                                p.id === point.id ? { ...p, importance: parseInt(value) } : p
+                                              )
+                                              setPoints(updatedPoints)
+                                            }}
+                                          >
+                                            <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-16">
+                                              {point.importance ? (
+                                                <span className={`px-1.5 py-0.5 rounded ${getImportanceColor(point.importance)}`}>
+                                                  {getImportanceLabel(point.importance)}
+                                                </span>
+                                              ) : (
+                                                <SelectValue placeholder="--" />
+                                              )}
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {IMPORTANCE_OPTIONS.map((opt) => (
+                                                <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                                                  <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </TableCell>
+                                        <TableCell className="text-xs align-top">
+                                          <Select
+                                            value={point.masteryLevel?.toString() || ""}
+                                            onValueChange={(value) => {
+                                              const updatedPoints = points.map(p =>
+                                                p.id === point.id ? { ...p, masteryLevel: value ? parseInt(value) : null } : p
+                                              )
+                                              setPoints(updatedPoints)
+                                            }}
+                                          >
+                                            <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-16">
+                                              {point.masteryLevel ? (
+                                                <span className={`px-1.5 py-0.5 rounded ${getMasteryLevelColor(point.masteryLevel)}`}>
+                                                  {getMasteryLevelLabel(point.masteryLevel)}
+                                                </span>
+                                              ) : (
+                                                <SelectValue placeholder="--" />
+                                              )}
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="" className="text-xs">--</SelectItem>
+                                              {MASTERY_LEVEL_OPTIONS.map((opt) => (
+                                                <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                                                  <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </TableCell>
+                                        <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{point.content}</TableCell>
+                                        <TableCell className="text-xs align-top whitespace-pre-wrap break-words">{point.memo}</TableCell>
+                                        <TableCell className="text-xs align-top">
+                                          <Popover
+                                            open={tagsPopoverOpen[point.id] || false}
+                                            onOpenChange={(open) => {
+                                              setTagsPopoverOpen(prev => ({ ...prev, [point.id]: open }))
+                                            }}
+                                          >
+                                            <PopoverTrigger asChild>
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-7 text-xs px-2 hover:bg-muted/50"
+                                              >
+                                                {pointTags.length > 0 ? (
+                                                  <span className="truncate max-w-[80px]">
+                                                    {pointTags.slice(0, 2).join(", ")}
+                                                    {pointTags.length > 2 && ` +${pointTags.length - 2}`}
+                                                  </span>
+                                                ) : (
+                                                  "タグを選択"
+                                                )}
+                                              </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-64 p-3" align="start">
+                                              <div className="space-y-2">
+                                                <div className="text-xs font-semibold mb-2">タグを選択</div>
+                                                <div className="max-h-48 overflow-y-auto space-y-2">
+                                                  {allTags.length === 0 ? (
+                                                    <div className="text-xs text-muted-foreground">タグがありません</div>
+                                                  ) : (
+                                                    allTags.map((tag) => (
+                                                      <div key={tag} className="flex items-center space-x-2">
+                                                        <Checkbox
+                                                          id={`tag-${point.id}-${tag}`}
+                                                          checked={pointTags.includes(tag)}
+                                                          onCheckedChange={(checked: boolean) => {
+                                                            const updatedTags = checked
+                                                              ? [...pointTags, tag]
+                                                              : pointTags.filter(t => t !== tag)
+                                                            const updatedPoints = points.map(p =>
+                                                              p.id === point.id ? { ...p, tags: updatedTags } : p
+                                                            )
+                                                            setPoints(updatedPoints)
+                                                          }}
+                                                        />
+                                                        <label
+                                                          htmlFor={`tag-${point.id}-${tag}`}
+                                                          className="text-xs cursor-pointer flex-1"
+                                                        >
+                                                          {tag}
+                                                        </label>
+                                                      </div>
+                                                    ))
+                                                  )}
+                                                </div>
+                                                <Input
+                                                  placeholder="新規タグを追加..."
+                                                  className="h-7 text-xs mt-2"
+                                                  onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                      const input = e.currentTarget
+                                                      const newTag = input.value.trim()
+                                                      if (newTag && !pointTags.includes(newTag)) {
+                                                        const updatedPoints = points.map(p =>
+                                                          p.id === point.id ? { ...p, tags: [...pointTags, newTag] } : p
+                                                        )
+                                                        setPoints(updatedPoints)
+                                                        input.value = ""
+                                                      }
+                                                    }
+                                                  }}
+                                                />
+                                              </div>
+                                            </PopoverContent>
+                                          </Popover>
+                                        </TableCell>
+                                        <TableCell className="text-xs align-top">
+                                          <Popover
+                                            open={createdDatePickerOpen[point.id] || false}
+                                            onOpenChange={(open) => {
+                                              setCreatedDatePickerOpen(prev => ({ ...prev, [point.id]: open }))
+                                            }}
+                                          >
+                                            <PopoverTrigger asChild>
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-7 text-xs px-2 hover:bg-muted/50"
+                                              >
+                                                {point.createdAt}
+                                              </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-auto p-3" align="start">
+                                              <DatePickerCalendar
+                                                selectedDate={point.createdAt ? (() => {
+                                                  const [month, day] = point.createdAt.split('/')
+                                                  const currentYear = new Date().getFullYear()
+                                                  return new Date(currentYear, parseInt(month) - 1, parseInt(day))
+                                                })() : null}
+                                                onSelect={(date) => {
+                                                  if (date) {
+                                                    updateCreatedDate(point.id, date, "points")
+                                                    setCreatedDatePickerOpen(prev => ({ ...prev, [point.id]: false }))
+                                                  }
+                                                }}
+                                              />
+                                            </PopoverContent>
+                                          </Popover>
+                                        </TableCell>
+                                      </SortableRow>
+                                    )
+                                  })}
                                 </SortableContext>
                                 {emptyPointsRows.map((index) => renderEmptyPointsRow(index))}
                               </TableBody>
