@@ -516,8 +516,35 @@ function YourPageDashboardInner() {
   }, [searchParams])
 
   // Debounce save
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const saveTimeoutsRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
+  const pendingUpdatesRef = useRef<Record<number, Partial<DashboardItem>>>({})
   const pendingSaves = useRef<Set<number>>(new Set())
+
+  const flushPendingSaves = useCallback(async () => {
+    // clear all timers
+    for (const t of Object.values(saveTimeoutsRef.current)) {
+      clearTimeout(t)
+    }
+    saveTimeoutsRef.current = {}
+
+    const entries = Object.entries(pendingUpdatesRef.current)
+    pendingUpdatesRef.current = {}
+    pendingSaves.current.clear()
+
+    if (entries.length === 0) return
+
+    await Promise.all(
+      entries.map(async ([idStr, patch]) => {
+        const id = Number(idStr)
+        if (!id || !patch || Object.keys(patch).length === 0) return
+        try {
+          await apiClient.put(`/api/dashboard/items/${id}`, patch)
+        } catch (e) {
+          console.error("Failed to flush pending save:", e)
+        }
+      })
+    )
+  }, [])
 
   // Timer logic
   useEffect(() => {
@@ -896,6 +923,9 @@ function YourPageDashboardInner() {
   // Load dashboard items
   const loadDashboardItems = useCallback(async () => {
     try {
+      // 未保存の編集がある状態で再取得すると「消えたように見える」ため、先にflushする
+      await flushPendingSaves()
+
       // Load Points
       const pointsData = await apiClient.get<{ items: DashboardItem[], total: number }>(
         `/api/dashboard/items?dashboard_date=${currentDate}&entry_type=1`
@@ -916,7 +946,7 @@ function YourPageDashboardInner() {
     } catch (error) {
       console.error("Failed to load dashboard items:", error)
     }
-  }, [currentDate, revisitTab])
+  }, [currentDate, revisitTab, flushPendingSaves])
 
   useEffect(() => {
     loadDashboardItems()
@@ -926,56 +956,30 @@ function YourPageDashboardInner() {
   const debouncedSave = useCallback((itemId: number, updateData: Partial<DashboardItem>) => {
     pendingSaves.current.add(itemId)
 
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current)
+    pendingUpdatesRef.current[itemId] = {
+      ...(pendingUpdatesRef.current[itemId] || {}),
+      ...updateData,
     }
 
-    saveTimeoutRef.current = setTimeout(async () => {
+    const existing = saveTimeoutsRef.current[itemId]
+    if (existing) {
+      clearTimeout(existing)
+    }
+
+    saveTimeoutsRef.current[itemId] = setTimeout(async () => {
       try {
-        await apiClient.put(`/api/dashboard/items/${itemId}`, updateData)
+        const patch = pendingUpdatesRef.current[itemId] || updateData
+        delete pendingUpdatesRef.current[itemId]
+        delete saveTimeoutsRef.current[itemId]
+
+        await apiClient.put(`/api/dashboard/items/${itemId}`, patch)
         pendingSaves.current.delete(itemId)
-        // Reload to get updated data
-        loadDashboardItems()
       } catch (error) {
         console.error("Failed to save item:", error)
         pendingSaves.current.delete(itemId)
       }
-    }, 30000) // 30 seconds
-  }, [loadDashboardItems])
-
-  // Save on page unload
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      // Save all pending changes synchronously
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current)
-      }
-
-      // Force save all pending items
-      const pendingIds = Array.from(pendingSaves.current)
-      for (const itemId of pendingIds) {
-        // Use sendBeacon for reliable unload saving
-        const item = [...points, ...tasks, ...leftItems].find(i => i.id === itemId)
-        if (item) {
-          const updateData: Record<string, any> = {}
-          // Get the latest state - this is a simplified version
-          // In production, track changes more carefully
-          navigator.sendBeacon(
-            `/api/dashboard/items/${itemId}`,
-            new Blob([JSON.stringify(updateData)], { type: 'application/json' })
-          )
-        }
-      }
-    }
-
-    window.addEventListener("beforeunload", handleBeforeUnload)
-    return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload)
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current)
-      }
-    }
-  }, [points, tasks, leftItems])
+    }, 800) // 0.8秒：編集が消えないよう短くする
+  }, [])
 
   // Create new item
   const createItem = async (entryType: number) => {

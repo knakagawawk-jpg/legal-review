@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useRef, useCallback } from "react"
+import { createPortal } from "react-dom"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -184,7 +185,9 @@ function SortableRow({
   } = useSortable({ id: item.id.toString() })
   const [showMenu, setShowMenu] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const handleButtonRef = useRef<HTMLButtonElement>(null)
   const clickStartPos = useRef<{ x: number; y: number } | null>(null)
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null)
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -194,7 +197,10 @@ function SortableRow({
   // Close menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+      const target = event.target as Node
+      if (menuRef.current && menuRef.current.contains(target)) return
+      if (handleButtonRef.current && handleButtonRef.current.contains(target)) return
+      if (showMenu) {
         setShowMenu(false)
       }
     }
@@ -221,6 +227,16 @@ function SortableRow({
       if (deltaX < 5 && deltaY < 5) {
         e.stopPropagation()
         e.preventDefault()
+        // メニュー位置を固定座標で保存（スクロールコンテナにクリップされないようPortal表示）
+        try {
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+          setMenuPos({
+            left: rect.left + rect.width + 6,
+            top: rect.top + rect.height / 2,
+          })
+        } catch {
+          setMenuPos({ left: e.clientX + 6, top: e.clientY })
+        }
         setShowMenu(true)
       }
       clickStartPos.current = null
@@ -238,6 +254,7 @@ function SortableRow({
     >
       <TableCell className="py-1.5 px-1 w-6 relative">
         <button
+          ref={handleButtonRef}
           {...attributes}
           {...listeners}
           onMouseDown={handleMouseDown}
@@ -246,10 +263,15 @@ function SortableRow({
         >
           <GripVertical className="h-3 w-3 text-muted-foreground" />
         </button>
-        {showMenu && (
+        {showMenu && menuPos && typeof document !== "undefined" && createPortal(
           <div
             ref={menuRef}
-            className="absolute left-6 top-1/2 -translate-y-1/2 z-10 flex gap-1 bg-card border rounded shadow-lg p-1"
+            className="fixed z-[9999] flex gap-1 bg-card border rounded shadow-lg p-1"
+            style={{
+              left: menuPos.left,
+              top: menuPos.top,
+              transform: "translateY(-50%)",
+            }}
           >
             <Button
               variant="ghost"
@@ -281,7 +303,8 @@ function SortableRow({
                 <CalendarDays className="h-3 w-3" />
               </Button>
             )}
-          </div>
+          </div>,
+          document.body
         )}
       </TableCell>
       {children}
@@ -509,6 +532,57 @@ function SubjectPage() {
   const [norms, setNorms] = useState<StudyItem[]>([])
   const [points, setPoints] = useState<StudyItem[]>([])
   const [availableTags, setAvailableTags] = useState<StudyTag[]>([])
+  const saveTimeoutRef = useRef<Record<number, number>>({})
+
+  type StudyItemApi = {
+    id: number
+    entry_type: 1 | 2
+    subject_id: number
+    item: string
+    importance: number
+    mastery_level: number | null
+    content: string
+    memo: string | null
+    tags: string[]
+    created_date: string
+    position: number
+  }
+
+  const formatCreatedAtMmDd = useCallback((createdDateIso: string): string => {
+    try {
+      const d = new Date(createdDateIso)
+      return d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" })
+    } catch {
+      return new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit" })
+    }
+  }, [])
+
+  const toUiStudyItem = useCallback((api: StudyItemApi): StudyItem => {
+    return {
+      id: api.id,
+      item: api.item,
+      importance: api.importance,
+      masteryLevel: api.mastery_level,
+      content: api.content,
+      memo: api.memo ?? "",
+      tags: api.tags ?? [],
+      createdAt: formatCreatedAtMmDd(api.created_date),
+    }
+  }, [formatCreatedAtMmDd])
+
+  const queueUpdateStudyItem = (id: number, patch: Record<string, any>) => {
+    const existing = saveTimeoutRef.current[id]
+    if (existing) {
+      window.clearTimeout(existing)
+    }
+    saveTimeoutRef.current[id] = window.setTimeout(async () => {
+      try {
+        await apiClient.put(`/api/study-items/${id}`, patch)
+      } catch (e) {
+        console.error("Failed to update study item:", e)
+      }
+    }, 350)
+  }
 
   // タグ管理（既存タグの一覧を取得）
   const getAllTags = (items: StudyItem[]): string[] => {
@@ -587,6 +661,18 @@ function SubjectPage() {
     const existingKeys = Object.keys(draftPointsRows).filter(key => key.startsWith('points-'))
     return existingKeys[i] || `points-${i}`
   })
+
+  // 7行を超えたらテーブル内スクロール（元の仕様）
+  const getTableMaxHeight = (itemCount: number, emptyCount: number) => {
+    const totalRows = itemCount + emptyCount
+    const rowHeight = 44
+    const headerHeight = 40
+    if (totalRows <= 7) return undefined
+    return headerHeight + rowHeight * 7
+  }
+
+  const normsMaxHeight = getTableMaxHeight(norms.length, emptyNormsRows.length)
+  const pointsMaxHeight = getTableMaxHeight(points.length, emptyPointsRows.length)
 
   // 次のIDを生成（簡易版）
   const getNextId = (items: StudyItem[]) => {
@@ -678,23 +764,28 @@ function SubjectPage() {
       // My規範・My論点タブの場合は右サイドバーを閉じる
       setIsRightSidebarOpen(false)
     }
-  }, [mainTab, selectedSubject])
+  }, [mainTab, selectedSubject, toUiStudyItem])
 
-  // My規範・My論点のデータを取得（モック実装）
+  // My規範・My論点のデータを取得（DB）
   useEffect(() => {
     if (mainTab === "study") {
       const fetchStudyData = async () => {
         setLoadingStudyData(true)
         try {
-          // TODO: APIエンドポイントが実装されたら、ここでデータを取得
-          // const normsData = await apiClient.get<StudyItem[]>(`/api/norms?subject=${selectedSubject}`)
-          // const pointsData = await apiClient.get<StudyItem[]>(`/api/points?subject=${selectedSubject}`)
-          // setNorms(normsData)
-          // setPoints(pointsData)
+          const subjectId = getSubjectId(selectedSubject)
+          if (!subjectId) {
+            setNorms([])
+            setPoints([])
+            return
+          }
 
-          // モックデータ（後で削除）
-          setNorms([])
-          setPoints([])
+          const [normsData, pointsData] = await Promise.all([
+            apiClient.get<StudyItemApi[]>(`/api/study-items?subject_id=${subjectId}&entry_type=1`),
+            apiClient.get<StudyItemApi[]>(`/api/study-items?subject_id=${subjectId}&entry_type=2`),
+          ])
+
+          setNorms((Array.isArray(normsData) ? normsData : []).map(toUiStudyItem))
+          setPoints((Array.isArray(pointsData) ? pointsData : []).map(toUiStudyItem))
         } catch (err) {
           console.error("Failed to fetch study data:", err)
           setNorms([])
@@ -705,7 +796,7 @@ function SubjectPage() {
       }
       fetchStudyData()
     }
-  }, [mainTab, selectedSubject])
+  }, [mainTab, selectedSubject, toUiStudyItem])
 
   const handleSubjectChange = (value: string) => {
     setSelectedSubject(value)
@@ -738,7 +829,7 @@ function SubjectPage() {
       return (item && item.trim() !== '') || (content && content.trim() !== '')
     }
 
-    const confirmDraft = () => {
+    const confirmDraft = async () => {
       if (!hasValidDraft()) {
         setDraftNormsRows(prev => {
           const newDraft = { ...prev }
@@ -748,23 +839,29 @@ function SubjectPage() {
         return
       }
 
-      const newItem: StudyItem = {
-        id: getNextId(norms),
-        item: draft.item || "",
-        importance: draft.importance || 1,
-        masteryLevel: draft.masteryLevel || null,
-        content: draft.content || "",
-        memo: draft.memo || "",
-        tags: draft.tags || [],
-        createdAt: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' })
-      }
+      try {
+        const subjectId = getSubjectId(selectedSubject)
+        if (!subjectId) return
+        const created = await apiClient.post<StudyItemApi>("/api/study-items", {
+          entry_type: 1,
+          subject_id: subjectId,
+          item: draft.item || "",
+          importance: draft.importance || 1,
+          mastery_level: draft.masteryLevel || null,
+          content: draft.content || "",
+          memo: draft.memo || "",
+          tags: draft.tags || [],
+        })
 
-      setNorms([...norms, newItem])
-      setDraftNormsRows(prev => {
-        const newDraft = { ...prev }
-        delete newDraft[key]
-        return newDraft
-      })
+        setNorms(prev => [...prev, toUiStudyItem(created)])
+        setDraftNormsRows(prev => {
+          const newDraft = { ...prev }
+          delete newDraft[key]
+          return newDraft
+        })
+      } catch (e) {
+        console.error("Failed to create study item:", e)
+      }
     }
 
     const handleBlur = () => {
@@ -898,7 +995,7 @@ function SubjectPage() {
       return (item && item.trim() !== '') || (content && content.trim() !== '')
     }
 
-    const confirmDraft = () => {
+    const confirmDraft = async () => {
       if (!hasValidDraft()) {
         setDraftPointsRows(prev => {
           const newDraft = { ...prev }
@@ -908,23 +1005,29 @@ function SubjectPage() {
         return
       }
 
-      const newItem: StudyItem = {
-        id: getNextId(points),
-        item: draft.item || "",
-        importance: draft.importance || 1,
-        masteryLevel: draft.masteryLevel || null,
-        content: draft.content || "",
-        memo: draft.memo || "",
-        tags: draft.tags || [],
-        createdAt: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' })
-      }
+      try {
+        const subjectId = getSubjectId(selectedSubject)
+        if (!subjectId) return
+        const created = await apiClient.post<StudyItemApi>("/api/study-items", {
+          entry_type: 2,
+          subject_id: subjectId,
+          item: draft.item || "",
+          importance: draft.importance || 1,
+          mastery_level: draft.masteryLevel || null,
+          content: draft.content || "",
+          memo: draft.memo || "",
+          tags: draft.tags || [],
+        })
 
-      setPoints([...points, newItem])
-      setDraftPointsRows(prev => {
-        const newDraft = { ...prev }
-        delete newDraft[key]
-        return newDraft
-      })
+        setPoints(prev => [...prev, toUiStudyItem(created)])
+        setDraftPointsRows(prev => {
+          const newDraft = { ...prev }
+          delete newDraft[key]
+          return newDraft
+        })
+      } catch (e) {
+        console.error("Failed to create study item:", e)
+      }
     }
 
     const handleBlur = () => {
@@ -1057,10 +1160,12 @@ function SubjectPage() {
   // 削除関数
   const deleteNormsItem = (id: number) => {
     setNorms(prev => prev.filter(item => item.id !== id))
+    apiClient.delete(`/api/study-items/${id}`).catch((e) => console.error("Failed to delete study item:", e))
   }
 
   const deletePointsItem = (id: number) => {
     setPoints(prev => prev.filter(item => item.id !== id))
+    apiClient.delete(`/api/study-items/${id}`).catch((e) => console.error("Failed to delete study item:", e))
   }
 
   // ドラッグエンド処理（規範）
@@ -1074,6 +1179,14 @@ function SubjectPage() {
       if (oldIndex !== -1 && newIndex !== -1) {
         const newNorms = arrayMove(norms, oldIndex, newIndex)
         setNorms(newNorms)
+        const subjectId = getSubjectId(selectedSubject)
+        if (subjectId) {
+          apiClient.post("/api/study-items/reorder", {
+            subject_id: subjectId,
+            entry_type: 1,
+            ordered_ids: newNorms.map(n => n.id),
+          }).catch((e) => console.error("Failed to reorder study items:", e))
+        }
       }
     }
   }
@@ -1089,6 +1202,14 @@ function SubjectPage() {
       if (oldIndex !== -1 && newIndex !== -1) {
         const newPoints = arrayMove(points, oldIndex, newIndex)
         setPoints(newPoints)
+        const subjectId = getSubjectId(selectedSubject)
+        if (subjectId) {
+          apiClient.post("/api/study-items/reorder", {
+            subject_id: subjectId,
+            entry_type: 2,
+            ordered_ids: newPoints.map(p => p.id),
+          }).catch((e) => console.error("Failed to reorder study items:", e))
+        }
       }
     }
   }
@@ -1096,11 +1217,13 @@ function SubjectPage() {
   // 作成日を更新する関数
   const updateCreatedDate = (id: number, date: Date, type: "norms" | "points") => {
     const dateStr = date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' })
+    const iso = date.toISOString().split("T")[0]
     if (type === "norms") {
       setNorms(prev => prev.map(item => item.id === id ? { ...item, createdAt: dateStr } : item))
     } else {
       setPoints(prev => prev.map(item => item.id === id ? { ...item, createdAt: dateStr } : item))
     }
+    queueUpdateStudyItem(id, { created_date: iso })
   }
 
   const toggleNotebook = (notebookId: number) => {
@@ -1289,8 +1412,10 @@ function SubjectPage() {
                           collisionDetection={closestCenter}
                           onDragEnd={handleDragEndNorms}
                         >
-                          {/* Dashboardと同じ：テーブル自体で縦スクロールさせず、ページ全体でスクロール */}
-                          <div className="overflow-x-auto">
+                          <div
+                            className="overflow-x-auto overflow-y-auto"
+                            style={normsMaxHeight ? { maxHeight: normsMaxHeight } : undefined}
+                          >
                             <Table className="min-w-[980px] table-fixed">
                               {/* 列幅は % だとズレやすいので、pxベースで固定 */}
                               <colgroup>
@@ -1337,7 +1462,9 @@ function SubjectPage() {
                                           <Input
                                             value={norm.item}
                                             onChange={(e) => {
-                                              setNorms(prev => prev.map(n => n.id === norm.id ? { ...n, item: e.target.value } : n))
+                                              const v = e.target.value
+                                              setNorms(prev => prev.map(n => n.id === norm.id ? { ...n, item: v } : n))
+                                              queueUpdateStudyItem(norm.id, { item: v })
                                             }}
                                             placeholder="項目を入力..."
                                             className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
@@ -1347,10 +1474,12 @@ function SubjectPage() {
                                           <Select
                                             value={norm.importance.toString()}
                                             onValueChange={(value) => {
+                                              const v = parseInt(value)
                                               const updatedNorms = norms.map(n =>
-                                                n.id === norm.id ? { ...n, importance: parseInt(value) } : n
+                                                n.id === norm.id ? { ...n, importance: v } : n
                                               )
                                               setNorms(updatedNorms)
+                                              queueUpdateStudyItem(norm.id, { importance: v })
                                             }}
                                           >
                                             <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-16">
@@ -1375,10 +1504,12 @@ function SubjectPage() {
                                           <Select
                                             value={norm.masteryLevel?.toString() ?? "none"}
                                             onValueChange={(value) => {
+                                              const v = value === "none" ? null : parseInt(value)
                                               const updatedNorms = norms.map(n =>
-                                                n.id === norm.id ? { ...n, masteryLevel: value === "none" ? null : parseInt(value) } : n
+                                                n.id === norm.id ? { ...n, masteryLevel: v } : n
                                               )
                                               setNorms(updatedNorms)
+                                              queueUpdateStudyItem(norm.id, { mastery_level: v })
                                             }}
                                           >
                                             <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-16">
@@ -1405,7 +1536,9 @@ function SubjectPage() {
                                           <MemoField
                                             value={norm.content}
                                             onChange={(e) => {
-                                              setNorms(prev => prev.map(n => n.id === norm.id ? { ...n, content: e.target.value } : n))
+                                              const v = e.target.value
+                                              setNorms(prev => prev.map(n => n.id === norm.id ? { ...n, content: v } : n))
+                                              queueUpdateStudyItem(norm.id, { content: v })
                                             }}
                                             placeholder="内容を入力..."
                                           />
@@ -1414,7 +1547,9 @@ function SubjectPage() {
                                           <MemoField
                                             value={norm.memo}
                                             onChange={(e) => {
-                                              setNorms(prev => prev.map(n => n.id === norm.id ? { ...n, memo: e.target.value } : n))
+                                              const v = e.target.value
+                                              setNorms(prev => prev.map(n => n.id === norm.id ? { ...n, memo: v } : n))
+                                              queueUpdateStudyItem(norm.id, { memo: v })
                                             }}
                                             placeholder="メモを入力..."
                                           />
@@ -1462,6 +1597,7 @@ function SubjectPage() {
                                                               n.id === norm.id ? { ...n, tags: updatedTags } : n
                                                             )
                                                             setNorms(updatedNorms)
+                                                            queueUpdateStudyItem(norm.id, { tags: updatedTags })
                                                           }}
                                                         />
                                                         <label
@@ -1498,6 +1634,7 @@ function SubjectPage() {
                                                           n.id === norm.id ? { ...n, tags: [...normTags, newTag] } : n
                                                         )
                                                         setNorms(updatedNorms)
+                                                        queueUpdateStudyItem(norm.id, { tags: [...normTags, newTag] })
                                                         input.value = ""
                                                       }
                                                     }
@@ -1596,8 +1733,10 @@ function SubjectPage() {
                           collisionDetection={closestCenter}
                           onDragEnd={handleDragEndPoints}
                         >
-                          {/* Dashboardと同じ：テーブル自体で縦スクロールさせず、ページ全体でスクロール */}
-                          <div className="overflow-x-auto">
+                          <div
+                            className="overflow-x-auto overflow-y-auto"
+                            style={pointsMaxHeight ? { maxHeight: pointsMaxHeight } : undefined}
+                          >
                             <Table className="min-w-[980px] table-fixed">
                               <colgroup>
                                 <col className="w-6" />
@@ -1643,7 +1782,9 @@ function SubjectPage() {
                                           <Input
                                             value={point.item}
                                             onChange={(e) => {
-                                              setPoints(prev => prev.map(p => p.id === point.id ? { ...p, item: e.target.value } : p))
+                                              const v = e.target.value
+                                              setPoints(prev => prev.map(p => p.id === point.id ? { ...p, item: v } : p))
+                                              queueUpdateStudyItem(point.id, { item: v })
                                             }}
                                             placeholder="項目を入力..."
                                             className="h-7 text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0"
@@ -1653,10 +1794,12 @@ function SubjectPage() {
                                           <Select
                                             value={point.importance.toString()}
                                             onValueChange={(value) => {
+                                              const v = parseInt(value)
                                               const updatedPoints = points.map(p =>
-                                                p.id === point.id ? { ...p, importance: parseInt(value) } : p
+                                                p.id === point.id ? { ...p, importance: v } : p
                                               )
                                               setPoints(updatedPoints)
+                                              queueUpdateStudyItem(point.id, { importance: v })
                                             }}
                                           >
                                             <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-16">
@@ -1681,10 +1824,12 @@ function SubjectPage() {
                                           <Select
                                             value={point.masteryLevel?.toString() ?? "none"}
                                             onValueChange={(value) => {
+                                              const v = value === "none" ? null : parseInt(value)
                                               const updatedPoints = points.map(p =>
-                                                p.id === point.id ? { ...p, masteryLevel: value === "none" ? null : parseInt(value) } : p
+                                                p.id === point.id ? { ...p, masteryLevel: v } : p
                                               )
                                               setPoints(updatedPoints)
+                                              queueUpdateStudyItem(point.id, { mastery_level: v })
                                             }}
                                           >
                                             <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-16">
@@ -1711,7 +1856,9 @@ function SubjectPage() {
                                           <MemoField
                                             value={point.content}
                                             onChange={(e) => {
-                                              setPoints(prev => prev.map(p => p.id === point.id ? { ...p, content: e.target.value } : p))
+                                              const v = e.target.value
+                                              setPoints(prev => prev.map(p => p.id === point.id ? { ...p, content: v } : p))
+                                              queueUpdateStudyItem(point.id, { content: v })
                                             }}
                                             placeholder="内容を入力..."
                                           />
@@ -1720,7 +1867,9 @@ function SubjectPage() {
                                           <MemoField
                                             value={point.memo}
                                             onChange={(e) => {
-                                              setPoints(prev => prev.map(p => p.id === point.id ? { ...p, memo: e.target.value } : p))
+                                              const v = e.target.value
+                                              setPoints(prev => prev.map(p => p.id === point.id ? { ...p, memo: v } : p))
+                                              queueUpdateStudyItem(point.id, { memo: v })
                                             }}
                                             placeholder="メモを入力..."
                                           />
@@ -1768,6 +1917,7 @@ function SubjectPage() {
                                                               p.id === point.id ? { ...p, tags: updatedTags } : p
                                                             )
                                                             setPoints(updatedPoints)
+                                                            queueUpdateStudyItem(point.id, { tags: updatedTags })
                                                           }}
                                                         />
                                                         <label
@@ -1804,6 +1954,7 @@ function SubjectPage() {
                                                           p.id === point.id ? { ...p, tags: [...pointTags, newTag] } : p
                                                         )
                                                         setPoints(updatedPoints)
+                                                        queueUpdateStudyItem(point.id, { tags: [...pointTags, newTag] })
                                                         input.value = ""
                                                       }
                                                     }

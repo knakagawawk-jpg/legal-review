@@ -538,3 +538,52 @@ class StudyTagResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class StudyItemCreate(BaseModel):
+    entry_type: int  # 1=規範, 2=論点
+    subject_id: int  # 1-18
+    item: str = ""
+    importance: int = 1  # 1-3
+    mastery_level: Optional[int] = None  # 1-5
+    content: str = ""
+    memo: Optional[str] = ""
+    tags: List[str] = []
+    created_date: Optional[str] = None  # "YYYY-MM-DD"（任意）
+
+
+class StudyItemUpdate(BaseModel):
+    item: Optional[str] = None
+    importance: Optional[int] = None
+    mastery_level: Optional[int] = None
+    content: Optional[str] = None
+    memo: Optional[str] = None
+    tags: Optional[List[str]] = None
+    created_date: Optional[str] = None  # "YYYY-MM-DD"
+
+
+class StudyItemResponse(BaseModel):
+    id: int
+    user_id: int
+    entry_type: int
+    subject_id: int
+    item: str
+    importance: int
+    mastery_level: Optional[int]
+    content: str
+    memo: Optional[str]
+    tags: List[str]
+    created_date: datetime
+    position: int
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
+class StudyItemReorderRequest(BaseModel):
+    subject_id: int
+    entry_type: int
+    ordered_ids: List[int]

@@ -23,7 +23,7 @@ from .models import (
     UserPreference, UserDashboard, UserDashboardHistory, UserReviewHistory,
     DashboardItem, Subject, OfficialQuestion,
     TimerSession, TimerDailyChunk, TimerDailyStats,
-    StudyTag
+    StudyTag, StudyItem as StudyItemModel
 )
 from config.constants import FIXED_SUBJECTS
 from config.subjects import SUBJECT_MAP, SUBJECT_NAME_TO_ID, get_subject_name, get_subject_id
@@ -46,7 +46,8 @@ from .schemas import (
     UserUpdate, UserResponse,
     DashboardItemCreate, DashboardItemUpdate, DashboardItemResponse, DashboardItemListResponse,
     TimerSessionResponse, TimerDailyStatsResponse, TimerStartResponse, TimerStopResponse,
-    StudyTagCreate, StudyTagResponse
+    StudyTagCreate, StudyTagResponse,
+    StudyItemCreate, StudyItemUpdate, StudyItemResponse, StudyItemReorderRequest
 )
 from pydantic import BaseModel
 from .llm_service import generate_review, chat_about_review, free_chat
@@ -1908,6 +1909,262 @@ async def delete_study_tag(
     db.delete(tag)
     db.commit()
     return {"message": "deleted"}
+
+
+# ============================================================================
+# My規範・My論点: StudyItem API
+# ============================================================================
+
+def _parse_date_yyyy_mm_dd(date_str: str) -> datetime:
+    # "YYYY-MM-DD" を Asia/Tokyo の 00:00 で保持
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        return dt.replace(tzinfo=ZoneInfo("Asia/Tokyo"))
+    except Exception:
+        # ISO文字列も許容
+        dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ZoneInfo("Asia/Tokyo"))
+        return dt
+
+
+def _next_study_item_position(db: Session, user_id: int, subject_id: int, entry_type: int) -> int:
+    last_item = db.query(StudyItemModel).filter(
+        StudyItemModel.user_id == user_id,
+        StudyItemModel.subject_id == subject_id,
+        StudyItemModel.entry_type == entry_type,
+        StudyItemModel.deleted_at.is_(None),
+    ).order_by(StudyItemModel.position.desc()).first()
+    return (last_item.position + 10) if last_item else 10
+
+
+@app.get("/v1/study-items", response_model=List[StudyItemResponse])
+async def list_study_items(
+    subject_id: int = Query(..., ge=1, le=18),
+    entry_type: int = Query(..., ge=1, le=2),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    items = db.query(StudyItemModel).filter(
+        StudyItemModel.user_id == current_user.id,
+        StudyItemModel.subject_id == subject_id,
+        StudyItemModel.entry_type == entry_type,
+        StudyItemModel.deleted_at.is_(None),
+    ).order_by(StudyItemModel.position.asc()).all()
+
+    result: List[StudyItemResponse] = []
+    for it in items:
+        tags = []
+        if it.tags:
+            try:
+                tags = json.loads(it.tags)
+            except Exception:
+                tags = []
+        # memoはNULL可なのでそのまま
+        result.append(StudyItemResponse(
+            id=it.id,
+            user_id=it.user_id,
+            entry_type=it.entry_type,
+            subject_id=it.subject_id,
+            item=it.item,
+            importance=it.importance,
+            mastery_level=it.mastery_level,
+            content=it.content,
+            memo=it.memo,
+            tags=tags if isinstance(tags, list) else [],
+            created_date=it.created_date,
+            position=it.position,
+            created_at=it.created_at,
+            updated_at=it.updated_at,
+            deleted_at=it.deleted_at,
+        ))
+    return result
+
+
+@app.post("/v1/study-items", response_model=StudyItemResponse)
+async def create_study_item(
+    payload: StudyItemCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    if payload.entry_type not in (1, 2):
+        raise HTTPException(status_code=400, detail="Invalid entry_type (must be 1 or 2)")
+    if not (1 <= payload.subject_id <= 18):
+        raise HTTPException(status_code=400, detail="Invalid subject_id (must be 1-18)")
+    if not (1 <= payload.importance <= 3):
+        raise HTTPException(status_code=400, detail="Invalid importance (must be 1-3)")
+    if payload.mastery_level is not None and not (1 <= payload.mastery_level <= 5):
+        raise HTTPException(status_code=400, detail="Invalid mastery_level (must be 1-5)")
+
+    created_date = datetime.now(ZoneInfo("Asia/Tokyo"))
+    if payload.created_date:
+        created_date = _parse_date_yyyy_mm_dd(payload.created_date)
+
+    tags_json = json.dumps(payload.tags or [], ensure_ascii=False)
+    position = _next_study_item_position(db, current_user.id, payload.subject_id, payload.entry_type)
+
+    it = StudyItemModel(
+        user_id=current_user.id,
+        entry_type=payload.entry_type,
+        subject_id=payload.subject_id,
+        item=payload.item or "",
+        importance=payload.importance,
+        mastery_level=payload.mastery_level,
+        content=payload.content or "",
+        memo=payload.memo,
+        tags=tags_json,
+        created_date=created_date,
+        position=position,
+    )
+    db.add(it)
+    db.commit()
+    db.refresh(it)
+
+    tags = []
+    if it.tags:
+        try:
+            tags = json.loads(it.tags)
+        except Exception:
+            tags = []
+
+    return StudyItemResponse(
+        id=it.id,
+        user_id=it.user_id,
+        entry_type=it.entry_type,
+        subject_id=it.subject_id,
+        item=it.item,
+        importance=it.importance,
+        mastery_level=it.mastery_level,
+        content=it.content,
+        memo=it.memo,
+        tags=tags if isinstance(tags, list) else [],
+        created_date=it.created_date,
+        position=it.position,
+        created_at=it.created_at,
+        updated_at=it.updated_at,
+        deleted_at=it.deleted_at,
+    )
+
+
+@app.put("/v1/study-items/{item_id}", response_model=StudyItemResponse)
+async def update_study_item(
+    item_id: int,
+    payload: StudyItemUpdate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    it = db.query(StudyItemModel).filter(
+        StudyItemModel.id == item_id,
+        StudyItemModel.user_id == current_user.id,
+        StudyItemModel.deleted_at.is_(None),
+    ).first()
+    if not it:
+        raise HTTPException(status_code=404, detail="Study item not found")
+
+    if payload.importance is not None and not (1 <= payload.importance <= 3):
+        raise HTTPException(status_code=400, detail="Invalid importance (must be 1-3)")
+    if payload.mastery_level is not None and payload.mastery_level != 0 and not (1 <= payload.mastery_level <= 5):
+        raise HTTPException(status_code=400, detail="Invalid mastery_level (must be 1-5)")
+
+    if payload.item is not None:
+        it.item = payload.item
+    if payload.importance is not None:
+        it.importance = payload.importance
+    if payload.mastery_level is not None:
+        it.mastery_level = payload.mastery_level
+    if payload.content is not None:
+        it.content = payload.content
+    if payload.memo is not None:
+        it.memo = payload.memo
+    if payload.tags is not None:
+        it.tags = json.dumps(payload.tags, ensure_ascii=False)
+    if payload.created_date is not None:
+        it.created_date = _parse_date_yyyy_mm_dd(payload.created_date)
+
+    db.commit()
+    db.refresh(it)
+
+    tags = []
+    if it.tags:
+        try:
+            tags = json.loads(it.tags)
+        except Exception:
+            tags = []
+
+    return StudyItemResponse(
+        id=it.id,
+        user_id=it.user_id,
+        entry_type=it.entry_type,
+        subject_id=it.subject_id,
+        item=it.item,
+        importance=it.importance,
+        mastery_level=it.mastery_level,
+        content=it.content,
+        memo=it.memo,
+        tags=tags if isinstance(tags, list) else [],
+        created_date=it.created_date,
+        position=it.position,
+        created_at=it.created_at,
+        updated_at=it.updated_at,
+        deleted_at=it.deleted_at,
+    )
+
+
+@app.delete("/v1/study-items/{item_id}")
+async def delete_study_item(
+    item_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    it = db.query(StudyItemModel).filter(
+        StudyItemModel.id == item_id,
+        StudyItemModel.user_id == current_user.id,
+        StudyItemModel.deleted_at.is_(None),
+    ).first()
+    if not it:
+        raise HTTPException(status_code=404, detail="Study item not found")
+
+    it.deleted_at = datetime.now(ZoneInfo("Asia/Tokyo"))
+    db.commit()
+    return {"message": "deleted"}
+
+
+@app.post("/v1/study-items/reorder")
+async def reorder_study_items(
+    payload: StudyItemReorderRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    if payload.entry_type not in (1, 2):
+        raise HTTPException(status_code=400, detail="Invalid entry_type (must be 1 or 2)")
+    if not (1 <= payload.subject_id <= 18):
+        raise HTTPException(status_code=400, detail="Invalid subject_id (must be 1-18)")
+
+    items = db.query(StudyItemModel).filter(
+        StudyItemModel.user_id == current_user.id,
+        StudyItemModel.subject_id == payload.subject_id,
+        StudyItemModel.entry_type == payload.entry_type,
+        StudyItemModel.deleted_at.is_(None),
+    ).all()
+    by_id = {it.id: it for it in items}
+
+    # 指定されたIDだけを順に採番（その他は末尾）
+    pos = 10
+    for id_ in payload.ordered_ids:
+        it = by_id.get(id_)
+        if it:
+            it.position = pos
+            pos += 10
+
+    # ordered_idsに含まれないものは後ろへ
+    remaining = [it for it in items if it.id not in set(payload.ordered_ids)]
+    remaining.sort(key=lambda x: x.position)
+    for it in remaining:
+        it.position = pos
+        pos += 10
+
+    db.commit()
+    return {"message": "reordered"}
 
 @app.get("/v1/dashboard/items", response_model=DashboardItemListResponse)
 async def get_dashboard_items(
