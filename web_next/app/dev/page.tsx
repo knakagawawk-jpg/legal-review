@@ -606,7 +606,7 @@ function SubmissionList() {
   }
 
   const filteredSubmissions = submissions.filter(
-    (sub) => !searchTerm || sub.subject.toLowerCase().includes(searchTerm.toLowerCase())
+    (sub) => !searchTerm || String(sub.subject ?? "").toLowerCase().includes(searchTerm.toLowerCase())
   )
 
   const handleView = (submissionId: number) => {
