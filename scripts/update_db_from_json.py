@@ -16,6 +16,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from app.db import SessionLocal
 from app.models import Problem
+from config.subjects import get_subject_id, get_subject_name
 
 def year_to_int(year_str: str) -> int:
     """年度文字列を整数に変換"""
@@ -66,7 +67,7 @@ def update_db_from_json(json_dir: Path):
                 
                 year_str = data.get("year", "")
                 exam_type = data.get("exam_type", "")
-                subject = data.get("subject", "")
+                subject_raw = data.get("subject", "")
                 text = data.get("text", "")
                 source_pdf = data.get("source_pdf", "")
                 
@@ -83,12 +84,24 @@ def update_db_from_json(json_dir: Path):
                     exam_type = "予備試験"
                 elif exam_type == "司法":
                     exam_type = "司法試験"
+
+                # 科目はID（1-18）で保存する
+                subject_id = None
+                if isinstance(subject_raw, int):
+                    subject_id = subject_raw
+                elif isinstance(subject_raw, str):
+                    s = subject_raw.strip()
+                    subject_id = int(s) if s.isdigit() else get_subject_id(s)
+                if subject_id is None or not (1 <= subject_id <= 18):
+                    print(f"エラー: {json_file.name} - 科目の形式が不正です: {subject_raw!r}")
+                    error_count += 1
+                    continue
                 
                 # 問題を作成
                 problem = Problem(
                     exam_type=exam_type,
                     year=year,
-                    subject=subject,
+                    subject=subject_id,
                     question_text=text,
                     pdf_path=source_pdf,
                 )
@@ -97,7 +110,7 @@ def update_db_from_json(json_dir: Path):
                 db.commit()
                 
                 print(f"登録: {json_file.name}")
-                print(f"  {exam_type} {year}年 {subject}")
+                print(f"  {exam_type} {year}年 {get_subject_name(subject_id)}")
                 imported_count += 1
                 
             except Exception as e:

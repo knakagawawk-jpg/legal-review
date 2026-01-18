@@ -23,6 +23,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from app.db import SessionLocal
 from app.models import Problem, ProblemMetadata, ProblemDetails
+from config.subjects import get_subject_id, get_subject_name
 
 def year_to_int(year_str: str) -> int:
     """年度文字列を整数に変換
@@ -71,7 +72,7 @@ def import_json_files(json_dir: Path):
                 
                 year_str = data.get("year", "")
                 exam_type = data.get("exam_type", "")
-                subject = data.get("subject", "")
+                subject_raw = data.get("subject", "")
                 text = data.get("text", "")
                 source_pdf = data.get("source_pdf", "")
                 purpose = data.get("purpose", "")  # 出題趣旨を追加
@@ -89,12 +90,34 @@ def import_json_files(json_dir: Path):
                     exam_type = "予備試験"
                 elif exam_type == "司法":
                     exam_type = "司法試験"
+
+                # 短答式問題はスキップ（別のテーブルで管理）
+                if "短答" in str(subject_raw) or "短答" in json_file.name:
+                    print(f"スキップ: {json_file.name} (短答式問題)")
+                    skipped_count += 1
+                    continue
+
+                # 科目はID（1-18）で保存する（subject_rawが科目名の想定）
+                subject_id = None
+                if isinstance(subject_raw, int):
+                    subject_id = subject_raw
+                elif isinstance(subject_raw, str):
+                    s = "".join(subject_raw.split())
+                    subject_id = int(s) if s.isdigit() else get_subject_id(s)
+                # フォールバック: subject_nameがある場合
+                if subject_id is None and isinstance(data.get("subject_name"), str):
+                    s2 = "".join(str(data.get("subject_name")).split())
+                    subject_id = int(s2) if s2.isdigit() else get_subject_id(s2)
+                if subject_id is None or not (1 <= int(subject_id) <= 18):
+                    print(f"エラー: {json_file.name} - 科目の形式が不正です: subject={subject_raw!r}, subject_name={data.get('subject_name')!r}")
+                    error_count += 1
+                    continue
                 
                 # 既存のメタデータをチェック（新しい構造）
                 existing_metadata = db.query(ProblemMetadata).filter(
                     ProblemMetadata.exam_type == exam_type,
                     ProblemMetadata.year == year,
-                    ProblemMetadata.subject == subject
+                    ProblemMetadata.subject == subject_id
                 ).first()
                 
                 if existing_metadata:
@@ -106,7 +129,7 @@ def import_json_files(json_dir: Path):
                 metadata = ProblemMetadata(
                     exam_type=exam_type,
                     year=year,
-                    subject=subject
+                    subject=subject_id
                 )
                 db.add(metadata)
                 db.flush()  # IDを取得するためにflush
@@ -123,7 +146,7 @@ def import_json_files(json_dir: Path):
                 db.commit()
                 
                 print(f"登録: {json_file.name}")
-                print(f"  {exam_type} {year}年 {subject}")
+                print(f"  {exam_type} {year}年 {get_subject_name(subject_id)}")
                 print(f"  メタデータID: {metadata.id}, 詳細ID: {detail.id}")
                 imported_count += 1
                 

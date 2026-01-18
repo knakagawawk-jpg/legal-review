@@ -10,6 +10,7 @@ import re
 import json
 from pathlib import Path
 from typing import List, Dict, Optional
+from config.subjects import get_subject_id, get_subject_name
 
 def extract_text_from_pdf(pdf_path: Path) -> str:
     """PDFからテキストを抽出"""
@@ -186,10 +187,17 @@ def process_short_answer_pdf(problem_pdf_path: Path, answer_pdf_path: Path, outp
         result_problems.append(problem_data)
     
     # JSONファイルを作成
+    # 科目はID（1-18）で保存する
+    subject_raw = "".join((subject or "").split())
+    subject_id = int(subject_raw) if subject_raw.isdigit() else get_subject_id(subject_raw)
+    if subject_id is None or not (1 <= subject_id <= 18):
+        raise ValueError(f"科目の形式が不正です: {subject!r} -> {subject_raw!r}")
+
     output_data = {
         "year": year,
         "exam_type": exam_type,
-        "subject": subject,
+        "subject": subject_id,
+        "subject_name": get_subject_name(subject_id),
         "source_pdf": str(problem_pdf_path.relative_to(Path.cwd())),
         "problems": result_problems
     }

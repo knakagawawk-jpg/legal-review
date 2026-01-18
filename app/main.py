@@ -55,6 +55,31 @@ from .auth import get_current_user, get_current_user_required, verify_google_tok
 from config.settings import AUTH_ENABLED
 from .timer_api import register_timer_routes
 
+
+def _normalize_subject_id(subject_value) -> Optional[int]:
+    """
+    DB/入力から来る subject を「科目ID（int, 1-18）」へ正規化する。
+    - SQLiteは型が厳密でないため、Integer列に文字列が混入し得る（例: "一般教養科目"）。
+    """
+    if subject_value is None:
+        return None
+    if isinstance(subject_value, int):
+        return subject_value if 1 <= subject_value <= 18 else None
+    if isinstance(subject_value, str):
+        # "倒 産 法" のように途中に空白が入っているケースがあるため除去
+        s = "".join(subject_value.split())
+        # "18" のような数値文字列
+        if s.isdigit():
+            try:
+                v = int(s)
+                return v if 1 <= v <= 18 else None
+            except Exception:
+                return None
+        # "一般教養科目" のような科目名
+        mapped = get_subject_id(s)
+        return mapped if (mapped is not None and 1 <= mapped <= 18) else None
+    return None
+
 # テーブル作成はエントリーポイントスクリプト（app/init_db.py）で実行されるため、ここでは削除
 # Base.metadata.create_all(bind=engine)
 
@@ -343,12 +368,19 @@ def list_problem_metadata(
         # レスポンスにsubject_nameを追加
         response_list = []
         for m in metadata_list:
+            normalized_subject = _normalize_subject_id(m.subject)
+            # subjectがNULL/不正値の行は、既存問題選択UIでは扱えないため一覧から除外する
+            if normalized_subject is None:
+                logger.warning(
+                    f"Skipping problem_metadata id={getattr(m, 'id', None)} due to invalid subject: {m.subject!r}"
+                )
+                continue
             response_dict = {
                 "id": m.id,
                 "exam_type": m.exam_type,
                 "year": m.year,
-                "subject": m.subject,
-                "subject_name": get_subject_name(m.subject),
+                "subject": normalized_subject,
+                "subject_name": get_subject_name(normalized_subject),
                 "created_at": m.created_at,
                 "updated_at": m.updated_at,
             }
@@ -378,12 +410,18 @@ def get_problem_metadata_with_details(metadata_id: int, db: Session = Depends(ge
         ).order_by(ProblemDetails.question_number).all()
         
         # レスポンスにsubject_nameを追加
+        normalized_subject = _normalize_subject_id(metadata.subject)
+        if normalized_subject is None:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Invalid subject stored for problem_metadata id={metadata.id}: {metadata.subject!r}"
+            )
         metadata_dict = {
             "id": metadata.id,
             "exam_type": metadata.exam_type,
             "year": metadata.year,
-            "subject": metadata.subject,
-            "subject_name": get_subject_name(metadata.subject),
+            "subject": normalized_subject,
+            "subject_name": get_subject_name(normalized_subject),
             "created_at": metadata.created_at,
             "updated_at": metadata.updated_at,
         }

@@ -10,6 +10,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 from app.db import SessionLocal, engine, Base
 from app.models import ShortAnswerProblem
+from config.subjects import get_subject_id, get_subject_name
 
 def import_json_to_db(json_path: Path, db: Session):
     """JSONファイルをデータベースにインポート"""
@@ -23,11 +24,21 @@ def import_json_to_db(json_path: Path, db: Session):
     # 「予備」を「予備試験」に統一
     if exam_type == "予備":
         exam_type = "予備試験"
-    subject = data["subject"]
+    subject_raw = data["subject"]
     source_pdf = data.get("source_pdf")
     problems = data["problems"]
     
-    print(f"試験種別: {exam_type}, 年度: {year}, 科目: {subject}")
+    # 科目はID（1-18）で保存する
+    subject_id = None
+    if isinstance(subject_raw, int):
+        subject_id = subject_raw
+    elif isinstance(subject_raw, str):
+        s = subject_raw.strip()
+        subject_id = int(s) if s.isdigit() else get_subject_id(s)
+    if subject_id is None or not (1 <= subject_id <= 18):
+        raise ValueError(f"科目の形式が不正です: {subject_raw!r} ({json_path})")
+
+    print(f"試験種別: {exam_type}, 年度: {year}, 科目: {get_subject_name(subject_id)}")
     print(f"問題数: {len(problems)}")
     
     success_count = 0
@@ -39,7 +50,7 @@ def import_json_to_db(json_path: Path, db: Session):
             existing = db.query(ShortAnswerProblem).filter(
                 ShortAnswerProblem.exam_type == exam_type,
                 ShortAnswerProblem.year == year,
-                ShortAnswerProblem.subject == subject,
+                ShortAnswerProblem.subject == subject_id,
                 ShortAnswerProblem.question_number == problem_data["question_number"]
             ).first()
             
@@ -60,7 +71,7 @@ def import_json_to_db(json_path: Path, db: Session):
                 new_problem = ShortAnswerProblem(
                     exam_type=exam_type,
                     year=year,
-                    subject=subject,
+                    subject=subject_id,
                     question_number=problem_data["question_number"],
                     question_text=problem_data["question_text"],
                     choice_1=problem_data["choice_1"],

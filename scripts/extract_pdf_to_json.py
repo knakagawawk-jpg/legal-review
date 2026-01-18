@@ -7,7 +7,8 @@ JSON構造:
 {
     "year": "R7",
     "exam_type": "予備",
-    "subject": "科目名",
+    "subject": 1,
+    "subject_name": "憲法",
     "text": "抽出したテキスト",
     "source_pdf": "元のPDFファイルのパス"
 }
@@ -18,11 +19,29 @@ import json
 import re
 from pathlib import Path
 import pdfplumber
+from config.subjects import get_subject_id, get_subject_name
 
 # ベースディレクトリ
 BASE_DIR = Path(__file__).parent
 PDF_DIR = BASE_DIR / "問題文元pdf" / "予備試験" / "R7"
 JSON_OUTPUT_DIR = BASE_DIR / "json_data" / "予備試験" / "R7"
+
+def subject_name_to_id(subject_name: str) -> tuple[int, str]:
+    """
+    PDFの見出し（例: '憲 法'）を科目ID（1-18）へ変換する。
+    JSON/DBでは科目は数値で統一する。
+    """
+    s = "".join((subject_name or "").split())
+    # 実務基礎の表記ゆれ
+    if s == "民事":
+        s = "実務基礎（民事）"
+    elif s == "刑事":
+        s = "実務基礎（刑事）"
+
+    subject_id = int(s) if s.isdigit() else get_subject_id(s)
+    if subject_id is None or not (1 <= subject_id <= 18):
+        raise ValueError(f"科目をIDに変換できません: {subject_name!r} -> {s!r}")
+    return subject_id, get_subject_name(subject_id)
 
 def extract_text_from_pdf(pdf_path: Path) -> str:
     """PDFファイルからテキストを抽出"""
@@ -123,18 +142,25 @@ def process_paper_pdfs():
         # 各科目ごとにJSONファイルを作成
         for subject_name, subject_text in subjects:
             print(f"    科目: {subject_name} ({len(subject_text)} 文字)")
+
+            try:
+                subject_id, canonical_name = subject_name_to_id(subject_name)
+            except Exception as e:
+                print(f"    警告: 科目ID変換に失敗したためスキップします: {e}")
+                continue
             
             # JSONデータを作成
             json_data = {
                 "year": "R7",
                 "exam_type": "予備",
-                "subject": subject_name,
+                "subject": subject_id,
+                "subject_name": canonical_name,
                 "text": subject_text,
                 "source_pdf": pdf_relative_path
             }
             
             # JSONファイル名を生成
-            safe_subject = sanitize_filename(subject_name)
+            safe_subject = sanitize_filename(canonical_name)
             json_filename = f"R7_予備_{safe_subject}.json"
             json_path = JSON_OUTPUT_DIR / json_filename
             

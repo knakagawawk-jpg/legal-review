@@ -8,7 +8,8 @@ JSON構造:
 {
     "year": "R6",
     "exam_type": "予備",
-    "subject": "科目名",
+    "subject": 1,
+    "subject_name": "憲法",
     "text": "抽出したテキスト（問題文）",
     "purpose": "出題趣旨",
     "source_pdf": "元のPDFファイルのパス"
@@ -20,11 +21,30 @@ import json
 import re
 from pathlib import Path
 import pdfplumber
+from config.subjects import get_subject_id, get_subject_name
 
 # ベースディレクトリ
 BASE_DIR = Path(__file__).parent
 PDF_DIR = BASE_DIR / "data" / "pdfs" / "preliminary_exam" / "R6"
 JSON_OUTPUT_DIR = BASE_DIR / "data" / "json" / "preliminary_exam" / "R6"
+
+def subject_name_to_id(subject_name: str) -> tuple[int, str]:
+    s = "".join((subject_name or "").split())
+    # 実務基礎の表記ゆれ
+    if s == "民事":
+        s = "実務基礎（民事）"
+    elif s == "刑事":
+        s = "実務基礎（刑事）"
+    # 旧表記
+    s = s.replace("(", "（").replace(")", "）")
+    if s.startswith("法律実務基礎科目"):
+        # 例: 法律実務基礎科目（民事） -> 実務基礎（民事）
+        s = s.replace("法律実務基礎科目", "実務基礎")
+
+    subject_id = int(s) if s.isdigit() else get_subject_id(s)
+    if subject_id is None or not (1 <= subject_id <= 18):
+        raise ValueError(f"科目をIDに変換できません: {subject_name!r} -> {s!r}")
+    return subject_id, get_subject_name(subject_id)
 
 def extract_text_from_pdf(pdf_path: Path) -> str:
     """PDFファイルからテキストを抽出"""
@@ -276,6 +296,12 @@ def process_paper_pdfs():
                 subject_name = "実務基礎（民事）"
             elif subject_name == "刑 事":
                 subject_name = "実務基礎（刑事）"
+
+            try:
+                subject_id, canonical_name = subject_name_to_id(subject_name)
+            except Exception as e:
+                print(f"      スキップ: 科目ID変換に失敗しました: {e}")
+                continue
             
             # 出題趣旨を取得
             purpose = find_purpose_for_subject(subject_name, purpose_dict)
@@ -289,7 +315,8 @@ def process_paper_pdfs():
             json_data = {
                 "year": "R6",
                 "exam_type": "予備",
-                "subject": subject_name,
+                "subject": subject_id,
+                "subject_name": canonical_name,
                 "text": cleaned_text,
                 "source_pdf": pdf_relative_path
             }
@@ -299,7 +326,7 @@ def process_paper_pdfs():
                 json_data["purpose"] = purpose
             
             # JSONファイル名を生成
-            safe_subject = sanitize_filename(subject_name)
+            safe_subject = sanitize_filename(canonical_name)
             json_filename = f"R6_予備_{safe_subject}.json"
             json_path = JSON_OUTPUT_DIR / json_filename
             

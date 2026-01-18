@@ -8,7 +8,8 @@ JSON構造:
 {
     "year": "H30",
     "exam_type": "予備",
-    "subject": "科目名",
+    "subject": 1,
+    "subject_name": "憲法",
     "text": "抽出したテキスト（問題文）",
     "purpose": "出題趣旨",
     "source_pdf": "元のPDFファイルのパス"
@@ -20,11 +21,29 @@ import json
 import re
 from pathlib import Path
 import pdfplumber
+from config.subjects import get_subject_id, get_subject_name
 
 # ベースディレクトリ
 BASE_DIR = Path(__file__).parent
 PDF_DIR = BASE_DIR / "data" / "pdfs" / "preliminary_exam" / "H30"
 JSON_OUTPUT_DIR = BASE_DIR / "data" / "json" / "preliminary_exam" / "H30"
+
+def subject_name_to_id(subject_name: str) -> tuple[int, str]:
+    s = "".join((subject_name or "").split())
+    # 実務基礎の表記ゆれ
+    if s == "民事":
+        s = "実務基礎（民事）"
+    elif s == "刑事":
+        s = "実務基礎（刑事）"
+    # 旧表記ゆれ
+    s = s.replace("(", "（").replace(")", "）")
+    if s.startswith("法律実務基礎科目"):
+        s = s.replace("法律実務基礎科目", "実務基礎")
+
+    subject_id = int(s) if s.isdigit() else get_subject_id(s)
+    if subject_id is None or not (1 <= subject_id <= 18):
+        raise ValueError(f"科目をIDに変換できません: {subject_name!r} -> {s!r}")
+    return subject_id, get_subject_name(subject_id)
 
 def extract_text_from_pdf(pdf_path: Path) -> str:
     """PDFファイルからテキストを抽出"""
@@ -292,10 +311,12 @@ def process_paper_pdfs():
                         print(f"      警告: {normalized_part} の出題趣旨が見つかりませんでした")
                     
                     # JSONデータを作成
+                    subject_id, canonical_name = subject_name_to_id(normalized_part)
                     json_data = {
                         "year": "H30",
                         "exam_type": "予備",
-                        "subject": normalized_part,
+                        "subject": subject_id,
+                        "subject_name": canonical_name,
                         "text": part_text,
                         "source_pdf": pdf_relative_path
                     }
@@ -305,7 +326,7 @@ def process_paper_pdfs():
                         json_data["purpose"] = purpose
                     
                     # JSONファイル名を生成
-                    safe_subject = sanitize_filename(normalized_part)
+                    safe_subject = sanitize_filename(canonical_name)
                     json_filename = f"H30_予備_{safe_subject}.json"
                     json_path = JSON_OUTPUT_DIR / json_filename
                     
@@ -329,11 +350,13 @@ def process_paper_pdfs():
                 if '民事' in subject_name:
                     normalized_part = "実務基礎（民事）"
                     purpose = find_purpose_for_subject(normalized_part, purpose_dict)
+                    subject_id, canonical_name = subject_name_to_id(normalized_part)
                     
                     json_data = {
                         "year": "H30",
                         "exam_type": "予備",
-                        "subject": normalized_part,
+                        "subject": subject_id,
+                        "subject_name": canonical_name,
                         "text": cleaned_text,
                         "source_pdf": pdf_relative_path
                     }
@@ -342,7 +365,7 @@ def process_paper_pdfs():
                         json_data["purpose"] = purpose
                         print(f"      出題趣旨を追加: {len(purpose)} 文字")
                     
-                    safe_subject = sanitize_filename(normalized_part)
+                    safe_subject = sanitize_filename(canonical_name)
                     json_filename = f"H30_予備_{safe_subject}.json"
                     json_path = JSON_OUTPUT_DIR / json_filename
                     
@@ -358,11 +381,13 @@ def process_paper_pdfs():
                 if '刑事' in subject_name:
                     normalized_part = "実務基礎（刑事）"
                     purpose = find_purpose_for_subject(normalized_part, purpose_dict)
+                    subject_id, canonical_name = subject_name_to_id(normalized_part)
                     
                     json_data = {
                         "year": "H30",
                         "exam_type": "予備",
-                        "subject": normalized_part,
+                        "subject": subject_id,
+                        "subject_name": canonical_name,
                         "text": cleaned_text,
                         "source_pdf": pdf_relative_path
                     }
@@ -371,7 +396,7 @@ def process_paper_pdfs():
                         json_data["purpose"] = purpose
                         print(f"      出題趣旨を追加: {len(purpose)} 文字")
                     
-                    safe_subject = sanitize_filename(normalized_part)
+                    safe_subject = sanitize_filename(canonical_name)
                     json_filename = f"H30_予備_{safe_subject}.json"
                     json_path = JSON_OUTPUT_DIR / json_filename
                     
@@ -396,10 +421,12 @@ def process_paper_pdfs():
                 print(f"      警告: 出題趣旨が見つかりませんでした（科目名: {normalized_subject}）")
             
             # JSONデータを作成
+            subject_id, canonical_name = subject_name_to_id(normalized_subject)
             json_data = {
                 "year": "H30",
                 "exam_type": "予備",
-                "subject": normalized_subject,
+                "subject": subject_id,
+                "subject_name": canonical_name,
                 "text": cleaned_text,
                 "source_pdf": pdf_relative_path
             }
@@ -409,7 +436,7 @@ def process_paper_pdfs():
                 json_data["purpose"] = purpose
             
             # JSONファイル名を生成
-            safe_subject = sanitize_filename(normalized_subject)
+            safe_subject = sanitize_filename(canonical_name)
             json_filename = f"H30_予備_{safe_subject}.json"
             json_path = JSON_OUTPUT_DIR / json_filename
             
