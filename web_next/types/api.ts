@@ -13,6 +13,7 @@ export interface ReviewRequest {
 }
 
 export interface ReviewResponse {
+  review_id?: number | null
   submission_id: number
   review_markdown: string
   review_json: {

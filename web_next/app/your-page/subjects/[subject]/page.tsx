@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useRef, useCallback } from "react"
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
@@ -533,6 +533,10 @@ function SubjectPage() {
   const [points, setPoints] = useState<StudyItem[]>([])
   const [availableTags, setAvailableTags] = useState<StudyTag[]>([])
   const saveTimeoutRef = useRef<Record<number, number>>({})
+  const [importanceFilter, setImportanceFilter] = useState<string>("all") // "all" | "1" | "2" | "3"
+  const [masteryFilter, setMasteryFilter] = useState<string>("all") // "all" | "unset" | "1".."5"
+  const [tagFilters, setTagFilters] = useState<string[]>([])
+  const [tagFilterOpen, setTagFilterOpen] = useState(false)
 
   type StudyItemApi = {
     id: number
@@ -584,6 +588,21 @@ function SubjectPage() {
     }, 350)
   }
 
+  const deleteStudyTagCandidate = async (tagName: string) => {
+    const subjectId = getSubjectId(selectedSubject)
+    if (!subjectId) return
+
+    const candidate = availableTags.find((t) => t.subject_id === subjectId && t.name === tagName)
+    if (!candidate) return
+
+    try {
+      await apiClient.delete(`/api/study-tags/${candidate.id}`)
+      setAvailableTags((prev) => prev.filter((t) => t.id !== candidate.id))
+    } catch (e) {
+      console.error("Failed to delete study tag candidate:", e)
+    }
+  }
+
   // タグ管理（既存タグの一覧を取得）
   const getAllTags = (items: StudyItem[]): string[] => {
     const tagSet = new Set<string>()
@@ -598,6 +617,38 @@ function SubjectPage() {
     })
     return Array.from(tagSet).sort()
   }
+
+  const filterTagOptions = useMemo(() => {
+    const s = new Set<string>()
+    for (const t of availableTags) {
+      if (t && t.name) s.add(t.name)
+    }
+    for (const t of getAllTags([...norms, ...points])) {
+      s.add(t)
+    }
+    return Array.from(s).sort()
+  }, [availableTags, norms, points])
+
+  const matchesStudyFilters = useCallback((it: StudyItem) => {
+    if (importanceFilter !== "all") {
+      if (String(it.importance) !== importanceFilter) return false
+    }
+    if (masteryFilter !== "all") {
+      if (masteryFilter === "unset") {
+        if (it.masteryLevel != null) return false
+      } else {
+        if (String(it.masteryLevel ?? "") !== masteryFilter) return false
+      }
+    }
+    if (tagFilters.length > 0) {
+      const tags = it.tags || []
+      if (!tags.some((t) => tagFilters.includes(t))) return false
+    }
+    return true
+  }, [importanceFilter, masteryFilter, tagFilters])
+
+  const filteredNorms = useMemo(() => norms.filter(matchesStudyFilters), [norms, matchesStudyFilters])
+  const filteredPoints = useMemo(() => points.filter(matchesStudyFilters), [points, matchesStudyFilters])
 
   // 科目別タグ候補を取得（DB）
   useEffect(() => {
@@ -650,13 +701,13 @@ function SubjectPage() {
   }
 
   // 空行の配列を生成（draftRowsのキーとインデックスの組み合わせ）
-  const emptyNormsRowsCount = getEmptyRowsCount(norms.length, Object.keys(draftNormsRows).length)
+  const emptyNormsRowsCount = getEmptyRowsCount(filteredNorms.length, Object.keys(draftNormsRows).length)
   const emptyNormsRows = Array.from({ length: emptyNormsRowsCount }, (_, i) => {
     const existingKeys = Object.keys(draftNormsRows).filter(key => key.startsWith('norms-'))
     return existingKeys[i] || `norms-${i}`
   })
 
-  const emptyPointsRowsCount = getEmptyRowsCount(points.length, Object.keys(draftPointsRows).length)
+  const emptyPointsRowsCount = getEmptyRowsCount(filteredPoints.length, Object.keys(draftPointsRows).length)
   const emptyPointsRows = Array.from({ length: emptyPointsRowsCount }, (_, i) => {
     const existingKeys = Object.keys(draftPointsRows).filter(key => key.startsWith('points-'))
     return existingKeys[i] || `points-${i}`
@@ -671,8 +722,8 @@ function SubjectPage() {
     return headerHeight + rowHeight * 7
   }
 
-  const normsMaxHeight = getTableMaxHeight(norms.length, emptyNormsRows.length)
-  const pointsMaxHeight = getTableMaxHeight(points.length, emptyPointsRows.length)
+  const normsMaxHeight = getTableMaxHeight(filteredNorms.length, emptyNormsRows.length)
+  const pointsMaxHeight = getTableMaxHeight(filteredPoints.length, emptyPointsRows.length)
 
   // 次のIDを生成（簡易版）
   const getNextId = (items: StudyItem[]) => {
@@ -1370,6 +1421,102 @@ function SubjectPage() {
             {/* My規範・My論点 */}
             {mainTab === "study" && (
               <div className="space-y-6">
+                {/* フィルター（重要度・理解度・タグ） */}
+                <div className="border border-amber-200/60 rounded-lg p-3 bg-white/60">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="text-xs font-semibold text-amber-900/80">フィルター</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">重要度</span>
+                      <Select value={importanceFilter} onValueChange={setImportanceFilter}>
+                        <SelectTrigger className="h-7 text-xs w-28">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all" className="text-xs">すべて</SelectItem>
+                          {IMPORTANCE_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={String(opt.value)} className="text-xs">
+                              <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">理解度</span>
+                      <Select value={masteryFilter} onValueChange={setMasteryFilter}>
+                        <SelectTrigger className="h-7 text-xs w-28">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all" className="text-xs">すべて</SelectItem>
+                          <SelectItem value="unset" className="text-xs">未設定</SelectItem>
+                          {MASTERY_LEVEL_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={String(opt.value)} className="text-xs">
+                              <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">タグ</span>
+                      <Popover open={tagFilterOpen} onOpenChange={setTagFilterOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-7 text-xs px-2 hover:bg-muted/50">
+                            {tagFilters.length > 0 ? (
+                              <span className="truncate max-w-[160px]">
+                                {tagFilters.slice(0, 3).join(", ")}
+                                {tagFilters.length > 3 && ` +${tagFilters.length - 3}`}
+                              </span>
+                            ) : (
+                              "すべて"
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 p-3" align="start">
+                          <div className="space-y-2">
+                            <div className="text-xs font-semibold">タグで絞り込み</div>
+                            <div className="max-h-48 overflow-y-auto space-y-2">
+                              {filterTagOptions.length === 0 ? (
+                                <div className="text-xs text-muted-foreground">タグがありません</div>
+                              ) : (
+                                filterTagOptions.map((tag) => (
+                                  <div key={tag} className="flex items-center space-x-2">
+                                    <Checkbox
+                                      id={`filter-tag-${tag}`}
+                                      checked={tagFilters.includes(tag)}
+                                      onCheckedChange={(checked: boolean) => {
+                                        setTagFilters((prev) =>
+                                          checked ? [...prev, tag] : prev.filter((t) => t !== tag)
+                                        )
+                                      }}
+                                    />
+                                    <label htmlFor={`filter-tag-${tag}`} className="text-xs cursor-pointer flex-1">
+                                      {tag}
+                                    </label>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        setImportanceFilter("all")
+                        setMasteryFilter("all")
+                        setTagFilters([])
+                      }}
+                    >
+                      クリア
+                    </Button>
+                  </div>
+                </div>
+
                 {/* 規範一覧 */}
                 <div className="border border-amber-200/60 rounded-lg p-4">
                   <div className="flex items-center justify-between mb-4">
@@ -1442,10 +1589,10 @@ function SubjectPage() {
                               </TableHeader>
                               <TableBody>
                                 <SortableContext
-                                  items={norms.length > 0 ? norms.map(n => n.id.toString()) : []}
+                                  items={filteredNorms.length > 0 ? filteredNorms.map(n => n.id.toString()) : []}
                                   strategy={verticalListSortingStrategy}
                                 >
-                                  {norms.map((norm) => {
+                                  {filteredNorms.map((norm) => {
                                     const normTags = norm.tags || []
                                     const allTags = Array.from(new Set([...(availableTags.map(t => t.name)), ...normTags])).sort()
                                     return (
@@ -1606,6 +1753,20 @@ function SubjectPage() {
                                                         >
                                                           {tag}
                                                         </label>
+                                                        {availableTags.some((t) => t.subject_id === getSubjectId(selectedSubject) && t.name === tag) && (
+                                                          <button
+                                                            type="button"
+                                                            className="p-1 rounded hover:bg-muted"
+                                                            title="候補から削除"
+                                                            onClick={(e) => {
+                                                              e.preventDefault()
+                                                              e.stopPropagation()
+                                                              deleteStudyTagCandidate(tag)
+                                                            }}
+                                                          >
+                                                            <Trash2 className="h-3 w-3 text-muted-foreground" />
+                                                          </button>
+                                                        )}
                                                       </div>
                                                     ))
                                                   )}
@@ -1762,10 +1923,10 @@ function SubjectPage() {
                               </TableHeader>
                               <TableBody>
                                 <SortableContext
-                                  items={points.length > 0 ? points.map(p => p.id.toString()) : []}
+                                  items={filteredPoints.length > 0 ? filteredPoints.map(p => p.id.toString()) : []}
                                   strategy={verticalListSortingStrategy}
                                 >
-                                  {points.map((point) => {
+                                  {filteredPoints.map((point) => {
                                     const pointTags = point.tags || []
                                     const allTags = Array.from(new Set([...(availableTags.map(t => t.name)), ...pointTags])).sort()
                                     return (
@@ -1926,6 +2087,20 @@ function SubjectPage() {
                                                         >
                                                           {tag}
                                                         </label>
+                                                        {availableTags.some((t) => t.subject_id === getSubjectId(selectedSubject) && t.name === tag) && (
+                                                          <button
+                                                            type="button"
+                                                            className="p-1 rounded hover:bg-muted"
+                                                            title="候補から削除"
+                                                            onClick={(e) => {
+                                                              e.preventDefault()
+                                                              e.stopPropagation()
+                                                              deleteStudyTagCandidate(tag)
+                                                            }}
+                                                          >
+                                                            <Trash2 className="h-3 w-3 text-muted-foreground" />
+                                                          </button>
+                                                        )}
                                                       </div>
                                                     ))
                                                   )}

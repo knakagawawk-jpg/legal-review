@@ -239,11 +239,14 @@ export default function ReviewPage() {
 
       setGenerationPhase("生成完了")
 
-      // 成功したら結果ページに遷移
-      if (data.submission_id) {
+      // 成功したら結果ページに遷移（review_idベース）
+      if (data.review_id) {
+        router.push(`/review/${data.review_id}`)
+      } else if (data.submission_id) {
+        // 後方互換（古いレスポンス用）
         router.push(`/review/${data.submission_id}`)
       } else {
-        throw new Error("講評の生成に成功しましたが、submission_idが取得できませんでした")
+        throw new Error("講評の生成に成功しましたが、review_id/submission_idが取得できませんでした")
       }
     } catch (err: any) {
       console.error("Review generation error:", err)

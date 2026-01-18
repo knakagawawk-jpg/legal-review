@@ -29,12 +29,13 @@ import { ChatMessage } from "@/components/chat/chat-message"
 import { cn } from "@/lib/utils"
 import type { ReviewResponse } from "@/types/api"
 import { useSidebar } from "@/components/sidebar"
+import { apiClient } from "@/lib/api-client"
 
 export default function ReviewResultPage() {
   const params = useParams()
   const router = useRouter()
   const { isOpen } = useSidebar()
-  const submissionId = params.id as string
+  const reviewId = params.id as string
 
   const [review, setReview] = useState<ReviewResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -68,24 +69,20 @@ export default function ReviewResultPage() {
   useEffect(() => {
     const fetchReview = async () => {
       try {
-        const res = await fetch(`/api/review/${submissionId}`)
-        if (!res.ok) {
-          const errorData = await res.json().catch(() => ({ error: "Unknown error" }))
-          throw new Error(errorData.error || "講評の取得に失敗しました")
-        }
-        const data = await res.json()
+        const data = await apiClient.get<ReviewResponse>(`/api/reviews/${reviewId}`)
         setReview(data)
       } catch (err: any) {
-        setError(err.message)
+        const errorMessage = err?.error || err?.message || "講評の取得に失敗しました"
+        setError(errorMessage)
       } finally {
         setLoading(false)
       }
     }
 
-    if (submissionId) {
+    if (reviewId) {
       fetchReview()
     }
-  }, [submissionId])
+  }, [reviewId])
 
   useEffect(() => {
     if (chatContainerRef.current) {
@@ -162,40 +159,12 @@ export default function ReviewResultPage() {
     setIsLoading(true)
 
     try {
-      // チャット履歴を構築（最初の挨拶メッセージを除く）
-      const chatHistory = updatedMessages
-        .slice(1) // 最初の挨拶メッセージを除外
-        .map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-        }))
-
-      // APIを呼び出し
-      const response = await fetch("/api/review/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          submission_id: parseInt(submissionId),
-          question: userMessage,
-          chat_history: chatHistory.length > 0 ? chatHistory : undefined,
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Unknown error" }))
-        throw new Error(errorData.error || "チャットの送信に失敗しました")
-      }
-
-      const data = await response.json()
-
-      // アシスタントの回答を追加
+      // review_idベースのチャットはまだ未実装（your-page側と統一）
       setChatMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          content: data.answer || "回答を取得できませんでした",
+          content: "申し訳ございませんが、review_idベースのチャット機能は現在実装中です。",
         },
       ])
     } catch (error: any) {

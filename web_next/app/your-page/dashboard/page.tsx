@@ -184,6 +184,9 @@ function MemoField({
       textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
       textareaRef.current.style.maxHeight = `${maxHeight}px`
     } else {
+      // 非入力時：スクロール位置は常に先頭へ（「開いていた位置」を引き継がない）
+      textareaRef.current.scrollTop = 0
+
       // 表示時：空の場合は確実に1行
       if (!value || value.trim() === '') {
         textareaRef.current.style.height = '1.5rem'

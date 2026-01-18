@@ -130,6 +130,7 @@ class ReviewRequest(BaseModel):
     reference_text: Optional[str] = None  # 参照文章（任意、講評上参照してほしい解説等）
 
 class ReviewResponse(BaseModel):
+    review_id: Optional[int] = None
     submission_id: int
     review_markdown: str
     review_json: Dict[str, Any]

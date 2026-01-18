@@ -745,6 +745,7 @@ async def create_review(
 
         # 6) レスポンスを返す
         return ReviewResponse(
+            review_id=rev.id,
             submission_id=sub.id,
             review_markdown=review_markdown,
             review_json=review_json,
@@ -892,6 +893,7 @@ async def get_review_by_id(
     # submission_idは後方互換性のため、review_idを使用（存在しない場合は0）
     # 実際にはReviewResponseのsubmission_idは必須なので、ダミー値を設定
     return ReviewResponse(
+        review_id=review.id,
         submission_id=0,  # review_idベースの場合は使用しない
         review_markdown=review_markdown,
         review_json=review_json,
