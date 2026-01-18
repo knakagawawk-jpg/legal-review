@@ -568,37 +568,25 @@ function SubjectPage() {
   const [draftPointsRows, setDraftPointsRows] = useState<Record<string, Partial<StudyItem>>>({})
 
   // 空行数の計算（デフォルト3行、draftRowsも考慮）
-  // Dashboardと同じ空行仕様：0件→2行、1件→1行、それ以外→0行（追加ボタン分は別キーで増やす）
-  const getEmptyRowsCount = (dataLength: number) => {
-    if (dataLength === 0) return 2
-    if (dataLength === 1) return 1
-    return 0
+  // Dashboardと同じ空行仕様：0件→2行、1件→1行、それ以外→0行
+  // ただし本ページは「追加」ボタンでdraft行が増えるため、draft行数も必ず表示対象に含める
+  const getEmptyRowsCount = (dataLength: number, draftRowsCount: number) => {
+    const baseCount = dataLength === 0 ? 2 : dataLength === 1 ? 1 : 0
+    return Math.max(baseCount, draftRowsCount)
   }
 
   // 空行の配列を生成（draftRowsのキーとインデックスの組み合わせ）
-  const emptyNormsRowsCount = getEmptyRowsCount(norms.length)
+  const emptyNormsRowsCount = getEmptyRowsCount(norms.length, Object.keys(draftNormsRows).length)
   const emptyNormsRows = Array.from({ length: emptyNormsRowsCount }, (_, i) => {
     const existingKeys = Object.keys(draftNormsRows).filter(key => key.startsWith('norms-'))
     return existingKeys[i] || `norms-${i}`
   })
 
-  const emptyPointsRowsCount = getEmptyRowsCount(points.length)
+  const emptyPointsRowsCount = getEmptyRowsCount(points.length, Object.keys(draftPointsRows).length)
   const emptyPointsRows = Array.from({ length: emptyPointsRowsCount }, (_, i) => {
     const existingKeys = Object.keys(draftPointsRows).filter(key => key.startsWith('points-'))
     return existingKeys[i] || `points-${i}`
   })
-
-  // テーブルの表示高さ（ウィンドウ高さ調整用：一定行数を超えたら縦スクロール）
-  const getTableMaxHeight = (itemCount: number, emptyCount: number) => {
-    const totalRows = itemCount + emptyCount
-    const rowHeight = 44
-    const headerHeight = 40
-    if (totalRows <= 7) return undefined
-    return headerHeight + rowHeight * 7
-  }
-
-  const normsMaxHeight = getTableMaxHeight(norms.length, emptyNormsRows.length)
-  const pointsMaxHeight = getTableMaxHeight(points.length, emptyPointsRows.length)
 
   // 次のIDを生成（簡易版）
   const getNextId = (items: StudyItem[]) => {
@@ -1301,10 +1289,8 @@ function SubjectPage() {
                           collisionDetection={closestCenter}
                           onDragEnd={handleDragEndNorms}
                         >
-                          <div
-                            className="overflow-x-auto overflow-y-auto"
-                            style={normsMaxHeight ? { maxHeight: normsMaxHeight } : undefined}
-                          >
+                          {/* Dashboardと同じ：テーブル自体で縦スクロールさせず、ページ全体でスクロール */}
+                          <div className="overflow-x-auto">
                             <Table className="min-w-[980px] table-fixed">
                               {/* 列幅は % だとズレやすいので、pxベースで固定 */}
                               <colgroup>
@@ -1610,10 +1596,8 @@ function SubjectPage() {
                           collisionDetection={closestCenter}
                           onDragEnd={handleDragEndPoints}
                         >
-                          <div
-                            className="overflow-x-auto overflow-y-auto"
-                            style={pointsMaxHeight ? { maxHeight: pointsMaxHeight } : undefined}
-                          >
+                          {/* Dashboardと同じ：テーブル自体で縦スクロールさせず、ページ全体でスクロール */}
+                          <div className="overflow-x-auto">
                             <Table className="min-w-[980px] table-fixed">
                               <colgroup>
                                 <col className="w-6" />

@@ -15,7 +15,7 @@ const yourPageNav = [
     icon: LayoutDashboard,
   },
   {
-    name: "各科目ページ",
+    name: "Your Notes",
     href: "/your-page/subjects/憲法",
     icon: BookOpen,
   },
