@@ -1182,27 +1182,28 @@ function SubjectPage() {
                             className="overflow-x-auto overflow-y-auto"
                             style={normsMaxHeight ? { maxHeight: normsMaxHeight } : undefined}
                           >
-                            <Table className="table-fixed">
+                            <Table className="min-w-[980px] table-fixed">
+                              {/* 列幅は % だとズレやすいので、pxベースで固定 */}
                               <colgroup>
-                                <col className="w-6" />
-                                <col className="w-[16%]" />
-                                <col className="w-[7%]" />
-                                <col className="w-[7%]" />
-                                <col className="w-[40%]" />
-                                <col className="w-[18%]" />
-                                <col className="w-[7%]" />
-                                <col className="w-[6%]" />
+                                <col className="w-8" />          {/* 操作 */}
+                                <col className="w-[180px]" />    {/* 項目 */}
+                                <col className="w-[92px]" />     {/* 重要度 */}
+                                <col className="w-[92px]" />     {/* 理解度 */}
+                                <col className="w-[420px]" />    {/* 内容 */}
+                                <col className="w-[260px]" />    {/* メモ */}
+                                <col className="w-[140px]" />    {/* タグ */}
+                                <col className="w-[96px]" />     {/* 作成日 */}
                               </colgroup>
-                              <TableHeader className="sticky top-0 bg-white z-10">
+                              <TableHeader>
                                 <TableRow>
-                                  <TableHead className="w-6"></TableHead>
-                                  <TableHead className="text-xs font-semibold text-amber-900/80">項目</TableHead>
-                                  <TableHead className="text-xs font-semibold text-amber-900/80">重要度</TableHead>
-                                  <TableHead className="text-xs font-semibold text-amber-900/80">理解度</TableHead>
-                                  <TableHead className="text-xs font-semibold text-amber-900/80">内容</TableHead>
-                                  <TableHead className="text-xs font-semibold text-amber-900/80">メモ</TableHead>
-                                  <TableHead className="text-xs font-semibold text-amber-900/80">タグ</TableHead>
-                                  <TableHead className="text-xs font-semibold text-amber-900/80">作成日</TableHead>
+                                  <TableHead className="w-8 sticky top-0 bg-white z-10"></TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">項目</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">重要度</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">理解度</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">内容</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">メモ</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">タグ</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">作成日</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
@@ -1451,27 +1452,27 @@ function SubjectPage() {
                             className="overflow-x-auto overflow-y-auto"
                             style={pointsMaxHeight ? { maxHeight: pointsMaxHeight } : undefined}
                           >
-                            <Table className="table-fixed">
+                            <Table className="min-w-[980px] table-fixed">
                               <colgroup>
-                                <col className="w-6" />
-                                <col className="w-[16%]" />
-                                <col className="w-[7%]" />
-                                <col className="w-[7%]" />
-                                <col className="w-[40%]" />
-                                <col className="w-[18%]" />
-                                <col className="w-[7%]" />
-                                <col className="w-[6%]" />
+                                <col className="w-8" />
+                                <col className="w-[180px]" />
+                                <col className="w-[92px]" />
+                                <col className="w-[92px]" />
+                                <col className="w-[420px]" />
+                                <col className="w-[260px]" />
+                                <col className="w-[140px]" />
+                                <col className="w-[96px]" />
                               </colgroup>
-                              <TableHeader className="sticky top-0 bg-white z-10">
+                              <TableHeader>
                                 <TableRow>
-                                  <TableHead className="w-6"></TableHead>
-                                  <TableHead className="text-xs font-semibold text-amber-900/80">項目</TableHead>
-                                  <TableHead className="text-xs font-semibold text-amber-900/80">重要度</TableHead>
-                                  <TableHead className="text-xs font-semibold text-amber-900/80">理解度</TableHead>
-                                  <TableHead className="text-xs font-semibold text-amber-900/80">内容</TableHead>
-                                  <TableHead className="text-xs font-semibold text-amber-900/80">メモ</TableHead>
-                                  <TableHead className="text-xs font-semibold text-amber-900/80">タグ</TableHead>
-                                  <TableHead className="text-xs font-semibold text-amber-900/80">作成日</TableHead>
+                                  <TableHead className="w-8 sticky top-0 bg-white z-10"></TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">項目</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">重要度</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">理解度</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">内容</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">メモ</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">タグ</TableHead>
+                                  <TableHead className="text-xs font-semibold text-amber-900/80 sticky top-0 bg-white z-10">作成日</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
