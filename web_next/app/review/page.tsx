@@ -238,7 +238,7 @@ export default function ReviewPage() {
       const data = await apiClient.post<ReviewResponse>("/api/review", requestBody)
 
       setGenerationPhase("生成完了")
-      
+
       // 成功したら結果ページに遷移
       if (data.submission_id) {
         router.push(`/review/${data.submission_id}`)
@@ -291,7 +291,7 @@ export default function ReviewPage() {
   }
 
   return (
-    <div 
+    <div
       className="flex min-h-screen flex-col bg-slate-50 transition-all duration-300"
       style={{
         marginLeft: isOpen ? '208px' : '0',
@@ -339,8 +339,8 @@ export default function ReviewPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                <Select 
-                  value={subject !== null ? subject.toString() : ""} 
+                <Select
+                  value={subject !== null ? subject.toString() : ""}
                   onValueChange={(value) => {
                     if (value === "") {
                       setSubject(null)
