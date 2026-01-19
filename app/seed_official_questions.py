@@ -19,6 +19,8 @@ import sys
 import logging
 from pathlib import Path
 
+from sqlalchemy.exc import IntegrityError
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -43,10 +45,13 @@ except ImportError:
 def seed_official_questions_if_empty() -> int:
     db = SessionLocal()
     try:
-        existing = db.query(OfficialQuestion).count()
-        if existing > 0:
-            logger.info("official_questions already populated. Skipping seed.")
-            return 0
+        # 部分的に既に投入されている可能性があるため、「空ならスキップ」ではなく
+        # 「不足分のみ投入」する（冪等・並行実行にも耐える）
+        existing_active_keys = set(
+            db.query(OfficialQuestion.shiken_type, OfficialQuestion.nendo, OfficialQuestion.subject_id)
+            .filter(OfficialQuestion.status == "active")
+            .all()
+        )
 
         meta_rows = db.query(ProblemMetadata).all()
         if not meta_rows:
@@ -77,6 +82,10 @@ def seed_official_questions_if_empty() -> int:
                 continue
             nendo = meta.year
 
+            # すでに active があるならスキップ（oldはここでは作らない）
+            if (shiken_type, nendo, int(subject_id)) in existing_active_keys:
+                continue
+
             # details: 本プロジェクトでは基本1件想定。複数ある場合は最小question_numberを採用
             detail = (
                 db.query(ProblemDetails)
@@ -87,27 +96,38 @@ def seed_official_questions_if_empty() -> int:
             if not detail:
                 continue
 
-            oq = OfficialQuestion(
-                shiken_type=shiken_type,
-                nendo=nendo,
-                subject_id=int(subject_id),
-                version=1,
-                status="active",
-                text=detail.question_text,
-                syutudaisyusi=detail.purpose,
-            )
-            db.add(oq)
-            db.flush()  # oq.id を確定
-
-            if shiken_type == "shihou" and detail.scoring_notes:
-                db.add(
-                    ShihouGradingImpression(
-                        question_id=oq.id,
-                        grading_impression_text=detail.scoring_notes,
+            # 並行してWeb側が fallback 生成する可能性があるため、
+            # 1件ごとに SAVEPOINT（begin_nested）で安全に投入する
+            try:
+                with db.begin_nested():
+                    oq = OfficialQuestion(
+                        shiken_type=shiken_type,
+                        nendo=nendo,
+                        subject_id=int(subject_id),
+                        version=1,
+                        status="active",
+                        text=detail.question_text,
+                        syutudaisyusi=detail.purpose,
                     )
-                )
+                    db.add(oq)
+                    db.flush()  # oq.id を確定
 
-            created += 1
+                    if shiken_type == "shihou" and detail.scoring_notes:
+                        db.add(
+                            ShihouGradingImpression(
+                                question_id=oq.id,
+                                grading_impression_text=detail.scoring_notes,
+                            )
+                        )
+
+                # nested成功 → activeキーに追加
+                existing_active_keys.add((shiken_type, nendo, int(subject_id)))
+                created += 1
+            except IntegrityError:
+                # 既に同じ active が作られていた等（ユニーク制約）。スキップ。
+                db.rollback()
+                existing_active_keys.add((shiken_type, nendo, int(subject_id)))
+                continue
 
         db.commit()
         logger.info(f"✓ Seeded official_questions: {created}")
