@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 # プロジェクトルートをパスに追加
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.db import SessionLocal, engine, Base
 from app.models import Problem, ProblemMetadata, ProblemDetails, Submission

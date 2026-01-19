@@ -42,7 +42,21 @@ def get_subject_name(subject_id: int) -> str:
 
 def get_subject_id(subject_name: str) -> int | None:
     """科目名から科目IDを取得"""
-    return SUBJECT_NAME_TO_ID.get(subject_name)
+    if not subject_name:
+        return None
+    # "商 法" のような空白混入や "(民事)" のような半角括弧を吸収
+    s = "".join(str(subject_name).split())
+    s = s.replace("(", "（").replace(")", "）")
+    v = SUBJECT_NAME_TO_ID.get(s)
+    if v is not None:
+        return v
+
+    # かっこ無しの揺れ（例: "実務基礎民事"）
+    s2 = s.replace("（", "").replace("）", "")
+    for name, sid in SUBJECT_NAME_TO_ID.items():
+        if name.replace("（", "").replace("）", "") == s2:
+            return sid
+    return None
 
 
 def is_valid_subject_id(subject_id: int) -> bool:

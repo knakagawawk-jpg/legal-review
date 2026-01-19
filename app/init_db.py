@@ -18,8 +18,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# プロジェクトルートをパスに追加
-BASE_DIR = Path("/app")
+# プロジェクトルートをパスに追加（Docker/ローカル両対応）
+BASE_DIR = Path("/app") if Path("/app").exists() else Path(__file__).parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from app.db import SessionLocal, engine, Base
@@ -50,7 +50,9 @@ def year_to_int(year_str: str) -> int:
 def import_all_json_files():
     """JSONディレクトリを再帰的に探索してインポート"""
     db = SessionLocal()
-    json_base_dir = Path("/data/json")
+    # Docker: /data/json（volume mount）
+    # ローカル: <repo>/data/json
+    json_base_dir = Path("/data/json") if Path("/data/json").exists() else (BASE_DIR / "data" / "json")
     
     try:
         if not json_base_dir.exists():
@@ -179,8 +181,17 @@ def run_migration():
     """マイグレーションスクリプトを実行"""
     try:
         import subprocess
+        # Dockerfileでは scripts/migrate_to_new_problem_structure.py を /app 直下に COPY している。
+        # ローカルでは scripts/ 配下を参照する。
+        candidates = [
+            BASE_DIR / "migrate_to_new_problem_structure.py",
+            BASE_DIR / "scripts" / "migrate_to_new_problem_structure.py",
+        ]
+        migration_path = next((p for p in candidates if p.exists()), None)
+        if migration_path is None:
+            raise FileNotFoundError("migrate_to_new_problem_structure.py not found")
         result = subprocess.run(
-            [sys.executable, str(BASE_DIR / "migrate_to_new_problem_structure.py")],
+            [sys.executable, str(migration_path)],
             cwd=str(BASE_DIR),
             capture_output=True,
             text=True
@@ -203,7 +214,7 @@ def run_migration():
         logger.info("Migration completed successfully")
         
     except FileNotFoundError:
-        logger.error(f"Migration script not found: {BASE_DIR / 'migrate_to_new_problem_structure.py'}")
+        logger.error("Migration script not found in expected locations")
         raise
     except Exception as e:
         logger.error(f"Error running migration: {str(e)}", exc_info=True)
