@@ -1,6 +1,7 @@
 // FastAPIのスキーマに対応する型定義
 
 export interface ReviewRequest {
+  official_question_id?: number | null
   problem_id?: number | null
   problem_metadata_id?: number | null
   problem_details_id?: number | null

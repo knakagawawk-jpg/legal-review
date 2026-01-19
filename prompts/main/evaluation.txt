@@ -50,6 +50,7 @@
 
 ### 入力情報
 - 出題趣旨（`{PURPOSE_TEXT}`）- **先に読む**
+- 採点実感（`{GRADING_IMPRESSION_TEXT}`）- **司法試験の場合は参照する（ない場合もある）**
 - 問題文（`{QUESTION_TEXT}`）
 - 科目別の留意事項（`{SUBJECT_SPECIFIC_GUIDELINES}`）
 

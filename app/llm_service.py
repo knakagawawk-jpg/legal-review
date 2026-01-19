@@ -26,6 +26,7 @@ def generate_review(
     question_text: Optional[str],
     answer_text: str,
     purpose_text: Optional[str] = None,
+    grading_impression_text: Optional[str] = None,
 ) -> tuple[str, Dict[str, Any], str]:
     """
     LLMを使って答案の講評を生成する（1段階処理：答案を直接評価）
@@ -42,7 +43,14 @@ def generate_review(
         
         # ===== 答案の評価（1段階処理） =====
         print("答案の評価を開始...")
-        evaluation_result = _evaluate_answer(client, subject, question_text, answer_text, purpose_text)
+        evaluation_result = _evaluate_answer(
+            client,
+            subject,
+            question_text,
+            answer_text,
+            purpose_text,
+            grading_impression_text,
+        )
         
         # ===== 講評JSONを構築（evaluationのみ保持） =====
         review_json = {
@@ -69,7 +77,8 @@ def _evaluate_answer(
     subject: str,
     question_text: Optional[str],
     answer_text: str,
-    purpose_text: Optional[str] = None
+    purpose_text: Optional[str] = None,
+    grading_impression_text: Optional[str] = None,
 ) -> Dict[str, Any]:
     """答案を直接評価（evaluation.txt使用）"""
     try:
@@ -94,6 +103,7 @@ def _evaluate_answer(
         # 変数を置換
         prompt = template.replace("{SUBJECT_SPECIFIC_GUIDELINES}", subject_guidelines)
         prompt = prompt.replace("{PURPOSE_TEXT}", purpose_text or "（出題趣旨なし）")
+        prompt = prompt.replace("{GRADING_IMPRESSION_TEXT}", grading_impression_text or "（採点実感なし）")
         prompt = prompt.replace("{QUESTION_TEXT}", question_text or "（問題文なし）")
         prompt = prompt.replace("{ANSWER_TEXT}", answer_text)
         

@@ -119,6 +119,8 @@ class ProblemSubjectsResponse(BaseModel):
 
 # Review関連のスキーマ
 class ReviewRequest(BaseModel):
+    # 公式問題（推奨: official_question_id で指定）
+    official_question_id: Optional[int] = None
     problem_id: Optional[int] = None  # 既存問題を選択する場合（旧形式、後方互換性のため保持）
     problem_metadata_id: Optional[int] = None  # 新しい問題メタデータID（改善版）
     problem_details_id: Optional[int] = None  # 新しい問題詳細ID（設問指定、改善版）
@@ -128,6 +130,26 @@ class ReviewRequest(BaseModel):
     answer_text: str
     question_title: Optional[str] = None  # 問題タイトル（任意）
     reference_text: Optional[str] = None  # 参照文章（任意、講評上参照してほしい解説等）
+
+
+# ============================================================================
+# 公式問題（official_questions）関連のスキーマ
+# ============================================================================
+
+class OfficialQuestionYearsResponse(BaseModel):
+    years: List[int]
+
+
+class OfficialQuestionActiveResponse(BaseModel):
+    id: int
+    shiken_type: str
+    nendo: int
+    subject_id: int
+    version: int
+    status: str
+    text: str
+    syutudaisyusi: Optional[str] = None
+    grading_impression_text: Optional[str] = None  # 司法試験のみ（存在する場合）
 
 class ReviewResponse(BaseModel):
     review_id: Optional[int] = None

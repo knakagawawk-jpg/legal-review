@@ -1,6 +1,6 @@
 import os
 from sqlalchemy import Column, Integer, BigInteger, String, Text, DateTime, ForeignKey, Boolean, Index, UniqueConstraint, CheckConstraint, Numeric
-from sqlalchemy.sql import func, text
+from sqlalchemy.sql import func, text as sql_text
 try:
     # PostgreSQL用（SQLiteではコンパイルできないため、使用はURL判定で制御する）
     from sqlalchemy.dialects.postgresql import JSONB  # type: ignore
@@ -54,7 +54,8 @@ class OfficialQuestion(Base):
     """
     __tablename__ = "official_questions"
     
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    # SQLiteで自動採番を効かせるには INTEGER PRIMARY KEY が必要なので variant を使う
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     
     # 識別情報
     shiken_type = Column(String(10), nullable=False)  # 'shihou' or 'yobi'
@@ -90,20 +91,26 @@ class OfficialQuestion(Base):
         CheckConstraint("version >= 1", name="ck_version"),
         CheckConstraint("status IN ('active', 'old')", name="ck_status"),
         
-        # バージョンごとのユニーク制約
+        # バージョンごとのユニーク制約（oldを複数持つために必須）
         UniqueConstraint('shiken_type', 'nendo', 'subject_id', 'version', name='uq_question_version'),
+
+        # status='active' を1つに制限（oldは複数可）
+        Index(
+            "uq_one_active_per_question",
+            "shiken_type",
+            "nendo",
+            "subject_id",
+            unique=True,
+            sqlite_where=sql_text("status = 'active'"),
+            postgresql_where=sql_text("status = 'active'"),
+        ),
         
         # 検索用インデックス
         Index('idx_questions_lookup', 'shiken_type', 'nendo', 'subject_id', 'status'),
         Index('idx_questions_subject', 'subject_id'),
         CheckConstraint("subject_id BETWEEN 1 AND 18", name="ck_official_question_subject"),
         
-        # 注意: 部分ユニークインデックス（status='active'を1つに制限）は
-        # PostgreSQLでは postgresql_where パラメータで実装可能だが、
-        # SQLiteではサポートされていないため、アプリケーションレベルでの制約が必要
-        # PostgreSQL使用時は以下のように追加:
-        # Index('uq_one_active_per_question', 'shiken_type', 'nendo', 'kamoku',
-        #       postgresql_where=text("status = 'active'"), unique=True),
+        # 注意: 既存DBにはcreate_allが効かないので、別途マイグレーションで作成する
     )
 
 
@@ -119,7 +126,7 @@ class ShihouGradingImpression(Base):
     __tablename__ = "shihou_grading_impressions"
     
     question_id = Column(
-        BigInteger,
+        BigInteger().with_variant(Integer, "sqlite"),
         ForeignKey("official_questions.id", ondelete="CASCADE"),
         primary_key=True
     )
@@ -148,8 +155,9 @@ class Review(Base):
     """
     __tablename__ = "reviews"
     
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)  # 作成者（NULL可で共有講評も可能）
+    # SQLiteで自動採番を効かせるには INTEGER PRIMARY KEY が必要なので variant を使う
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger().with_variant(Integer, "sqlite"), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)  # 作成者（NULL可で共有講評も可能）
     
     # タイムスタンプ
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -158,7 +166,7 @@ class Review(Base):
     # 問題の種類と参照
     source_type = Column(String(10), nullable=False)  # 'official' or 'custom'
     official_question_id = Column(
-        BigInteger,
+        BigInteger().with_variant(Integer, "sqlite"),
         ForeignKey("official_questions.id", ondelete="SET NULL"),
         nullable=True,
         index=True
@@ -776,9 +784,10 @@ class UserReviewHistory(Base):
     """ユーザーの講評利用履歴（簡易情報を重複保存）"""
     __tablename__ = "user_review_history"
     
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    review_id = Column(BigInteger, ForeignKey("reviews.id", ondelete="CASCADE"), nullable=False, index=True)
+    # SQLiteで自動採番を効かせるには INTEGER PRIMARY KEY が必要なので variant を使う
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger().with_variant(Integer, "sqlite"), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    review_id = Column(BigInteger().with_variant(Integer, "sqlite"), ForeignKey("reviews.id", ondelete="CASCADE"), nullable=False, index=True)
     
     # 簡易情報（マイページ表示用）
     subject = Column(Integer, nullable=True, index=True)  # 科目ID（1-18、検索・フィルタ用）
@@ -836,8 +845,8 @@ class DashboardItem(Base):
     memo = Column(Text, nullable=True)  # メモ（自由記述）
     position = Column(Integer, nullable=False)  # 並び順（間隔方式：10,20,30...）
     
-    created_at = Column(String(30), nullable=False, server_default=text("datetime('now')"))
-    updated_at = Column(String(30), nullable=False, server_default=text("datetime('now')"))
+    created_at = Column(String(30), nullable=False, server_default=sql_text("datetime('now')"))
+    updated_at = Column(String(30), nullable=False, server_default=sql_text("datetime('now')"))
     deleted_at = Column(String(30), nullable=True)  # ソフト削除日時
     
     # リレーションシップ

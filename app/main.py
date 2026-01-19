@@ -48,7 +48,8 @@ from .schemas import (
     DashboardItemCreate, DashboardItemUpdate, DashboardItemResponse, DashboardItemListResponse,
     TimerSessionResponse, TimerDailyStatsResponse, TimerStartResponse, TimerStopResponse,
     StudyTagCreate, StudyTagResponse,
-    StudyItemCreate, StudyItemUpdate, StudyItemResponse, StudyItemReorderRequest
+    StudyItemCreate, StudyItemUpdate, StudyItemResponse, StudyItemReorderRequest,
+    OfficialQuestionYearsResponse, OfficialQuestionActiveResponse
 )
 from pydantic import BaseModel
 from .llm_service import generate_review, chat_about_review, free_chat
@@ -128,6 +129,33 @@ def _startup_migrate_reviews():
         # 起動を止めない（ただし講評生成でエラーになる可能性はある）
         logger.warning(f"Startup reviews migration skipped/failed: {str(e)}")
 
+    # official_questions の部分ユニークインデックス（active一意）を作成
+    try:
+        from .migrate_official_questions_indexes import migrate_official_questions_indexes
+
+        migrate_official_questions_indexes()
+        logger.info("✓ Startup official_questions index migration completed")
+    except Exception as e:
+        logger.warning(f"Startup official_questions index migration skipped/failed: {str(e)}")
+
+    # official_questions.id の自動採番（SQLite: INTEGER PRIMARY KEY）を保証
+    try:
+        from .migrate_official_questions_table import migrate_official_questions_table
+
+        migrate_official_questions_table()
+        logger.info("✓ Startup official_questions table migration completed")
+    except Exception as e:
+        logger.warning(f"Startup official_questions table migration skipped/failed: {str(e)}")
+
+    # official_questions が空なら seed（問題番号を廃止し official_question_id ベースへ移行するため）
+    try:
+        from .seed_official_questions import seed_official_questions_if_empty
+
+        seed_official_questions_if_empty()
+        logger.info("✓ Startup official_questions seed completed")
+    except Exception as e:
+        logger.warning(f"Startup official_questions seed skipped/failed: {str(e)}")
+
 # グローバルエラーハンドラーを追加（HTTPExceptionは除外）
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -180,6 +208,53 @@ def debug_llm_config():
         "prompts_dir": str(PROMPTS_DIR),
         "prompts_exist": prompts_exist,
     }
+
+
+@app.get("/v1/official-questions/years", response_model=OfficialQuestionYearsResponse)
+def list_official_question_years(
+    shiken_type: Optional[str] = Query(None, description="shihou/yobi（省略可）"),
+    db: Session = Depends(get_db),
+):
+    q = db.query(OfficialQuestion.nendo).distinct()
+    if shiken_type:
+        q = q.filter(OfficialQuestion.shiken_type == shiken_type)
+    # UIは基本activeを選ぶので active の年度のみ返す
+    q = q.filter(OfficialQuestion.status == "active").order_by(OfficialQuestion.nendo.desc())
+    years = [r[0] for r in q.all()]
+    return OfficialQuestionYearsResponse(years=years)
+
+
+@app.get("/v1/official-questions/active", response_model=OfficialQuestionActiveResponse)
+def get_active_official_question(
+    shiken_type: str = Query(..., description="shihou/yobi"),
+    nendo: int = Query(..., ge=2000),
+    subject_id: int = Query(..., ge=1, le=18),
+    db: Session = Depends(get_db),
+):
+    oq = db.query(OfficialQuestion).filter(
+        OfficialQuestion.shiken_type == shiken_type,
+        OfficialQuestion.nendo == nendo,
+        OfficialQuestion.subject_id == subject_id,
+        OfficialQuestion.status == "active",
+    ).first()
+    if not oq:
+        raise HTTPException(status_code=404, detail="Active official question not found")
+
+    grading_text = None
+    if oq.shiken_type == "shihou" and oq.grading_impression:
+        grading_text = oq.grading_impression.grading_impression_text
+
+    return OfficialQuestionActiveResponse(
+        id=oq.id,
+        shiken_type=oq.shiken_type,
+        nendo=oq.nendo,
+        subject_id=oq.subject_id,
+        version=oq.version,
+        status=oq.status,
+        text=oq.text,
+        syutudaisyusi=oq.syutudaisyusi,
+        grading_impression_text=grading_text,
+    )
 
 # 認証関連のエンドポイント（認証がOFFの場合は動作しない）
 class GoogleAuthRequest(BaseModel):
@@ -594,9 +669,11 @@ async def create_review(
         question_text = req.question_text
         subject_id = req.subject  # 科目ID（1-18）
         purpose_text = None
+        grading_impression_text = None
         problem_metadata_id = None
         problem_details_id = None
         problem_id = None  # 既存構造用（後方互換性）
+        official_question_id_req = None
         
         # 科目名からIDに変換（subject_nameが指定されている場合）
         if subject_id is None and req.subject_name:
@@ -604,8 +681,27 @@ async def create_review(
             if subject_id is None:
                 raise HTTPException(status_code=400, detail=f"無効な科目名: {req.subject_name}")
         
-        # 新しい構造を使用する場合（優先）
-        if req.problem_metadata_id:
+        # 公式問題を official_question_id で指定する場合（最優先）
+        if req.official_question_id:
+            official_q = db.query(OfficialQuestion).filter(OfficialQuestion.id == req.official_question_id).first()
+            if not official_q:
+                raise HTTPException(status_code=404, detail="Official question not found")
+
+            official_question_id_req = official_q.id
+            question_text = official_q.text
+            purpose_text = official_q.syutudaisyusi
+            subject_id = official_q.subject_id
+
+            # 司法試験の場合のみ採点実感を参照（存在する場合）
+            if official_q.shiken_type == "shihou" and official_q.grading_impression:
+                grading_impression_text = official_q.grading_impression.grading_impression_text
+
+            problem_metadata_id = None
+            problem_details_id = None
+            problem_id = None
+
+        # 新しい構造（ProblemMetadata/ProblemDetails）を使用する場合（後方互換）
+        elif req.problem_metadata_id:
             metadata = db.query(ProblemMetadata).filter(ProblemMetadata.id == req.problem_metadata_id).first()
             if not metadata:
                 raise HTTPException(status_code=404, detail="Problem metadata not found")
@@ -682,6 +778,7 @@ async def create_review(
                 question_text=question_text,
                 answer_text=req.answer_text,
                 purpose_text=purpose_text,  # 出題趣旨を渡す
+                grading_impression_text=grading_impression_text,  # 司法試験のみ
             )
         except FileNotFoundError as e:
             import traceback
@@ -720,35 +817,21 @@ async def create_review(
             )
 
         # 4) Review保存
-        # official_question_idを取得（可能な場合）
+        # - official_question_id 指定の場合: official
+        # - それ以外: custom
         official_question_id = None
         source_type = "custom"
         exam_type = None
         year = None
-        
-        # ProblemMetadataからOfficialQuestionを検索
-        if problem_metadata_id:
-            metadata = db.query(ProblemMetadata).filter(ProblemMetadata.id == problem_metadata_id).first()
-            if metadata:
-                # exam_typeをshiken_typeに変換
-                shiken_type_map = {"司法試験": "shihou", "予備試験": "yobi"}
-                shiken_type = shiken_type_map.get(metadata.exam_type)
-                
-                if shiken_type:
-                    subject_id_for_official = _normalize_subject_id(metadata.subject)
-                    # OfficialQuestionを検索（subject_idは1-18の数字）
-                    official_q = db.query(OfficialQuestion).filter(
-                        OfficialQuestion.shiken_type == shiken_type,
-                        OfficialQuestion.nendo == metadata.year,
-                        OfficialQuestion.subject_id == subject_id_for_official,  # 科目ID（1-18）
-                        OfficialQuestion.status == "active"
-                    ).first()
-                    
-                    if official_q:
-                        official_question_id = official_q.id
-                        source_type = "official"
-                        exam_type = metadata.exam_type
-                        year = metadata.year
+
+        if official_question_id_req:
+            source_type = "official"
+            official_question_id = official_question_id_req
+            # UserReviewHistory用に試験種別・年度を設定
+            official_q = db.query(OfficialQuestion).filter(OfficialQuestion.id == official_question_id_req).first()
+            if official_q:
+                exam_type = "司法試験" if official_q.shiken_type == "shihou" else "予備試験"
+                year = official_q.nendo
         
         rev = Review(
             user_id=current_user.id,

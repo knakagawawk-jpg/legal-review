@@ -39,9 +39,11 @@ export default function ReviewPage() {
   const [newSubjectId, setNewSubjectId] = useState<number | null>(null)  // 新規問題用の科目ID
   const [selectedMetadata, setSelectedMetadata] = useState<ProblemMetadata | null>(null)
   const [selectedDetails, setSelectedDetails] = useState<ProblemMetadataWithDetails | null>(null)
+  const [officialQuestionId, setOfficialQuestionId] = useState<number | null>(null)
   const [questionTitle, setQuestionTitle] = useState<string>("")
   const [questionText, setQuestionText] = useState<string>("")
   const [referenceText, setReferenceText] = useState<string>("")
+  const [gradingImpressionText, setGradingImpressionText] = useState<string>("")
   const [answerText, setAnswerText] = useState<string>("")
 
   // データ取得
@@ -74,7 +76,8 @@ export default function ReviewPage() {
     const fetchYears = async () => {
       setLoadingYears(true)
       try {
-        const res = await fetch("/api/problems/years")
+        // 公式問題（active）ベースで年度を取得
+        const res = await fetch("/api/official-questions/years")
         if (!res.ok) throw new Error("年度の取得に失敗しました")
         const data = await res.json()
         const fetchedYears = (data.years || []).filter(
@@ -93,9 +96,58 @@ export default function ReviewPage() {
     fetchYears()
   }, [])
 
+  // 公式問題（active）を取得（既存問題モード）
+  useEffect(() => {
+    const fetchOfficial = async () => {
+      if (mode !== "existing") return
+      if (!examType || !year || subject === null) {
+        setOfficialQuestionId(null)
+        setQuestionText("")
+        setReferenceText("")
+        setGradingImpressionText("")
+        return
+      }
+      setLoadingMetadata(true)
+      setError(null)
+      try {
+        const shiken_type = examType === "司法試験" ? "shihou" : "yobi"
+        const res = await fetch(
+          `/api/official-questions/active?shiken_type=${encodeURIComponent(shiken_type)}&nendo=${encodeURIComponent(
+            year.toString(),
+          )}&subject_id=${encodeURIComponent(subject.toString())}`,
+        )
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({ error: "公式問題の取得に失敗しました" }))
+          throw new Error(errorData.error || errorData.detail || `公式問題の取得に失敗しました (HTTP ${res.status})`)
+        }
+        const data = await res.json()
+        setOfficialQuestionId(data.id ?? null)
+        setQuestionText(data.text || "")
+        setReferenceText(data.syutudaisyusi || "")
+        setGradingImpressionText(data.grading_impression_text || "")
+
+        // 旧UI状態は互換のためクリア
+        setSelectedMetadata(null)
+        setSelectedDetails(null)
+        setQuestionTitle("")
+      } catch (err: any) {
+        setOfficialQuestionId(null)
+        setQuestionText("")
+        setReferenceText("")
+        setGradingImpressionText("")
+        setError(err.message)
+      } finally {
+        setLoadingMetadata(false)
+      }
+    }
+    fetchOfficial()
+  }, [mode, examType, year, subject])
+
   // 問題メタデータを取得
   useEffect(() => {
     if (mode === "existing" && (examType || year || subject !== null)) {
+      // 既存問題モードは official_question_id ベースへ移行したため、旧ProblemMetadata取得は無効化
+      return
       const fetchMetadata = async () => {
         setLoadingMetadata(true)
         setError(null)
@@ -205,15 +257,11 @@ export default function ReviewPage() {
         answer_text: answerText,
       }
 
-      if (mode === "existing" && selectedDetails) {
-        if (selectedDetails.details && selectedDetails.details.length > 0) {
-          requestBody.problem_details_id = selectedDetails.details[0].id
-          requestBody.problem_metadata_id = selectedMetadata?.id
-        } else {
-          throw new Error("問題詳細が取得できませんでした。問題を再度選択してください。")
+      if (mode === "existing") {
+        if (!officialQuestionId) {
+          throw new Error("公式問題が取得できませんでした。試験種別・年度・科目を確認してください。")
         }
-        // 既存問題の場合はsubject_idはmetadataから取得されるため不要
-        // question_titleとreference_textも送信しない
+        requestBody.official_question_id = officialQuestionId
       } else {
         // 新規問題の場合のみ、question_titleとreference_textを送信
         if (!questionText.trim()) {
@@ -262,7 +310,7 @@ export default function ReviewPage() {
   const canProceedToStep2 = () => {
     // 問題の準備ができているか
     const hasProblem = mode === "existing"
-      ? selectedDetails !== null && questionText !== ""
+      ? officialQuestionId !== null && questionText !== ""
       : questionText.trim() !== ""
     // 答案が入力されているか（最低100文字推奨）
     const hasAnswer = answerText.trim().length >= 100
@@ -431,7 +479,7 @@ export default function ReviewPage() {
                 <>
                   {examType && year && subject !== null ? (
                     <>
-                      {selectedDetails && questionText ? (
+                      {officialQuestionId && questionText ? (
                         <div className="p-2.5">
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2">
@@ -439,7 +487,7 @@ export default function ReviewPage() {
                                 <BookOpen className="h-3 w-3 text-indigo-600" />
                               </div>
                               <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100 text-xs">
-                                {selectedMetadata?.exam_type} {formatYearToEra(selectedMetadata?.year || 0)} {selectedMetadata?.subject_name || (selectedMetadata?.subject ? getSubjectName(selectedMetadata.subject) : "")}
+                                {examType} {formatYearToEra(year || 0)} {subject !== null ? getSubjectName(subject) : ""}
                               </Badge>
                             </div>
                             <Button
@@ -477,13 +525,27 @@ export default function ReviewPage() {
                               </CollapsibleContent>
                             </Collapsible>
                           )}
+
+                          {gradingImpressionText && (
+                            <Collapsible className="mt-2">
+                              <CollapsibleTrigger className="flex items-center gap-1 text-xs text-slate-600 hover:text-slate-800">
+                                <ChevronRight className="h-3 w-3" />
+                                <span className="font-medium">採点実感（司法試験）</span>
+                              </CollapsibleTrigger>
+                              <CollapsibleContent className="mt-1.5">
+                                <div className="max-h-[120px] overflow-y-auto rounded bg-slate-50 p-2 text-xs leading-relaxed text-slate-700">
+                                  {gradingImpressionText}
+                                </div>
+                              </CollapsibleContent>
+                            </Collapsible>
+                          )}
                         </div>
                       ) : (
                         <>
                           {loadingMetadata ? (
                             <div className="flex items-center justify-center gap-2 p-4">
                               <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
-                              <p className="text-xs text-slate-500">問題データを取得中...</p>
+                              <p className="text-xs text-slate-500">公式問題を取得中...</p>
                             </div>
                           ) : metadataList.length > 0 ? (
                             <div className="p-2.5">
