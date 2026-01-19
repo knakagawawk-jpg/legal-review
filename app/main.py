@@ -115,6 +115,19 @@ app.add_middleware(
 # タイマー関連のルートを登録
 register_timer_routes(app)
 
+# ローカル起動（uvicorn直起動）でもDB互換を保つため、軽量なマイグレーションを起動時に実行する。
+# ※ threads/messages のような破壊的マイグレーションはここでは実行しない。
+@app.on_event("startup")
+def _startup_migrate_reviews():
+    try:
+        from .migrate_reviews_tables import migrate_reviews_and_history
+
+        migrate_reviews_and_history(migrate_old_data=True)
+        logger.info("✓ Startup reviews migration completed")
+    except Exception as e:
+        # 起動を止めない（ただし講評生成でエラーになる可能性はある）
+        logger.warning(f"Startup reviews migration skipped/failed: {str(e)}")
+
 # グローバルエラーハンドラーを追加（HTTPExceptionは除外）
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):

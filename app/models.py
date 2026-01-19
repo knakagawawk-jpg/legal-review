@@ -1,6 +1,11 @@
+import os
 from sqlalchemy import Column, Integer, BigInteger, String, Text, DateTime, ForeignKey, Boolean, Index, UniqueConstraint, CheckConstraint, Numeric
 from sqlalchemy.sql import func, text
-from sqlalchemy.dialects.postgresql import JSONB
+try:
+    # PostgreSQL用（SQLiteではコンパイルできないため、使用はURL判定で制御する）
+    from sqlalchemy.dialects.postgresql import JSONB  # type: ignore
+except Exception:  # pragma: no cover
+    JSONB = None  # type: ignore
 from sqlalchemy.orm import relationship
 from .db import Base
 
@@ -163,9 +168,12 @@ class Review(Base):
     # ユーザー答案
     answer_text = Column(Text, nullable=False)
     
-    # LLMの出力結果（JSONB形式）
-    # PostgreSQL: JSONB型、SQLite: Text型（JSON文字列として保存）
-    kouhyo_kekka = Column(JSONB, nullable=False) if hasattr(JSONB, '__init__') else Column(Text, nullable=False)
+    # LLMの出力結果
+    # - SQLite: Text（JSON文字列として保存）
+    # - PostgreSQL: JSONB（DB URL 判定）
+    _db_url = (os.getenv("DATABASE_URL") or "").lower()
+    _use_jsonb = bool(JSONB) and (_db_url.startswith("postgresql://") or _db_url.startswith("postgres://"))
+    kouhyo_kekka = Column(JSONB, nullable=False) if _use_jsonb else Column(Text, nullable=False)
     
     # チャット機能
     thread_id = Column(

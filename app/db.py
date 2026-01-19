@@ -4,7 +4,9 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from typing import Generator
 
 # 環境変数から取得、なければデフォルト値（ローカル開発用）
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./dev.db")
+# 旧: sqlite:///./dev.db だと起動ディレクトリ依存で別DBを作ってしまうため、
+# リポジトリ既定の data/dev.db をデフォルトにする。
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/dev.db")
 
 engine = create_engine(
     DATABASE_URL,

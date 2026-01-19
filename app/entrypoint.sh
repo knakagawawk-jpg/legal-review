@@ -21,6 +21,12 @@ if ! python3 /app/app/migrate_note_db.py; then
     echo "WARNING: Note DB migration failed, but continuing..."
 fi
 
+# reviews / user_review_history マイグレーション（旧dev.db互換）
+echo "Running reviews migration..."
+if ! python3 /app/app/migrate_reviews_tables.py; then
+    echo "WARNING: Reviews migration failed, but continuing..."
+fi
+
 # データベース初期化スクリプトを実行
 echo "Running database initialization..."
 if ! python3 /app/app/init_db.py; then
