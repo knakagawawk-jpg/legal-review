@@ -31,11 +31,13 @@ sys.path.insert(0, str(BASE_DIR))
 try:
     from app.db import SessionLocal
     from app.models import OfficialQuestion, ShihouGradingImpression, ProblemMetadata, ProblemDetails
+    from config.subjects import get_subject_id
 except ImportError:
     import os
     os.chdir(str(BASE_DIR))
     from app.db import SessionLocal
     from app.models import OfficialQuestion, ShihouGradingImpression, ProblemMetadata, ProblemDetails
+    from config.subjects import get_subject_id
 
 
 def seed_official_questions_if_empty() -> int:
@@ -59,7 +61,20 @@ def seed_official_questions_if_empty() -> int:
             if not shiken_type:
                 continue
 
-            subject_id = meta.subject
+            # problem_metadata.subject は DB 過去データで文字列が混在し得るため正規化する
+            raw_subject = getattr(meta, "subject", None)
+            subject_id: int | None
+            if raw_subject is None:
+                logger.warning(f"Skip meta id={meta.id}: subject is NULL")
+                continue
+            if isinstance(raw_subject, int):
+                subject_id = raw_subject
+            else:
+                # "商 法" のような揺れも get_subject_id 側で吸収される想定
+                subject_id = get_subject_id(str(raw_subject))
+            if not subject_id or not (1 <= int(subject_id) <= 18):
+                logger.warning(f"Skip meta id={meta.id}: invalid subject={raw_subject!r}")
+                continue
             nendo = meta.year
 
             # details: 本プロジェクトでは基本1件想定。複数ある場合は最小question_numberを採用
@@ -75,7 +90,7 @@ def seed_official_questions_if_empty() -> int:
             oq = OfficialQuestion(
                 shiken_type=shiken_type,
                 nendo=nendo,
-                subject_id=int(subject_id) if subject_id is not None else 1,
+                subject_id=int(subject_id),
                 version=1,
                 status="active",
                 text=detail.question_text,
