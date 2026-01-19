@@ -6,6 +6,9 @@ param(
   [switch]$TestCall,
   [switch]$ShowBackendLogs,
   [switch]$FetchLlmConfig,
+  [switch]$FixDotenvOverride,
+  [switch]$RebuildBackend,
+  [switch]$RestartBackend,
   [int]$LogTail = 200
 )
 
@@ -55,4 +58,34 @@ docker compose exec -T backend sh -lc 'curl -s http://localhost:8000/debug/llm-c
 
   Write-Host "Fetching /debug/llm-config from backend ..."
   & ssh -i $KeyPath "$UserName@$HostName" $remoteLlmConfigCmd
+}
+
+if ($FixDotenvOverride) {
+  # NOTE: PowerShellのクォート事故を避けるため、置換用の固定文字列を組み立てる
+  $remoteFixCmd = (@'
+cd __REMOTE_DIR__; python3 -c 'from pathlib import Path; p=Path("config/settings.py"); s=p.read_text(encoding="utf-8"); target="load_dotenv(env_path, override=True)"; repl="load_dotenv(env_path, override=False)"; changed=(target in s); p.write_text((s.replace(target,repl) if changed else s), encoding="utf-8"); print("patched="+str(changed))'
+'@ -replace "__REMOTE_DIR__", $RemoteDir)
+
+  Write-Host "Patching remote config/settings.py (override=False) ..."
+  & ssh -i $KeyPath "$UserName@$HostName" $remoteFixCmd
+}
+
+if ($RebuildBackend) {
+  $remoteBuildCmd = (@'
+cd __REMOTE_DIR__
+docker compose --profile production build backend
+'@ -replace "__REMOTE_DIR__", $RemoteDir) -replace "(\r?\n)+", "; "
+
+  Write-Host "Rebuilding backend image (production profile) ..."
+  & ssh -i $KeyPath "$UserName@$HostName" $remoteBuildCmd
+}
+
+if ($RestartBackend) {
+  $remoteUpCmd = (@'
+cd __REMOTE_DIR__
+docker compose --profile production up -d --force-recreate backend
+'@ -replace "__REMOTE_DIR__", $RemoteDir) -replace "(\r?\n)+", "; "
+
+  Write-Host "Restarting backend container (force-recreate) ..."
+  & ssh -i $KeyPath "$UserName@$HostName" $remoteUpCmd
 }
