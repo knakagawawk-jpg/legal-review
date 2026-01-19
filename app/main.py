@@ -221,6 +221,15 @@ def list_official_question_years(
     # UIは基本activeを選ぶので active の年度のみ返す
     q = q.filter(OfficialQuestion.status == "active").order_by(OfficialQuestion.nendo.desc())
     years = [r[0] for r in q.all()]
+
+    # フォールバック: official_questions がまだ未投入の場合でも年度が出るようにする
+    if not years:
+        q2 = db.query(ProblemMetadata.year).distinct()
+        if shiken_type:
+            exam_type = "司法試験" if shiken_type == "shihou" else "予備試験"
+            q2 = q2.filter(ProblemMetadata.exam_type == exam_type)
+        q2 = q2.order_by(ProblemMetadata.year.desc())
+        years = [r[0] for r in q2.all()]
     return OfficialQuestionYearsResponse(years=years)
 
 

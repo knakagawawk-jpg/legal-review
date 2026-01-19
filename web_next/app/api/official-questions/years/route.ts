@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 
-const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:8000"
+// ローカル開発（npm run dev）では backend ホスト名が解決できないため localhost をデフォルトにする。
+// Docker Compose（web-dev/web）では BACKEND_INTERNAL_URL が設定される想定。
+const BACKEND_URL =
+  process.env.BACKEND_INTERNAL_URL ||
+  (process.env.NODE_ENV === "development" ? "http://127.0.0.1:8000" : "http://backend:8000")
 
 export async function GET(request: NextRequest) {
   try {
