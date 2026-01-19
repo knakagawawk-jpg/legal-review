@@ -247,7 +247,46 @@ def get_active_official_question(
         OfficialQuestion.status == "active",
     ).first()
     if not oq:
-        raise HTTPException(status_code=404, detail="Active official question not found")
+        # フォールバック: official_questions が未投入/不足の場合は problem_metadata/problem_details から1件生成
+        exam_type = "司法試験" if shiken_type == "shihou" else "予備試験"
+        meta = db.query(ProblemMetadata).filter(
+            ProblemMetadata.exam_type == exam_type,
+            ProblemMetadata.year == nendo,
+            ProblemMetadata.subject == subject_id,
+        ).first()
+        if meta:
+            detail = db.query(ProblemDetails).filter(
+                ProblemDetails.problem_metadata_id == meta.id
+            ).order_by(ProblemDetails.question_number).first()
+            if detail:
+                try:
+                    oq = OfficialQuestion(
+                        shiken_type=shiken_type,
+                        nendo=nendo,
+                        subject_id=subject_id,
+                        version=1,
+                        status="active",
+                        text=detail.question_text,
+                        syutudaisyusi=detail.purpose,
+                    )
+                    db.add(oq)
+                    db.flush()  # oq.id を確定
+
+                    # 司法試験のみ採点実感を保存
+                    if shiken_type == "shihou" and detail.scoring_notes:
+                        db.add(
+                            ShihouGradingImpression(
+                                question_id=oq.id,
+                                grading_impression_text=detail.scoring_notes,
+                            )
+                        )
+                    db.commit()
+                    db.refresh(oq)
+                except Exception:
+                    db.rollback()
+
+        if not oq:
+            raise HTTPException(status_code=404, detail="Active official question not found")
 
     grading_text = None
     if oq.shiken_type == "shihou" and oq.grading_impression:

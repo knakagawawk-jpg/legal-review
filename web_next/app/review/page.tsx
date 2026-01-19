@@ -71,21 +71,22 @@ export default function ReviewPage() {
   }, [answerText])
 
 
-  // 年度一覧を取得
+  // 年度一覧を取得（試験種別でフィルタ）
   useEffect(() => {
     const fetchYears = async () => {
+      if (mode !== "existing") return
       setLoadingYears(true)
       try {
-        // 公式問題（active）ベースで年度を取得
-        const res = await fetch("/api/official-questions/years")
+        const shiken_type =
+          examType === "司法試験" ? "shihou" : examType === "予備試験" ? "yobi" : null
+        const url = shiken_type ? `/api/official-questions/years?shiken_type=${shiken_type}` : "/api/official-questions/years"
+        const res = await fetch(url)
         if (!res.ok) throw new Error("年度の取得に失敗しました")
         const data = await res.json()
         const fetchedYears = (data.years || []).filter(
           (year: unknown): year is number => typeof year === "number" && Number.isFinite(year),
         )
         setYears(fetchedYears)
-        // デバッグ: 取得した年度をログに出力
-        console.log("年度データ取得:", { years: fetchedYears, count: fetchedYears.length })
       } catch (err: any) {
         console.error("年度データ取得エラー:", err)
         setError(err.message)
@@ -94,7 +95,7 @@ export default function ReviewPage() {
       }
     }
     fetchYears()
-  }, [])
+  }, [mode, examType])
 
   // 公式問題（active）を取得（既存問題モード）
   useEffect(() => {
