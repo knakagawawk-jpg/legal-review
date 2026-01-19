@@ -8,8 +8,12 @@ try:
     # プロジェクトルートの.envファイルを読み込む
     env_path = Path(__file__).parent.parent / ".env"
     if env_path.exists():
-        # Docker Compose側で空文字が入るケースでも .env を優先できるように override=True
-        load_dotenv(env_path, override=True)
+        # NOTE:
+        # 本番では docker-compose の env_file などで環境変数が注入される前提。
+        # .env 側が空（ANTHROPIC_API_KEY= のように空文字）だと override=True により
+        # 実行プロセス内の環境変数が空で上書きされ、LLMが「未設定扱い」になる。
+        # そのため、既存の環境変数を空で上書きしないよう override=False にする。
+        load_dotenv(env_path, override=False)
 except ImportError:
     # python-dotenvがインストールされていない場合はスキップ
     pass
