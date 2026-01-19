@@ -162,6 +162,10 @@ class ReviewResponse(BaseModel):
     subject_name: Optional[str] = None  # 科目名（表示用）
     purpose: Optional[str] = None
     question_title: Optional[str] = None  # 問題タイトル（新規問題の場合）
+    # 追加情報（UI表示用）
+    source_type: Optional[str] = None  # "official" | "custom"
+    reference_text: Optional[str] = None  # Customの「参照文章」（提供されれば）
+    grading_impression_text: Optional[str] = None  # 司法試験の「採点実感」（存在する場合）
 
 class ReviewChatRequest(BaseModel):
     # 旧: submission_idベース（現在はreview_id中心のため非推奨）

@@ -957,6 +957,9 @@ async def create_review(
             subject=subject_id,  # 科目ID（1-18）
             subject_name=subject_name,  # 科目名（表示用）
             purpose=purpose_text,
+            source_type=source_type,
+            reference_text=reference_text if source_type == "custom" else None,
+            grading_impression_text=grading_impression_text,
         )
     except HTTPException:
         raise
@@ -1009,9 +1012,11 @@ async def get_review_by_id(
     # 問題情報を取得
     question_text = review.custom_question_text or ""
     purpose_text = None
+    grading_impression_text = None
     subject_id = None
     subject_name = None
     question_title = None
+    reference_text = None
     
     # 既存問題の場合：OfficialQuestionから全情報を取得
     if review.official_question_id:
@@ -1022,6 +1027,9 @@ async def get_review_by_id(
             if official_q.subject_id:
                 subject_id = official_q.subject_id  # 科目ID（1-18）
                 subject_name = get_subject_name(subject_id)
+            # 司法試験のみ採点実感を返す（存在する場合）
+            if official_q.shiken_type == "shihou" and official_q.grading_impression:
+                grading_impression_text = official_q.grading_impression.grading_impression_text
     
     # 新規問題の場合：UserReviewHistoryからタイトルと参照文章を取得
     history = db.query(UserReviewHistory).filter(UserReviewHistory.review_id == review_id).first()
@@ -1035,6 +1043,7 @@ async def get_review_by_id(
                 question_title = history.question_title
             if history.reference_text:
                 purpose_text = history.reference_text
+                reference_text = history.reference_text
     
     # review_markdownを生成（JSONから）
     # llm_serviceの_format_markdown関数を使用
@@ -1054,6 +1063,9 @@ async def get_review_by_id(
         subject_name=subject_name,  # 科目名（表示用）
         purpose=purpose_text,
         question_title=question_title,
+        source_type=review.source_type,
+        reference_text=reference_text if review.source_type == "custom" else None,
+        grading_impression_text=grading_impression_text,
     )
 
 @app.post("/v1/review/chat", response_model=ReviewChatResponse)

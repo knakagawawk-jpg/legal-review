@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, type RefObject } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -14,9 +14,6 @@ import {
   BookOpen,
   TrendingUp,
   Lightbulb,
-  ChevronRight,
-  ChevronUp,
-  ChevronDown,
   MessageCircle,
   Trash2,
   Send,
@@ -42,8 +39,8 @@ export default function ReviewResultPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [leftWidth, setLeftWidth] = useState(40)
-  const [leftTab, setLeftTab] = useState<"answer" | "question" | "purpose">("answer")
-  const [rightTab, setRightTab] = useState<"review" | "question" | "purpose">("review")
+  const [leftTab, setLeftTab] = useState<"answer" | "chat" | "question" | "purpose" | "grading_impression">("answer")
+  const [rightTab, setRightTab] = useState<"review" | "chat" | "question" | "purpose" | "grading_impression">("review")
   const [isLargeScreen, setIsLargeScreen] = useState(true)
 
   useEffect(() => {
@@ -56,7 +53,6 @@ export default function ReviewResultPage() {
   }, [])
   
   const [copied, setCopied] = useState(false)
-  const [isChatOpen, setIsChatOpen] = useState(false)
   const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([
     {
       role: "assistant",
@@ -65,7 +61,8 @@ export default function ReviewResultPage() {
   ])
   const [inputValue, setInputValue] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const chatContainerRef = useRef<HTMLDivElement>(null)
+  const chatContainerLeftRef = useRef<HTMLDivElement>(null)
+  const chatContainerRightRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const fetchReview = async () => {
@@ -93,9 +90,12 @@ export default function ReviewResultPage() {
   }, [reviewId])
 
   useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
-    }
+    const refs = [chatContainerLeftRef, chatContainerRightRef]
+    refs.forEach((ref) => {
+      if (ref.current) {
+        ref.current.scrollTop = ref.current.scrollHeight
+      }
+    })
   }, [chatMessages, isLoading])
 
   if (loading) {
@@ -202,7 +202,68 @@ export default function ReviewResultPage() {
   const subjectName = review.subject_name || (review.subject ? getSubjectName(review.subject) : "")
   const questionText = review.question_text || ""
   const purposeText = review.purpose || ""
+  const gradingImpressionText = review.grading_impression_text || ""
+  const purposeLabel = review.source_type === "custom" ? "参考文章" : "出題趣旨"
   const questionTitle = review.question_title || ""
+  const chatBadgeCount = Math.max(chatMessages.length - 1, 0)
+
+  const ChatPanel = ({ containerRef }: { containerRef: RefObject<HTMLDivElement> }) => (
+    <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden h-full flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-gradient-to-r from-lime-500/10 to-transparent">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="p-1.5 rounded-lg bg-lime-500/10 shrink-0">
+            <MessageCircle className="h-4 w-4 text-lime-600" />
+          </div>
+          <span className="text-sm font-semibold text-foreground truncate">チャット</span>
+          {chatBadgeCount > 0 && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-lime-500/15 text-lime-700 font-medium shrink-0">
+              {chatBadgeCount}
+            </span>
+          )}
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleClearChat}
+          className="h-7 text-muted-foreground hover:text-foreground rounded-full"
+        >
+          <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+          クリア
+        </Button>
+      </div>
+
+      <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3 custom-scrollbar min-h-0">
+        {chatMessages.map((message, index) => (
+          <ChatMessage key={index} {...message} />
+        ))}
+        {isLoading && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="flex gap-1">
+              <span className="h-2 w-2 rounded-full bg-lime-600 animate-bounce" style={{ animationDelay: "0ms" }} />
+              <span className="h-2 w-2 rounded-full bg-lime-600 animate-bounce" style={{ animationDelay: "150ms" }} />
+              <span className="h-2 w-2 rounded-full bg-lime-600 animate-bounce" style={{ animationDelay: "300ms" }} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="px-4 pb-4 pt-2 shrink-0">
+        <div className="flex gap-3">
+          <input
+            type="text"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
+            placeholder="質問を入力..."
+            className="flex-1 px-4 py-2.5 rounded-full border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-lime-500/20 focus:border-lime-600 transition-all placeholder:text-muted-foreground/60"
+          />
+          <Button onClick={handleSendMessage} disabled={!inputValue.trim() || isLoading} className="px-5 rounded-full">
+            <Send className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
 
   return (
     <div 
@@ -237,12 +298,7 @@ export default function ReviewResultPage() {
       </header>
 
       <div 
-        className="flex flex-row min-h-0 overflow-hidden w-full"
-        style={{ 
-          height: isChatOpen 
-            ? 'calc(50vh - 3rem)'
-            : 'calc(100vh - 3rem - 3.5rem)'
-        }}
+        className="flex flex-row flex-1 min-h-0 overflow-hidden w-full"
       >
         {/* Left Panel */}
         <div
@@ -255,17 +311,36 @@ export default function ReviewResultPage() {
           }}
         >
           <div className="px-5 py-3 border-b border-border shrink-0 flex items-center justify-between gap-4 bg-card/50">
-            <button
-              onClick={() => setLeftTab("answer")}
-              className={cn(
-                "text-sm font-semibold transition-all px-3 py-1 rounded-full",
-                leftTab === "answer"
-                  ? "text-primary bg-primary/10"
-                  : "text-muted-foreground hover:text-foreground hover:bg-secondary",
-              )}
-            >
-              答案
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setLeftTab("answer")}
+                className={cn(
+                  "text-sm font-semibold transition-all px-3 py-1 rounded-full",
+                  leftTab === "answer"
+                    ? "text-primary bg-primary/10"
+                    : "text-muted-foreground hover:text-foreground hover:bg-secondary",
+                )}
+              >
+                答案
+              </button>
+              <button
+                onClick={() => setLeftTab("chat")}
+                className={cn(
+                  "text-sm font-semibold transition-all px-3 py-1 rounded-full flex items-center",
+                  leftTab === "chat"
+                    ? "text-lime-700 bg-lime-500/15"
+                    : "text-muted-foreground hover:text-lime-700 hover:bg-lime-500/10",
+                )}
+              >
+                <MessageCircle className="h-4 w-4 mr-1.5" />
+                チャット
+                {chatBadgeCount > 0 && (
+                  <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-lime-500/15 text-lime-700 font-medium">
+                    {chatBadgeCount}
+                  </span>
+                )}
+              </button>
+            </div>
             <div className="flex items-center gap-1.5">
               <SubTabButton
                 active={leftTab === "question"}
@@ -277,12 +352,25 @@ export default function ReviewResultPage() {
                 active={leftTab === "purpose"}
                 onClick={() => setLeftTab("purpose")}
                 icon={BookOpen}
-                label="出題趣旨"
+                label={purposeLabel}
               />
+              {!!gradingImpressionText && (
+                <SubTabButton
+                  active={leftTab === "grading_impression"}
+                  onClick={() => setLeftTab("grading_impression")}
+                  icon={BookOpen}
+                  label="採点実感"
+                />
+              )}
             </div>
           </div>
 
-          <div className="flex-1 p-5 overflow-y-auto custom-scrollbar">
+          <div
+            className={cn(
+              "flex-1 p-5 custom-scrollbar",
+              leftTab === "chat" ? "overflow-hidden" : "overflow-y-auto",
+            )}
+          >
             {leftTab === "answer" && (
               <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-gradient-to-r from-secondary/50 to-transparent">
@@ -325,6 +413,14 @@ export default function ReviewResultPage() {
                 <pre className="text-sm whitespace-pre-wrap text-muted-foreground leading-7">{purposeText}</pre>
               </div>
             )}
+
+            {leftTab === "grading_impression" && (
+              <div className="bg-secondary/40 rounded-2xl border border-border/50 p-5">
+                <pre className="text-sm whitespace-pre-wrap text-muted-foreground leading-7">{gradingImpressionText}</pre>
+              </div>
+            )}
+
+            {leftTab === "chat" && <ChatPanel containerRef={chatContainerLeftRef} />}
           </div>
         </div>
 
@@ -343,17 +439,36 @@ export default function ReviewResultPage() {
           }}
         >
           <div className="px-5 py-3 border-b border-border shrink-0 flex items-center justify-between gap-4 bg-card/50">
-            <button
-              onClick={() => setRightTab("review")}
-              className={cn(
-                "text-sm font-semibold transition-all px-3 py-1 rounded-full",
-                rightTab === "review"
-                  ? "text-primary bg-primary/10"
-                  : "text-muted-foreground hover:text-foreground hover:bg-secondary",
-              )}
-            >
-              講評
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setRightTab("review")}
+                className={cn(
+                  "text-sm font-semibold transition-all px-3 py-1 rounded-full",
+                  rightTab === "review"
+                    ? "text-primary bg-primary/10"
+                    : "text-muted-foreground hover:text-foreground hover:bg-secondary",
+                )}
+              >
+                講評
+              </button>
+              <button
+                onClick={() => setRightTab("chat")}
+                className={cn(
+                  "text-sm font-semibold transition-all px-3 py-1 rounded-full flex items-center",
+                  rightTab === "chat"
+                    ? "text-lime-700 bg-lime-500/15"
+                    : "text-muted-foreground hover:text-lime-700 hover:bg-lime-500/10",
+                )}
+              >
+                <MessageCircle className="h-4 w-4 mr-1.5" />
+                チャット
+                {chatBadgeCount > 0 && (
+                  <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-lime-500/15 text-lime-700 font-medium">
+                    {chatBadgeCount}
+                  </span>
+                )}
+              </button>
+            </div>
             <div className="flex items-center gap-1.5">
               <SubTabButton
                 active={rightTab === "question"}
@@ -365,12 +480,25 @@ export default function ReviewResultPage() {
                 active={rightTab === "purpose"}
                 onClick={() => setRightTab("purpose")}
                 icon={BookOpen}
-                label="出題趣旨"
+                label={purposeLabel}
               />
+              {!!gradingImpressionText && (
+                <SubTabButton
+                  active={rightTab === "grading_impression"}
+                  onClick={() => setRightTab("grading_impression")}
+                  icon={BookOpen}
+                  label="採点実感"
+                />
+              )}
             </div>
           </div>
 
-          <div className="flex-1 p-5 overflow-y-auto custom-scrollbar">
+          <div
+            className={cn(
+              "flex-1 p-5 custom-scrollbar",
+              rightTab === "chat" ? "overflow-hidden" : "overflow-y-auto",
+            )}
+          >
             {rightTab === "review" && (
               <div className="space-y-8 max-w-2xl">
                 {score !== undefined && (
@@ -509,92 +637,16 @@ export default function ReviewResultPage() {
                 <pre className="text-sm whitespace-pre-wrap text-muted-foreground leading-7">{purposeText}</pre>
               </div>
             )}
+
+            {rightTab === "grading_impression" && (
+              <div className="bg-secondary/40 rounded-2xl border border-border/50 p-5">
+                <pre className="text-sm whitespace-pre-wrap text-muted-foreground leading-7">{gradingImpressionText}</pre>
+              </div>
+            )}
+
+            {rightTab === "chat" && <ChatPanel containerRef={chatContainerRightRef} />}
           </div>
         </div>
-      </div>
-
-      <div className="border-t border-border bg-card shrink-0">
-        <button
-          onClick={() => setIsChatOpen(!isChatOpen)}
-          className="w-full px-5 py-3 flex items-center justify-between hover:bg-secondary/30 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-1.5 rounded-lg bg-primary/10">
-              <MessageCircle className="h-4 w-4 text-primary" />
-            </div>
-            <span className="text-sm font-medium text-foreground">講評について質問する</span>
-            {chatMessages.length > 1 && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
-                {chatMessages.length - 1}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2 text-muted-foreground">
-            {isChatOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-          </div>
-        </button>
-
-        {isChatOpen && (
-          <div className="border-t border-border" style={{ height: '50vh', maxHeight: '50vh' }}>
-            <div className="max-w-4xl mx-auto h-full flex flex-col">
-              <div className="px-5 py-2 flex items-center justify-end shrink-0">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleClearChat}
-                  className="h-7 text-muted-foreground hover:text-foreground rounded-full"
-                >
-                  <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                  クリア
-                </Button>
-              </div>
-
-              <div ref={chatContainerRef} className="flex-1 overflow-y-auto px-5 py-3 space-y-3 custom-scrollbar min-h-0">
-                {chatMessages.map((message, index) => (
-                  <ChatMessage key={index} {...message} />
-                ))}
-                {isLoading && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <div className="flex gap-1">
-                      <span
-                        className="h-2 w-2 rounded-full bg-primary animate-bounce"
-                        style={{ animationDelay: "0ms" }}
-                      />
-                      <span
-                        className="h-2 w-2 rounded-full bg-primary animate-bounce"
-                        style={{ animationDelay: "150ms" }}
-                      />
-                      <span
-                        className="h-2 w-2 rounded-full bg-primary animate-bounce"
-                        style={{ animationDelay: "300ms" }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="px-5 pb-4 pt-2 shrink-0">
-                <div className="flex gap-3">
-                  <input
-                    type="text"
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-                    placeholder="質問を入力..."
-                    className="flex-1 px-4 py-2.5 rounded-full border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder:text-muted-foreground/60"
-                  />
-                  <Button
-                    onClick={handleSendMessage}
-                    disabled={!inputValue.trim() || isLoading}
-                    className="px-5 rounded-full"
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )

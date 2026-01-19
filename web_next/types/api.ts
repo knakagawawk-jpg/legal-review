@@ -73,6 +73,9 @@ export interface ReviewResponse {
   subject_name?: string | null  // 科目名（表示用）
   purpose?: string | null
   question_title?: string | null
+  source_type?: "official" | "custom" | null
+  reference_text?: string | null
+  grading_impression_text?: string | null
 }
 
 export interface ProblemMetadata {
