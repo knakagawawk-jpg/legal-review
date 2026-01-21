@@ -1,0 +1,13 @@
+以下は「講評済み答案」に関する参照情報です。以後の質問に回答する際の前提として参照してください。
+
+【問題文】
+{QUESTION_TEXT}
+
+【出題趣旨／参考文章】
+{PURPOSE_TEXT}
+
+【採点実感】
+{GRADING_IMPRESSION_TEXT}
+
+【講評JSON】
+{REVIEW_JSON}

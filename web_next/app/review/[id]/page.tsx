@@ -58,6 +58,8 @@ export default function ReviewResultPage() {
       content: "講評についてご質問があればお気軽にどうぞ。",
     },
   ])
+  const [threadId, setThreadId] = useState<number | null>(null)
+  const [chatLoaded, setChatLoaded] = useState(false)
   const [inputValue, setInputValue] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const chatContainerLeftRef = useRef<HTMLDivElement>(null)
@@ -147,6 +149,33 @@ export default function ReviewResultPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const loadChat = async (): Promise<number | null> => {
+    if (!reviewId) return null
+    if (chatLoaded && threadId) return threadId
+    try {
+      // スレッドを取得/作成
+      const thread = await apiClient.post<any>(`/api/reviews/${reviewId}/thread`, {})
+      const tid = Number(thread?.id)
+      if (!Number.isFinite(tid)) return null
+      setThreadId(tid)
+
+      // メッセージを取得
+      const msgList = await apiClient.get<any>(`/api/threads/${tid}/messages?limit=200&offset=0`)
+      const msgs = (msgList?.messages || [])
+        .filter((m: any) => m && (m.role === "user" || m.role === "assistant"))
+        .map((m: any) => ({ role: m.role as "user" | "assistant", content: String(m.content || "") }))
+
+      if (msgs.length > 0) {
+        setChatMessages(msgs)
+      }
+      setChatLoaded(true)
+      return tid
+    } catch (e) {
+      // 読み込み失敗時はUIだけ維持（送信時に再トライ）
+      return null
+    }
+  }
+
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading || !review) return
 
@@ -159,14 +188,14 @@ export default function ReviewResultPage() {
     setIsLoading(true)
 
     try {
-      // review_idベースのチャットはまだ未実装（your-page側と統一）
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: "申し訳ございませんが、review_idベースのチャット機能は現在実装中です。",
-        },
-      ])
+      const tid = threadId || (await loadChat())
+      if (!tid) {
+        throw new Error("スレッドの作成に失敗しました")
+      }
+
+      const assistant = await apiClient.post<any>(`/api/threads/${tid}/messages`, { content: userMessage })
+      const assistantText = String(assistant?.content || "")
+      setChatMessages((prev) => [...prev, { role: "assistant", content: assistantText || "（空の応答）" }])
     } catch (error: any) {
       console.error("Chat error:", error)
       // エラーメッセージを表示
@@ -174,7 +203,7 @@ export default function ReviewResultPage() {
         ...prev,
         {
           role: "assistant",
-          content: `申し訳ございませんが、エラーが発生しました: ${error.message || "不明なエラー"}`,
+          content: `申し訳ございませんが、エラーが発生しました: ${error?.message || "不明なエラー"}`,
         },
       ])
     } finally {
@@ -183,12 +212,25 @@ export default function ReviewResultPage() {
   }
 
   const handleClearChat = () => {
-    setChatMessages([
-      {
-        role: "assistant",
-        content: "講評についてご質問があればお気軽にどうぞ。",
-      },
-    ])
+    const clearLocal = () =>
+      setChatMessages([
+        {
+          role: "assistant",
+          content: "講評についてご質問があればお気軽にどうぞ。",
+        },
+      ])
+
+    if (!threadId) {
+      clearLocal()
+      return
+    }
+
+    apiClient
+      .delete(`/api/threads/${threadId}/messages`)
+      .catch(() => {})
+      .finally(() => {
+        clearLocal()
+      })
   }
 
   // 科目名を取得（review.subject または review_json から）
@@ -310,7 +352,10 @@ export default function ReviewResultPage() {
                 答案
               </button>
               <button
-                onClick={() => setLeftTab("chat")}
+                onClick={() => {
+                  setLeftTab("chat")
+                  loadChat()
+                }}
                 className={cn(
                   "text-sm font-semibold transition-all px-3 py-1 rounded-full flex items-center",
                   leftTab === "chat"
@@ -438,7 +483,10 @@ export default function ReviewResultPage() {
                 講評
               </button>
               <button
-                onClick={() => setRightTab("chat")}
+                onClick={() => {
+                  setRightTab("chat")
+                  loadChat()
+                }}
                 className={cn(
                   "text-sm font-semibold transition-all px-3 py-1 rounded-full flex items-center",
                   rightTab === "chat"

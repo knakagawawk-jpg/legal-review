@@ -779,3 +779,44 @@ def free_chat(
         # エラーが発生した場合
         print(f"フリーチャット生成エラー: {e}")
         return f"申し訳ございませんが、エラーが発生しました: {str(e)}"
+
+
+def review_chat(
+    system_prompt: str,
+    messages: List[Dict[str, str]],
+    max_tokens: int = 4096,
+    temperature: float = 0.7,
+) -> tuple[str, str, Optional[int], Optional[int]]:
+    """
+    講評チャット用のLLM呼び出し（threads/messages 保存前提）。
+
+    - messages は Anthropic messages 形式の配列（role=user/assistant, content）
+    - system_prompt は system として渡す
+
+    Returns:
+        (answer_text, model_name, input_tokens, output_tokens)
+    """
+    if not ANTHROPIC_API_KEY:
+        return (
+            "申し訳ございませんが、現在LLM機能が利用できません。APIキーが設定されていないため、チャット機能を使用できません。",
+            "dummy",
+            None,
+            None,
+        )
+
+    client = Anthropic(api_key=ANTHROPIC_API_KEY)
+    message = client.messages.create(
+        model=ANTHROPIC_MODEL,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        system=system_prompt or "",
+        messages=messages,
+    )
+
+    answer = message.content[0].text if message.content and len(message.content) > 0 else ""
+    input_tokens = None
+    output_tokens = None
+    if hasattr(message, "usage") and message.usage:
+        input_tokens = getattr(message.usage, "input_tokens", None)
+        output_tokens = getattr(message.usage, "output_tokens", None)
+    return answer, ANTHROPIC_MODEL, input_tokens, output_tokens

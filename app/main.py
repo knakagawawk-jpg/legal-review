@@ -195,6 +195,106 @@ def get_db():
     finally:
         db.close()
 
+
+def _truncate_text(text: str, limit: int = 12000) -> str:
+    if not text:
+        return ""
+    if len(text) <= limit:
+        return text
+    head = text[: int(limit * 0.7)]
+    tail = text[-int(limit * 0.25) :]
+    return head + "\n...\n（中略）\n...\n" + tail
+
+
+def _load_prompt_text(prompt_name: str) -> str:
+    """prompts/main/{prompt_name}.txt を読み込む（無ければ空文字）"""
+    try:
+        from pathlib import Path
+
+        p = Path(__file__).parent.parent / "prompts" / "main" / f"{prompt_name}.txt"
+        if p.exists():
+            return p.read_text(encoding="utf-8").strip()
+    except Exception:
+        pass
+    return ""
+
+
+def _build_review_chat_context_text(
+    *,
+    question_text: str,
+    purpose_text: str,
+    grading_impression_text: str,
+    review_json_obj: dict,
+) -> str:
+    template = _load_prompt_text("review_chat_context")
+    if not template:
+        template = (
+            "【問題文】\n{QUESTION_TEXT}\n\n"
+            "【出題趣旨／参考文章】\n{PURPOSE_TEXT}\n\n"
+            "【採点実感】\n{GRADING_IMPRESSION_TEXT}\n\n"
+            "【講評JSON】\n{REVIEW_JSON}\n"
+        )
+    review_json_str = ""
+    try:
+        review_json_str = json.dumps(review_json_obj or {}, ensure_ascii=False, indent=2)
+    except Exception:
+        review_json_str = "{}"
+
+    return template.replace("{QUESTION_TEXT}", _truncate_text(question_text or "（問題文なし）")).replace(
+        "{PURPOSE_TEXT}", _truncate_text(purpose_text or "（出題趣旨／参考文章なし）")
+    ).replace("{GRADING_IMPRESSION_TEXT}", _truncate_text(grading_impression_text or "（採点実感なし）")).replace(
+        "{REVIEW_JSON}", _truncate_text(review_json_str or "{}", limit=14000)
+    )
+
+
+def _build_review_chat_user_prompt_text(question: str) -> str:
+    template = _load_prompt_text("review_chat_user")
+    if not template:
+        template = "ユーザーの質問:\n{QUESTION}"
+    return template.replace("{QUESTION}", (question or "").strip())
+
+
+def _get_review_chat_context_by_review_id(
+    *,
+    review_id: int,
+    current_user: User,
+    db: Session,
+) -> tuple[str, str, str, dict]:
+    """
+    review_id から講評チャット用のコンテキスト（問題文/趣旨/採点実感/講評JSON）を復元する。
+    ここで作るコンテキストはDB（messages）には保存しない前提。
+    """
+    review = db.query(Review).filter(Review.id == review_id).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    if review.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # review_json
+    try:
+        review_json_obj = json.loads(review.kouhyo_kekka) if isinstance(review.kouhyo_kekka, str) else (review.kouhyo_kekka or {})
+    except Exception:
+        review_json_obj = {}
+
+    question_text = review.custom_question_text or ""
+    purpose_text = ""
+    grading_impression_text = ""
+
+    if review.official_question_id:
+        official_q = db.query(OfficialQuestion).filter(OfficialQuestion.id == review.official_question_id).first()
+        if official_q:
+            question_text = official_q.text or ""
+            purpose_text = official_q.syutudaisyusi or ""
+            if official_q.shiken_type == "shihou" and official_q.grading_impression:
+                grading_impression_text = official_q.grading_impression.grading_impression_text or ""
+    else:
+        # custom: UserReviewHistory.reference_text を「参考文章」として使う
+        history = db.query(UserReviewHistory).filter(UserReviewHistory.review_id == review_id).first()
+        if history and history.reference_text:
+            purpose_text = history.reference_text
+
+    return question_text, purpose_text, grading_impression_text, review_json_obj
+
 @app.get("/health")
 def health():
     from config.settings import GOOGLE_CLIENT_ID
@@ -1097,6 +1197,56 @@ async def get_review_by_id(
         reference_text=reference_text if review.source_type == "custom" else None,
         grading_impression_text=grading_impression_text,
     )
+
+
+@app.post("/v1/reviews/{review_id}/thread", response_model=ThreadResponse)
+async def get_or_create_review_chat_thread(
+    review_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """講評チャット用のスレッドを取得/作成（認証必須）"""
+    review = db.query(Review).filter(Review.id == review_id).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    if review.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # 既存のthreadがあればそれを返す
+    if review.thread_id:
+        thread = db.query(Thread).filter(Thread.id == review.thread_id).first()
+        if thread and thread.user_id == current_user.id and thread.type == "review_chat":
+            resp = ThreadResponse.model_validate(thread)
+            resp.review_id = review.id
+            return resp
+
+    # 新規作成
+    title = None
+    try:
+        history = db.query(UserReviewHistory).filter(UserReviewHistory.review_id == review_id).first()
+        if history and history.question_title:
+            title = f"講評チャット: {history.question_title}"
+    except Exception:
+        title = None
+
+    thread = Thread(
+        user_id=current_user.id,
+        type="review_chat",
+        title=title,
+        favorite=0,
+        pinned=False,
+    )
+    db.add(thread)
+    db.flush()  # thread.id を確定
+
+    review.thread_id = thread.id
+    review.has_chat = True
+    db.commit()
+    db.refresh(thread)
+
+    resp = ThreadResponse.model_validate(thread)
+    resp.review_id = review.id
+    return resp
 
 @app.post("/v1/review/chat", response_model=ReviewChatResponse)
 async def chat_review(
@@ -2030,32 +2180,85 @@ async def create_message(
     # チャット履歴を構築（最後のユーザーメッセージは除く）
     chat_history = []
     for msg in existing_messages[:-1]:  # 最後のユーザーメッセージは除く
-        chat_history.append({
-            "role": msg.role,
-            "content": msg.content
-        })
+        # LLMには user/assistant のみ渡す（systemは除外）
+        if msg.role in ("user", "assistant"):
+            chat_history.append({
+                "role": msg.role,
+                "content": msg.content
+            })
     
     # 3. LLMを呼び出し
     try:
-        # 指示文を読み込む（一旦空でもOK）
-        from pathlib import Path
-        prompt_file = Path(__file__).parent.parent / "prompts" / "main" / "free_chat.txt"
-        system_prompt = ""
-        if prompt_file.exists():
-            system_prompt = prompt_file.read_text(encoding="utf-8").strip()
+        assistant_content = ""
+        model_name = None
+        input_tokens = None
+        output_tokens = None
+
+        if thread.type == "review_chat":
+            # review_idは Review.thread_id から逆引きして復元（DBにはコンテキストを保存しない）
+            review = db.query(Review).filter(Review.thread_id == thread_id).first()
+            if not review:
+                raise HTTPException(status_code=404, detail="Review not found for this thread")
+            if review.user_id != current_user.id:
+                raise HTTPException(status_code=403, detail="Access denied")
+
+            # 初回のみコンテキストをLLMへ渡す（messagesには保存しない）
+            is_first_turn = len(chat_history) == 0
+            context_text = None
+            if is_first_turn:
+                question_text, purpose_text, grading_text, review_json_obj = _get_review_chat_context_by_review_id(
+                    review_id=review.id,
+                    current_user=current_user,
+                    db=db,
+                )
+                context_text = _build_review_chat_context_text(
+                    question_text=question_text,
+                    purpose_text=purpose_text,
+                    grading_impression_text=grading_text,
+                    review_json_obj=review_json_obj,
+                )
+
+            system_prompt = _load_prompt_text("review_chat_system")
+            user_prompt = _build_review_chat_user_prompt_text(message_data.content)
+            messages_for_llm = []
+            if context_text:
+                messages_for_llm.append({"role": "user", "content": context_text})
+            if chat_history:
+                messages_for_llm.extend(chat_history)
+            messages_for_llm.append({"role": "user", "content": user_prompt})
+
+            from .llm_service import review_chat as llm_review_chat
+            assistant_content, model_name, input_tokens, output_tokens = llm_review_chat(
+                system_prompt=system_prompt,
+                messages=messages_for_llm,
+            )
+
+            # Review側にもチャット有無を反映（一覧高速化）
+            if not review.has_chat:
+                review.has_chat = True
+
+        else:
+            # free_chat（従来）
+            from pathlib import Path
+            prompt_file = Path(__file__).parent.parent / "prompts" / "main" / "free_chat.txt"
+            system_prompt = ""
+            if prompt_file.exists():
+                system_prompt = prompt_file.read_text(encoding="utf-8").strip()
+            from .llm_service import free_chat as llm_free_chat
+            assistant_content = llm_free_chat(
+                question=message_data.content,
+                chat_history=chat_history if chat_history else None
+            )
         
-        # free_chat関数を使用してLLM呼び出し
-        from .llm_service import free_chat
-        assistant_content = free_chat(
-            question=message_data.content,
-            chat_history=chat_history if chat_history else None
-        )
-        
-        # 4. アシスタントメッセージを保存（コスト情報は一旦NULL）
+        # 4. アシスタントメッセージを保存
         assistant_message = Message(
             thread_id=thread_id,
             role="assistant",
-            content=assistant_content
+            content=assistant_content,
+            model=model_name,
+            prompt_version="review_chat_v1" if thread.type == "review_chat" else None,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
         )
         db.add(assistant_message)
         
@@ -2072,6 +2275,32 @@ async def create_message(
         # エラーが発生した場合もユーザーメッセージは保存済み
         db.rollback()
         raise HTTPException(status_code=500, detail=f"LLM呼び出しエラー: {str(e)}")
+
+
+@app.delete("/v1/threads/{thread_id}/messages")
+async def clear_thread_messages(
+    thread_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """スレッドのメッセージを全削除（認証必須）"""
+    thread = db.query(Thread).filter(Thread.id == thread_id).first()
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    if thread.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    db.query(Message).filter(Message.thread_id == thread_id).delete(synchronize_session=False)
+    thread.last_message_at = None
+
+    # review_chat の場合、Review.has_chat も下げる（thread自体は残す）
+    if thread.type == "review_chat":
+        review = db.query(Review).filter(Review.thread_id == thread_id).first()
+        if review and review.user_id == current_user.id:
+            review.has_chat = False
+
+    db.commit()
+    return {"message": "cleared"}
 
 @app.put("/v1/threads/{thread_id}", response_model=ThreadResponse)
 async def update_thread(
