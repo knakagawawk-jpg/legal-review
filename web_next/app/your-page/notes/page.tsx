@@ -393,17 +393,20 @@ function NotesPage() {
             <p className="text-muted-foreground text-lg">OneNote風のノート管理</p>
           </div>
           <div className="flex items-center gap-4">
-            <Button 
+            <button
+              type="button"
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
-                console.log("Create notebook button clicked")
+                console.log("Create notebook button clicked (native button)")
                 setCreateDialogOpen(true)
               }}
+              className="inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
+              style={{ position: 'relative', zIndex: 10 }}
             >
               <Plus className="h-4 w-4 mr-2" />
               新しいノートブック
-            </Button>
+            </button>
             <SidebarToggle />
           </div>
         </div>
@@ -419,17 +422,19 @@ function NotesPage() {
             ) : notebooks.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-muted-foreground mb-4">ノートブックがありません</p>
-                <Button 
+                <button
+                  type="button"
                   onClick={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
-                    console.log("Create notebook button clicked (empty state)")
+                    console.log("Create notebook button clicked (empty state - native button)")
                     setCreateDialogOpen(true)
                   }}
+                  className="inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
                 >
                   <Plus className="h-4 w-4 mr-2" />
                   最初のノートブックを作成
-                </Button>
+                </button>
               </div>
             ) : (
               <div className="space-y-2">
