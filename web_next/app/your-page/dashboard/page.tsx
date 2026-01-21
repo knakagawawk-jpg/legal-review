@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils"
 import { withAuth } from "@/components/auth/with-auth"
 import { Calendar, DatePickerCalendar } from "@/components/ui/calendar"
 import { apiClient } from "@/lib/api-client"
+import { authStorage } from "@/lib/auth-storage"
 import { getStudyDate } from "@/lib/study-date"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -701,6 +702,54 @@ function YourPageDashboardInner() {
   useEffect(() => {
     loadRecentReviewSessions()
   }, [loadRecentReviewSessions])
+
+  // ============================================================================
+  // ページ離脱時に未保存の変更をフラッシュ
+  // ============================================================================
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      // 未保存の変更がある場合、同期的にフラッシュを試みる
+      if (pendingSaves.current.size > 0) {
+        // 認証トークンを取得
+        const token = authStorage.getToken()
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        }
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`
+        }
+
+        // タイマーをクリアして即座に保存を実行
+        for (const [idStr, timeout] of Object.entries(saveTimeoutsRef.current)) {
+          clearTimeout(timeout)
+          const id = Number(idStr)
+          const patch = pendingUpdatesRef.current[id]
+          if (patch && Object.keys(patch).length > 0) {
+            // keepalive: true でページ離脱後もリクエストを完了させる
+            fetch(`/api/dashboard/items/${id}`, {
+              method: 'PUT',
+              headers,
+              body: JSON.stringify(patch),
+              keepalive: true,
+            }).catch(() => {
+              // エラーは無視（ページ離脱時なのでハンドリングできない）
+            })
+          }
+        }
+        saveTimeoutsRef.current = {}
+        pendingUpdatesRef.current = {}
+        pendingSaves.current.clear()
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      // アンマウント時にも未保存の変更をフラッシュ
+      flushPendingSaves()
+    }
+  }, [flushPendingSaves])
 
   // ============================================================================
   // タイマーデータ取得関数（初期読み込み専用）
