@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, FileText, BookOpen, StickyNote, ChevronDown } from "lucide-react"
+import { LayoutDashboard, FileText, BookOpen, StickyNote, ChevronDown, History } from "lucide-react"
 import { useMemo, Suspense, useState, useEffect } from "react"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { FIXED_SUBJECTS } from "@/lib/subjects"
@@ -20,9 +20,9 @@ const yourPageNav = [
     icon: BookOpen,
   },
   {
-    name: "過去問管理",
-    href: "/your-page/past-questions",
-    icon: FileText,
+    name: "Your History",
+    href: "/your-page/history",
+    icon: History,
   },
 ]
 
@@ -46,9 +46,9 @@ function YourPageSectionInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const isDashboardActive = pathname === "/your-page/dashboard" || pathname?.startsWith("/your-page/dashboard")
-  const isPastQuestionsActive = pathname === "/your-page/past-questions" || pathname?.startsWith("/your-page/past-questions")
+  const isHistoryActive = pathname === "/your-page/history" || pathname?.startsWith("/your-page/history")
   const isSubjectsActive = pathname?.startsWith("/your-page/subjects/")
-  const isYourPageActive = isDashboardActive || isPastQuestionsActive || isSubjectsActive
+  const isYourPageActive = isDashboardActive || isHistoryActive || isSubjectsActive
   
   // 過去5日分は常にデフォルトで閉じた状態
   const [isDateListOpen, setIsDateListOpen] = useState(false)
@@ -108,7 +108,7 @@ function YourPageSectionInner() {
       {yourPageNav.map((item) => {
         const isActive = (() => {
           if (item.href === "/your-page/dashboard") return isDashboardActive
-          if (item.href === "/your-page/past-questions") return isPastQuestionsActive
+          if (item.href === "/your-page/history") return isHistoryActive
           // `yourPageNav`上はデフォルトのリンク先が「/your-page/subjects/憲法」だが、
           // アクティブ判定は「各科目ページ配下」全体で行う
           if (item.href.startsWith("/your-page/subjects/")) return isSubjectsActive
