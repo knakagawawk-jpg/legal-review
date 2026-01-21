@@ -22,7 +22,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 type ReviewHistoryItem = {
   id: number
   review_id: number
-  subject: number | null  // 科目ID（1-18）
+  subject: number | string | null  // 科目ID（1-18）
   subject_name: string | null  // 科目名（表示用）
   exam_type: string | null
   year: number | null
@@ -1542,23 +1542,27 @@ function HistoryPage() {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
   }
 
+  const resolveSubjectName = (item: ReviewHistoryItem) => {
+    if (item.subject_name && item.subject_name !== "不明") {
+      return item.subject_name
+    }
+    const subjectId = typeof item.subject === "string" ? Number(item.subject) : item.subject
+    if (typeof subjectId === "number" && !Number.isNaN(subjectId)) {
+      return getSubjectName(subjectId)
+    }
+    return "不明"
+  }
+
   const formatItemName = (item: ReviewHistoryItem) => {
     // 科目名を取得
     let subjectName: string
     if (item.exam_type === "司法試験" || item.exam_type === "予備試験") {
       // 司法試験・予備試験の場合は、subject_idから積極的に科目名を取得
-      // subject_nameがあれば優先、なければsubject_idから取得
-      if (item.subject_name) {
-        subjectName = item.subject_name
-      } else if (item.subject) {
-        subjectName = getSubjectName(item.subject)
-      } else {
-        // データ不整合の場合のみ「不明」
-        subjectName = "不明"
-      }
+      // subject_nameが「不明」の場合はsubject_idから再計算
+      subjectName = resolveSubjectName(item)
     } else {
       // その他の試験の場合は従来通り
-      subjectName = item.subject_name || (item.subject ? getSubjectName(item.subject) : "不明")
+      subjectName = resolveSubjectName(item)
     }
     
     if (item.year) {
@@ -1591,7 +1595,7 @@ function HistoryPage() {
         score: item.score,
         attemptCount: item.attempt_count,
         reviewLink: `/your-page/review/${item.review_id}`,
-        subject: item.subject_name || (item.subject ? getSubjectName(item.subject) : "不明"),
+        subject: resolveSubjectName(item),
         year: item.year,
         examType: item.exam_type,
       })),
@@ -1604,7 +1608,7 @@ function HistoryPage() {
         score: item.score,
         attemptCount: item.attempt_count,
         reviewLink: `/your-page/review/${item.review_id}`,
-        subject: item.subject_name || (item.subject ? getSubjectName(item.subject) : "不明"),
+        subject: resolveSubjectName(item),
         year: item.year,
         examType: item.exam_type,
       })),
@@ -1621,7 +1625,7 @@ function HistoryPage() {
         score: item.score,
         attemptCount: item.attempt_count,
         reviewLink: `/your-page/review/${item.review_id}`,
-        subject: item.subject_name || (item.subject ? getSubjectName(item.subject) : "不明"),
+        subject: resolveSubjectName(item),
         year: item.year,
         examType: item.exam_type,
       }))

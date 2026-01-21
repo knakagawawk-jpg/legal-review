@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 type ReviewHistoryItem = {
   id: number
   review_id: number
-  subject: number | null  // 科目ID（1-18）
+  subject: number | string | null  // 科目ID（1-18）
   subject_name: string | null  // 科目名（表示用）
   exam_type: string | null
   year: number | null
@@ -180,9 +180,20 @@ function PastExamsPage() {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
   }
 
+  const resolveSubjectName = (item: ReviewHistoryItem) => {
+    if (item.subject_name && item.subject_name !== "不明") {
+      return item.subject_name
+    }
+    const subjectId = typeof item.subject === "string" ? Number(item.subject) : item.subject
+    if (typeof subjectId === "number" && !Number.isNaN(subjectId)) {
+      return getSubjectName(subjectId)
+    }
+    return "不明"
+  }
+
   const formatItemName = (item: ReviewHistoryItem) => {
     // subject_nameが優先、なければsubject_idから科目名を取得
-    const subjectName = item.subject_name || (item.subject ? getSubjectName(item.subject) : "不明")
+    const subjectName = resolveSubjectName(item)
     
     if (item.year) {
       // 年度から元号記号を計算（2019年以降はR、1989年以降はH）
@@ -214,7 +225,7 @@ function PastExamsPage() {
         score: item.score,
         attemptCount: item.attempt_count,
         reviewLink: `/your-page/review/${item.review_id}`,
-        subject: item.subject_name || (item.subject ? getSubjectName(item.subject) : "不明"),
+        subject: resolveSubjectName(item),
         year: item.year,
         examType: item.exam_type,
       })),
@@ -227,7 +238,7 @@ function PastExamsPage() {
         score: item.score,
         attemptCount: item.attempt_count,
         reviewLink: `/your-page/review/${item.review_id}`,
-        subject: item.subject_name || (item.subject ? getSubjectName(item.subject) : "不明"),
+        subject: resolveSubjectName(item),
         year: item.year,
         examType: item.exam_type,
       })),
@@ -244,7 +255,7 @@ function PastExamsPage() {
         score: item.score,
         attemptCount: item.attempt_count,
         reviewLink: `/your-page/review/${item.review_id}`,
-        subject: item.subject_name || (item.subject ? getSubjectName(item.subject) : "不明"),
+        subject: resolveSubjectName(item),
         year: item.year,
         examType: item.exam_type,
       }))
