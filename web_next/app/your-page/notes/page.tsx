@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -41,6 +41,7 @@ function NotesPage() {
   const [loading, setLoading] = useState(true)
   const [expandedNotebooks, setExpandedNotebooks] = useState<Set<number>>(new Set())
   const [expandedSections, setExpandedSections] = useState<Set<number>>(new Set())
+  const createButtonRef = useRef<HTMLButtonElement>(null)
   
   // ダイアログ状態
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -108,6 +109,25 @@ function NotesPage() {
   useEffect(() => {
     console.log("createDialogOpen state changed:", createDialogOpen)
   }, [createDialogOpen])
+
+  // 直接DOMにイベントリスナーを追加（デバッグ用）
+  useEffect(() => {
+    const button = createButtonRef.current
+    if (!button) return
+
+    const handleClick = (e: MouseEvent) => {
+      console.log("Direct DOM event listener fired!", e)
+      e.preventDefault()
+      e.stopPropagation()
+      setCreateDialogOpen(true)
+    }
+
+    button.addEventListener('click', handleClick, true) // capture phase
+
+    return () => {
+      button.removeEventListener('click', handleClick, true)
+    }
+  }, [])
 
   const handleCreateNotebook = async () => {
     if (!newNotebook.title.trim()) {
@@ -392,17 +412,33 @@ function NotesPage() {
             <h1 className="text-4xl font-bold mb-2">📓 ノート</h1>
             <p className="text-muted-foreground text-lg">OneNote風のノート管理</p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4" onClick={(e) => {
+            console.log("Parent div clicked", e.target)
+          }}>
             <button
+              ref={createButtonRef}
               type="button"
-              onClick={(e) => {
+              onMouseDown={(e) => {
+                console.log("Button onMouseDown fired")
                 e.preventDefault()
                 e.stopPropagation()
-                console.log("Create notebook button clicked (native button)")
+              }}
+              onMouseUp={(e) => {
+                console.log("Button onMouseUp fired")
+                e.preventDefault()
+                e.stopPropagation()
+              }}
+              onClick={(e) => {
+                console.log("Button onClick fired")
+                e.preventDefault()
+                e.stopPropagation()
                 setCreateDialogOpen(true)
               }}
-              className="inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
-              style={{ position: 'relative', zIndex: 10 }}
+              onPointerDown={(e) => {
+                console.log("Button onPointerDown fired")
+              }}
+              className="inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 cursor-pointer"
+              style={{ position: 'relative', zIndex: 10, pointerEvents: 'auto' }}
             >
               <Plus className="h-4 w-4 mr-2" />
               新しいノートブック
@@ -424,13 +460,27 @@ function NotesPage() {
                 <p className="text-muted-foreground mb-4">ノートブックがありません</p>
                 <button
                   type="button"
-                  onClick={(e) => {
+                  onMouseDown={(e) => {
+                    console.log("Empty state button onMouseDown fired")
                     e.preventDefault()
                     e.stopPropagation()
-                    console.log("Create notebook button clicked (empty state - native button)")
+                  }}
+                  onMouseUp={(e) => {
+                    console.log("Empty state button onMouseUp fired")
+                    e.preventDefault()
+                    e.stopPropagation()
+                  }}
+                  onClick={(e) => {
+                    console.log("Empty state button onClick fired")
+                    e.preventDefault()
+                    e.stopPropagation()
                     setCreateDialogOpen(true)
                   }}
-                  className="inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
+                  onPointerDown={(e) => {
+                    console.log("Empty state button onPointerDown fired")
+                  }}
+                  className="inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 cursor-pointer"
+                  style={{ pointerEvents: 'auto' }}
                 >
                   <Plus className="h-4 w-4 mr-2" />
                   最初のノートブックを作成
