@@ -86,8 +86,8 @@ def _normalize_subject_id(subject_value) -> Optional[int]:
         return mapped if (mapped is not None and 1 <= mapped <= 18) else None
     return None
 
-# テーブル作成はエントリーポイントスクリプト（app/init_db.py）で実行されるため、ここでは削除
-# Base.metadata.create_all(bind=engine)
+# テーブル作成（起動時に新しいテーブルのみ追加、既存テーブルはスキップ）
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="法律答案講評システム API", version="1.0.0")
 
@@ -1827,6 +1827,9 @@ async def update_notebook(
     if notebook_data.color is not None:
         notebook.color = notebook_data.color
     
+    # SQLiteではonupdate=func.now()が動作しないため、明示的に更新
+    notebook.updated_at = datetime.now(timezone.utc)
+    
     db.commit()
     db.refresh(notebook)
     
@@ -1910,6 +1913,9 @@ async def update_note_section(
     if section_data.display_order is not None:
         section.display_order = section_data.display_order
     
+    # SQLiteではonupdate=func.now()が動作しないため、明示的に更新
+    section.updated_at = datetime.now(timezone.utc)
+    
     db.commit()
     db.refresh(section)
     
@@ -1989,6 +1995,9 @@ async def update_note_page(
         page.content = page_data.content
     if page_data.display_order is not None:
         page.display_order = page_data.display_order
+    
+    # SQLiteではonupdate=func.now()が動作しないため、明示的に更新
+    page.updated_at = datetime.now(timezone.utc)
     
     db.commit()
     db.refresh(page)
