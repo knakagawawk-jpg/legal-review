@@ -611,11 +611,9 @@ function StudyManagementPage() {
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  selected={memoStartDate}
-                  onSelect={setMemoStartDate}
-                  initialFocus
+                <DatePickerCalendar
+                  selectedDate={memoStartDate || null}
+                  onSelect={(date) => setMemoStartDate(date || undefined)}
                 />
               </PopoverContent>
             </Popover>
@@ -628,11 +626,9 @@ function StudyManagementPage() {
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  selected={memoEndDate}
-                  onSelect={setMemoEndDate}
-                  initialFocus
+                <DatePickerCalendar
+                  selectedDate={memoEndDate || null}
+                  onSelect={(date) => setMemoEndDate(date || undefined)}
                 />
               </PopoverContent>
             </Popover>
@@ -825,11 +821,9 @@ function StudyManagementPage() {
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  selected={topicStartDate}
-                  onSelect={setTopicStartDate}
-                  initialFocus
+                <DatePickerCalendar
+                  selectedDate={topicStartDate || null}
+                  onSelect={(date) => setTopicStartDate(date || undefined)}
                 />
               </PopoverContent>
             </Popover>
@@ -842,11 +836,9 @@ function StudyManagementPage() {
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  selected={topicEndDate}
-                  onSelect={setTopicEndDate}
-                  initialFocus
+                <DatePickerCalendar
+                  selectedDate={topicEndDate || null}
+                  onSelect={(date) => setTopicEndDate(date || undefined)}
                 />
               </PopoverContent>
             </Popover>
@@ -1167,7 +1159,7 @@ function StudyTimeSection() {
 
 function HistoryPage() {
   const { isOpen, setIsOpen } = useSidebar()
-  const [mainTab, setMainTab] = useState<"study" | "past-questions">("past-questions")
+  const [mainTab, setMainTab] = useState<"study" | "past-questions">("study")
   const [reviewHistory, setReviewHistory] = useState<ReviewHistoryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null)  // null = 全科目
