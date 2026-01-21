@@ -1423,11 +1423,18 @@ function ChatHistorySection() {
                 </tr>
               ) : (
                 filteredThreads.map((thread) => {
-                  const link = thread.type === "free_chat" 
-                    ? `/free-chat/${thread.id}`
-                    : thread.type === "review_chat"
-                    ? `/your-page/review/${thread.review_id || thread.id}` // review_idがあればそれを使用
-                    : `/short-answer/${thread.id}`
+                  // review_chatの場合はreview_idが必須、ない場合はフリーチャットとして開く
+                  let link: string
+                  if (thread.type === "free_chat") {
+                    link = `/free-chat/${thread.id}`
+                  } else if (thread.type === "review_chat") {
+                    // review_idがある場合はレビューページ、ない場合はフリーチャットとして開く
+                    link = thread.review_id 
+                      ? `/your-page/review/${thread.review_id}`
+                      : `/free-chat/${thread.id}`
+                  } else {
+                    link = `/short-answer/${thread.id}`
+                  }
                   
                   return (
                     <tr key={thread.id} className="hover:bg-amber-50/40">

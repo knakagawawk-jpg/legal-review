@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { cookies } from "next/headers"
 
 const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:8000"
 
@@ -7,7 +8,9 @@ export const dynamic = 'force-dynamic'
 // GET /api/threads/all - 全スレッドを取得（勉強管理ページ用）
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get("authorization")
+    const cookieStore = await cookies()
+    const token = cookieStore.get("auth_token")?.value
+    const authHeader = request.headers.get("authorization") || (token ? `Bearer ${token}` : null)
     
     if (!authHeader) {
       return NextResponse.json(
