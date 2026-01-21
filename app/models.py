@@ -239,7 +239,7 @@ class Thread(Base):
     
     # メタデータ
     title = Column(String(200), nullable=True)  # タイトル（空でもOK、後から自動生成・手動編集可能）
-    is_archived = Column(Boolean, nullable=False, default=False)  # アーカイブフラグ（履歴整理用）
+    favorite = Column(Integer, nullable=False, default=0)  # お気に入りフラグ（0=OFF, 1=ON）
     pinned = Column(Boolean, nullable=False, default=False)  # 固定表示フラグ（任意）
     
     # リレーションシップ
@@ -251,10 +251,10 @@ class Thread(Base):
         CheckConstraint("type IN ('free_chat', 'review_chat', 'short_answer_chat')", name="ck_thread_type"),
         
         # 一覧表示を高速化するインデックス
-        # 完全版: (user_id, type, is_archived, pinned, last_message_at)
-        Index('idx_threads_user_type_archived_pinned_last', 'user_id', 'type', 'is_archived', 'pinned', 'last_message_at'),
-        # 最低限版: (user_id, type, is_archived, last_message_at DESC)
-        Index('idx_threads_user_type_archived_last', 'user_id', 'type', 'is_archived', 'last_message_at'),
+        # 完全版: (user_id, type, favorite, pinned, last_message_at)
+        Index('idx_threads_user_type_favorite_pinned_last', 'user_id', 'type', 'favorite', 'pinned', 'last_message_at'),
+        # 最低限版: (user_id, type, favorite, last_message_at DESC)
+        Index('idx_threads_user_type_favorite_last', 'user_id', 'type', 'favorite', 'last_message_at'),
     )
 
 

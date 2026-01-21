@@ -165,6 +165,15 @@ def _startup_migrate_reviews():
     except Exception as e:
         logger.warning(f"Startup dashboard_items favorite migration skipped/failed: {str(e)}")
 
+    # threads に favorite カラムを追加、is_archived を削除
+    try:
+        from .migrate_threads_favorite import migrate_threads_favorite
+
+        migrate_threads_favorite()
+        logger.info("✓ Startup threads favorite migration completed")
+    except Exception as e:
+        logger.warning(f"Startup threads favorite migration skipped/failed: {str(e)}")
+
 # グローバルエラーハンドラーを追加（HTTPExceptionは除外）
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -1862,16 +1871,17 @@ async def list_threads(
     db: Session = Depends(get_db),
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    type: str = Query("free_chat", description="スレッドタイプ")
+    type: Optional[str] = Query(None, description="スレッドタイプ（指定しない場合は全タイプ）")
 ):
     """スレッド一覧を取得（直近N件）（認証必須）"""
     user_id = current_user.id
     
     query = db.query(Thread).filter(
-        Thread.user_id == user_id,
-        Thread.type == type,
-        Thread.is_archived == False
+        Thread.user_id == user_id
     )
+    
+    if type:
+        query = query.filter(Thread.type == type)
     
     total = query.count()
     threads = query.order_by(
@@ -1880,9 +1890,48 @@ async def list_threads(
         Thread.created_at.desc()
     ).offset(offset).limit(limit).all()
     
+    # 講評チャットの場合、review_idを取得してレスポンスに含める
+    thread_responses = []
+    for t in threads:
+        thread_response = ThreadResponse.model_validate(t)
+        if t.type == "review_chat":
+            review = db.query(Review).filter(Review.thread_id == t.id).first()
+            if review:
+                # review_idを追加
+                thread_response.review_id = review.id
+        thread_responses.append(thread_response)
+    
     return ThreadListResponse(
-        threads=[ThreadResponse.model_validate(t) for t in threads],
+        threads=thread_responses,
         total=total
+    )
+
+@app.get("/v1/threads/all", response_model=ThreadListResponse)
+async def get_all_threads(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """全スレッドを取得（勉強管理ページ用）"""
+    user_id = current_user.id
+    
+    threads = db.query(Thread).filter(
+        Thread.user_id == user_id
+    ).order_by(Thread.created_at.desc()).all()
+    
+    # 講評チャットの場合、review_idを取得してレスポンスに含める
+    thread_responses = []
+    for t in threads:
+        thread_response = ThreadResponse.model_validate(t)
+        if t.type == "review_chat":
+            review = db.query(Review).filter(Review.thread_id == t.id).first()
+            if review:
+                # review_idを追加
+                thread_response.review_id = review.id
+        thread_responses.append(thread_response)
+    
+    return ThreadListResponse(
+        threads=thread_responses,
+        total=len(threads)
     )
 
 @app.get("/v1/threads/{thread_id}", response_model=ThreadResponse)
@@ -1900,6 +1949,29 @@ async def get_thread(
         raise HTTPException(status_code=403, detail="Access denied")
     
     return ThreadResponse.model_validate(thread)
+
+@app.get("/v1/threads/{thread_id}/review-id")
+async def get_thread_review_id(
+    thread_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """スレッドに関連するreview_idを取得（講評チャット用）"""
+    thread = db.query(Thread).filter(Thread.id == thread_id).first()
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    
+    if thread.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    if thread.type != "review_chat":
+        raise HTTPException(status_code=400, detail="This thread is not a review chat")
+    
+    review = db.query(Review).filter(Review.thread_id == thread_id).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found for this thread")
+    
+    return {"review_id": review.id}
 
 @app.get("/v1/threads/{thread_id}/messages", response_model=MessageListResponse)
 async def list_messages(
@@ -2000,6 +2072,34 @@ async def create_message(
         # エラーが発生した場合もユーザーメッセージは保存済み
         db.rollback()
         raise HTTPException(status_code=500, detail=f"LLM呼び出しエラー: {str(e)}")
+
+@app.put("/v1/threads/{thread_id}", response_model=ThreadResponse)
+async def update_thread(
+    thread_id: int,
+    thread_update: dict,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """スレッドを更新（認証必須）"""
+    thread = db.query(Thread).filter(Thread.id == thread_id).first()
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    
+    if thread.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # 更新
+    if "favorite" in thread_update:
+        thread.favorite = thread_update["favorite"]
+    if "title" in thread_update:
+        thread.title = thread_update.get("title")
+    if "pinned" in thread_update:
+        thread.pinned = thread_update["pinned"]
+    
+    db.commit()
+    db.refresh(thread)
+    
+    return ThreadResponse.model_validate(thread)
 
 
 # ============================================================================

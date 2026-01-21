@@ -74,6 +74,18 @@ interface TimerSession {
   stop_reason?: string
 }
 
+interface Thread {
+  id: number
+  user_id: number
+  type: string  // 'free_chat', 'review_chat', 'short_answer_chat'
+  title: string | null
+  created_at: string
+  last_message_at: string | null
+  favorite: number  // 0=OFF, 1=ON
+  pinned: boolean
+  review_id?: number | null  // 講評チャットの場合のreview_id
+}
+
 // 科目と色の対応表（subjectsページと同じ）
 const SUBJECT_COLORS: Record<string, string> = {
   "憲法": "bg-red-100 text-red-700",
@@ -298,8 +310,10 @@ function StudyManagementPage() {
           apiClient.get<{ items: DashboardItem[], total: number }>("/api/dashboard/items/all?entry_type=1"),
           apiClient.get<{ items: DashboardItem[], total: number }>("/api/dashboard/items/all?entry_type=2"),
         ])
-        setMemoItems(memoData.items)
-        setTopicItems(topicData.items)
+        console.log("MEMO data:", memoData)
+        console.log("Topics data:", topicData)
+        setMemoItems(memoData.items || [])
+        setTopicItems(topicData.items || [])
         
         // スクロール位置を復元
         const memoScrollPos = localStorage.getItem("study-memo-scroll")
@@ -314,6 +328,8 @@ function StudyManagementPage() {
         }, 100)
       } catch (error) {
         console.error("Failed to load dashboard items:", error)
+        setMemoItems([])
+        setTopicItems([])
       } finally {
         setLoading(false)
       }
@@ -971,14 +987,8 @@ function StudyManagementPage() {
         </CardContent>
       </Card>
       
-      {/* 過去のフリーチャット履歴（空箱） */}
-      <Card className="shadow-sm border-amber-200/60">
-        <CardContent className="p-4">
-          <div className="text-center text-muted-foreground py-8 text-sm">
-            過去のフリーチャット履歴（今後実装予定）
-          </div>
-        </CardContent>
-      </Card>
+      {/* 過去のチャット履歴 */}
+      <ChatHistorySection />
     </div>
   )
 }
@@ -1006,14 +1016,21 @@ function StudyTimeSection() {
           apiClient.get("/api/timer/stats/month"),
           apiClient.get("/api/timer/stats/year"),
         ])
+        console.log("Timer stats:", { today, sessions, week, fiveDays, month, year })
         setTodayStats(today)
-        setTodaySessions(sessions)
+        setTodaySessions(sessions || [])
         setWeekStats(week)
         setFiveDaysStats(fiveDays)
         setMonthStats(month)
         setYearStats(year)
       } catch (error) {
         console.error("Failed to load timer stats:", error)
+        setTodayStats(null)
+        setTodaySessions([])
+        setWeekStats(null)
+        setFiveDaysStats(null)
+        setMonthStats(null)
+        setYearStats(null)
       } finally {
         setLoading(false)
       }
@@ -1152,6 +1169,295 @@ function StudyTimeSection() {
             </Collapsible>
           </>
         )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// 過去のチャット履歴セクションコンポーネント
+function ChatHistorySection() {
+  const [threads, setThreads] = useState<Thread[]>([])
+  const [loading, setLoading] = useState(true)
+  
+  // フィルター
+  const [typeFilter, setTypeFilter] = useState<string | null>(null)  // null = 全タイプ
+  const [startDate, setStartDate] = useState<Date | undefined>(undefined)
+  const [endDate, setEndDate] = useState<Date | undefined>(undefined)
+  const [favoriteFilter, setFavoriteFilter] = useState<"fav-only" | "fav-except" | "all">("fav-only")
+  
+  // favorite更新用のタイマー
+  const favoriteUpdateTimers = useRef<Record<number, NodeJS.Timeout>>({})
+  
+  // データ取得
+  useEffect(() => {
+    const loadThreads = async () => {
+      try {
+        setLoading(true)
+        const data = await apiClient.get<{ threads: Thread[], total: number }>("/api/threads/all")
+        console.log("Threads data:", data)
+        setThreads(data.threads || [])
+      } catch (error) {
+        console.error("Failed to load threads:", error)
+        setThreads([])
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadThreads()
+  }, [])
+  
+  // favorite更新（5秒バッファ付き）
+  const updateFavorite = useCallback(async (threadId: number, favorite: number) => {
+    // 既存のタイマーをクリア
+    if (favoriteUpdateTimers.current[threadId]) {
+      clearTimeout(favoriteUpdateTimers.current[threadId])
+    }
+    
+    // 楽観的更新
+    setThreads(prev => prev.map(thread => thread.id === threadId ? { ...thread, favorite } : thread))
+    
+    // 5秒後にDBに保存
+    favoriteUpdateTimers.current[threadId] = setTimeout(async () => {
+      try {
+        await apiClient.put(`/api/threads/${threadId}`, { favorite })
+        delete favoriteUpdateTimers.current[threadId]
+      } catch (error) {
+        console.error("Failed to update favorite:", error)
+        // エラー時は元に戻す
+        setThreads(prev => prev.map(thread => thread.id === threadId ? { ...thread, favorite: 1 - favorite } : thread))
+      }
+    }, 5000)
+  }, [])
+  
+  // フィルター適用後のスレッド
+  const filteredThreads = useMemo(() => {
+    let filtered = [...threads]
+    
+    // タイプフィルター
+    if (typeFilter !== null) {
+      filtered = filtered.filter(thread => thread.type === typeFilter)
+    }
+    
+    // 期間フィルター（last_message_atベース）
+    if (startDate) {
+      const startStr = startDate.toISOString()
+      filtered = filtered.filter(thread => {
+        if (!thread.last_message_at) return true // NULLも含める
+        return thread.last_message_at >= startStr
+      })
+    }
+    if (endDate) {
+      const endStr = endDate.toISOString()
+      filtered = filtered.filter(thread => {
+        if (!thread.last_message_at) return true // NULLも含める
+        return thread.last_message_at <= endStr
+      })
+    }
+    
+    // favoriteフィルター
+    if (favoriteFilter === "fav-only") {
+      filtered = filtered.filter(thread => thread.favorite === 1)
+    } else if (favoriteFilter === "fav-except") {
+      filtered = filtered.filter(thread => thread.favorite === 0)
+    }
+    
+    // ソート: created_atの新しい順
+    filtered.sort((a, b) => {
+      const aDate = a.created_at || ""
+      const bDate = b.created_at || ""
+      return bDate.localeCompare(aDate)
+    })
+    
+    return filtered
+  }, [threads, typeFilter, startDate, endDate, favoriteFilter])
+  
+  // 日付フォーマット
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return ""
+    const date = new Date(dateString)
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+  }
+  
+  // タイプ名の表示
+  const getTypeLabel = (type: string) => {
+    switch (type) {
+      case "free_chat":
+        return "フリー"
+      case "review_chat":
+        return "講評"
+      case "short_answer_chat":
+        return "短答"
+      default:
+        return type
+    }
+  }
+  
+  // リンク先を取得
+  const getThreadLink = async (thread: Thread): Promise<string> => {
+    if (thread.type === "free_chat") {
+      return `/free-chat/${thread.id}`
+    } else if (thread.type === "review_chat") {
+      // Reviewを取得してreview_idを取得する必要がある
+      // 一旦thread_idベースでリンクを作成（後で修正が必要かも）
+      return `/your-page/review/${thread.id}` // 仮のリンク
+    } else if (thread.type === "short_answer_chat") {
+      return `/short-answer/${thread.id}`
+    }
+    return "#"
+  }
+  
+  return (
+    <Card className="shadow-sm border-amber-200/60">
+      <CardHeader className="py-1.5 px-3">
+        <CardTitle className="text-xs font-medium flex items-center gap-1.5 text-amber-900/80">
+          過去のチャット履歴
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="px-3 pb-2">
+        {/* フィルター */}
+        <div className="mb-2 flex items-center gap-2 flex-wrap">
+          {/* タイプ */}
+          <Select 
+            value={typeFilter || "all"} 
+            onValueChange={(value) => {
+              if (value === "all") {
+                setTypeFilter(null)
+              } else {
+                setTypeFilter(value)
+              }
+            }}
+          >
+            <SelectTrigger className="h-7 text-xs w-24">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all" className="text-xs">全タイプ</SelectItem>
+              <SelectItem value="free_chat" className="text-xs">フリー</SelectItem>
+              <SelectItem value="review_chat" className="text-xs">講評</SelectItem>
+              <SelectItem value="short_answer_chat" className="text-xs">短答</SelectItem>
+            </SelectContent>
+          </Select>
+          
+          {/* 期間 */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="h-7 text-xs">
+                <CalendarIcon className="h-3 w-3 mr-1" />
+                {startDate ? formatDate(startDate.toISOString()) : "開始日"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0">
+              <DatePickerCalendar
+                selectedDate={startDate || null}
+                onSelect={(date) => setStartDate(date || undefined)}
+              />
+            </PopoverContent>
+          </Popover>
+          <span className="text-xs text-muted-foreground">～</span>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="h-7 text-xs">
+                <CalendarIcon className="h-3 w-3 mr-1" />
+                {endDate ? formatDate(endDate.toISOString()) : "終了日"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0">
+              <DatePickerCalendar
+                selectedDate={endDate || null}
+                onSelect={(date) => setEndDate(date || undefined)}
+              />
+            </PopoverContent>
+          </Popover>
+          
+          {/* fav */}
+          <Select 
+            value={favoriteFilter} 
+            onValueChange={(value) => {
+              setFavoriteFilter(value as "fav-only" | "fav-except" | "all")
+            }}
+          >
+            <SelectTrigger className="h-7 text-xs w-28">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="fav-only" className="text-xs">favのみ</SelectItem>
+              <SelectItem value="fav-except" className="text-xs">fav以外</SelectItem>
+              <SelectItem value="all" className="text-xs">フィルターなし</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        
+        {/* テーブル */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-xs text-muted-foreground">
+                <TableHead className="py-1 px-1 text-left font-medium">タイトル</TableHead>
+                <TableHead className="py-1 px-1 text-left font-medium">作成日</TableHead>
+                <TableHead className="py-1 px-1 text-left font-medium">タイプ</TableHead>
+                <TableHead className="py-1 px-1 w-8 text-center font-medium">♡</TableHead>
+                <TableHead className="py-1 px-1 text-left font-medium">リンク</TableHead>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-6 text-sm">
+                    読み込み中...
+                  </TableCell>
+                </tr>
+              ) : filteredThreads.length === 0 ? (
+                <tr>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-6 text-sm">
+                    データがありません
+                  </TableCell>
+                </tr>
+              ) : (
+                filteredThreads.map((thread) => {
+                  const link = thread.type === "free_chat" 
+                    ? `/free-chat/${thread.id}`
+                    : thread.type === "review_chat"
+                    ? `/your-page/review/${thread.review_id || thread.id}` // review_idがあればそれを使用
+                    : `/short-answer/${thread.id}`
+                  
+                  return (
+                    <tr key={thread.id} className="hover:bg-amber-50/40">
+                      <TableCell className="py-1.5 px-1 align-top">
+                        <span className="text-xs">{thread.title || "(タイトルなし)"}</span>
+                      </TableCell>
+                      <TableCell className="py-1.5 px-1 align-top">
+                        <span className="text-xs text-muted-foreground">{formatDate(thread.created_at)}</span>
+                      </TableCell>
+                      <TableCell className="py-1.5 px-1 align-top">
+                        <span className="text-xs">{getTypeLabel(thread.type)}</span>
+                      </TableCell>
+                      <TableCell className="py-1.5 px-1 w-8 align-top text-center">
+                        <button
+                          onClick={() => updateFavorite(thread.id, thread.favorite === 1 ? 0 : 1)}
+                          className={cn(
+                            "text-lg transition-colors",
+                            thread.favorite === 1 ? "text-red-500" : "text-gray-300"
+                          )}
+                        >
+                          <Heart className={cn("h-4 w-4", thread.favorite === 1 && "fill-current")} />
+                        </button>
+                      </TableCell>
+                      <TableCell className="py-1.5 px-1 align-top">
+                        <a
+                          href={link}
+                          className="flex items-center gap-1 text-xs text-amber-700 hover:text-amber-900 hover:underline"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          開く
+                        </a>
+                      </TableCell>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </CardContent>
     </Card>
   )

@@ -221,8 +221,9 @@ export interface Thread {
   title?: string | null
   created_at: string
   last_message_at?: string | null
-  is_archived: boolean
+  favorite: number  // 0=OFF, 1=ON
   pinned: boolean
+  review_id?: number | null  // 講評チャットの場合のreview_id
 }
 
 export interface ThreadListResponse {

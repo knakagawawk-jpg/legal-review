@@ -389,8 +389,9 @@ class ThreadResponse(BaseModel):
     title: Optional[str] = None
     created_at: datetime
     last_message_at: Optional[datetime] = None
-    is_archived: bool
+    favorite: int  # お気に入りフラグ（0=OFF, 1=ON）
     pinned: bool
+    review_id: Optional[int] = None  # 講評チャットの場合のreview_id
 
     class Config:
         from_attributes = True
