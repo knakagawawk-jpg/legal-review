@@ -81,8 +81,16 @@ def register_timer_routes(app):
             existing_running.stop_reason = "auto_replaced_by_new_start"
             existing_running.updated_at_utc = now_utc
             
+            # セッション開始時刻のタイムゾーン情報を保証（DBから取得したdatetimeがタイムゾーン情報を持たない場合がある）
+            UTC = ZoneInfo("UTC")
+            existing_started_at_utc = existing_running.started_at_utc
+            if existing_started_at_utc.tzinfo is None:
+                existing_started_at_utc = existing_started_at_utc.replace(tzinfo=UTC)
+            elif existing_started_at_utc.tzinfo != UTC:
+                existing_started_at_utc = existing_started_at_utc.astimezone(UTC)
+            
             # 停止したセッションを4:00区切りで分割してchunksを作成
-            chunks = split_session_by_date_boundary(existing_running.started_at_utc, now_utc)
+            chunks = split_session_by_date_boundary(existing_started_at_utc, now_utc)
             for chunk_study_date, chunk_start, chunk_end, chunk_seconds in chunks:
                 chunk_id = str(uuid.uuid4())
                 chunk = TimerDailyChunk(
@@ -194,11 +202,19 @@ def register_timer_routes(app):
         session.stop_reason = "user_stop"
         session.updated_at_utc = now_utc
         
+        # セッション開始時刻のタイムゾーン情報を保証（DBから取得したdatetimeがタイムゾーン情報を持たない場合がある）
+        UTC = ZoneInfo("UTC")
+        started_at_utc = session.started_at_utc
+        if started_at_utc.tzinfo is None:
+            started_at_utc = started_at_utc.replace(tzinfo=UTC)
+        elif started_at_utc.tzinfo != UTC:
+            started_at_utc = started_at_utc.astimezone(UTC)
+        
         # セッション開始時刻からstudy_dateを計算（セッションがどの日に属するか）
-        session_study_date = get_study_date(session.started_at_utc)
+        session_study_date = get_study_date(started_at_utc)
         
         # セッションを4:00区切りで分割してchunksを作成
-        chunks = split_session_by_date_boundary(session.started_at_utc, now_utc)
+        chunks = split_session_by_date_boundary(started_at_utc, now_utc)
         
         # セッション全体のsessions_countを更新（セッション開始日のstudy_dateが今日の場合のみ）
         if session_study_date == study_date:
@@ -318,7 +334,11 @@ def register_timer_routes(app):
         
         for running_session in running_sessions:
             # このセッションが今日のstudy_dateに属するかチェック
-            running_study_date = get_study_date(running_session.started_at_utc)
+            # タイムゾーン情報を保証（DBから取得したdatetimeがタイムゾーン情報を持たない場合がある）
+            running_started_at_utc = running_session.started_at_utc
+            if running_started_at_utc.tzinfo is None:
+                running_started_at_utc = running_started_at_utc.replace(tzinfo=ZoneInfo("UTC"))
+            running_study_date = get_study_date(running_started_at_utc)
             if running_study_date == study_date and running_session not in sessions:
                 sessions.insert(0, running_session)
                 sessions = sessions[:limit]

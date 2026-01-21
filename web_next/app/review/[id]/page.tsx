@@ -227,7 +227,7 @@ export default function ReviewResultPage() {
 
     apiClient
       .delete(`/api/threads/${threadId}/messages`)
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => {
         clearLocal()
       })

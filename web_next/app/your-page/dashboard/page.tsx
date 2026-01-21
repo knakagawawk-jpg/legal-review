@@ -62,8 +62,8 @@ interface DashboardItem {
 
 interface TimerSession {
   id: string
-  started_at: string  // ISO datetime string
-  ended_at: string | null  // ISO datetime string or null
+  started_at_utc: string  // ISO datetime string (UTC)
+  ended_at_utc: string | null  // ISO datetime string (UTC) or null
   status: "running" | "stopped"
   stop_reason?: string
 }
@@ -712,13 +712,19 @@ function YourPageDashboardInner() {
       // runningセッションを検出して状態を設定
       const runningSession = sessions.find(s => s.status === "running")
       if (runningSession) {
+        const startTime = new Date(runningSession.started_at_utc)
         setActiveSessionId(runningSession.id)
-        setActiveSessionStartTime(new Date(runningSession.started_at))
+        setActiveSessionStartTime(startTime)
         setTimerEnabled(true)
+        // 過去のセッション開始時刻からの経過時間を初期値として設定
+        const now = new Date()
+        const elapsedSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000)
+        setElapsedTime(elapsedSeconds)
       } else {
         setActiveSessionId(null)
         setActiveSessionStartTime(null)
         setTimerEnabled(false)
+        setElapsedTime(0)
       }
     } catch (error) {
       console.error("[loadTimerData] エラー:", error)
@@ -1819,8 +1825,8 @@ function YourPageDashboardInner() {
                           <p className="text-[10px] text-muted-foreground text-center py-2">ログがありません</p>
                         ) : (
                           timerSessions.slice(0, 5).map((session) => {
-                            const startTime = new Date(session.started_at)
-                            const endTime = session.ended_at ? new Date(session.ended_at) : null
+                            const startTime = new Date(session.started_at_utc)
+                            const endTime = session.ended_at_utc ? new Date(session.ended_at_utc) : null
                             const duration = endTime
                               ? Math.floor((endTime.getTime() - startTime.getTime()) / 1000)
                               : (timerEnabled && session.id === activeSessionId ? calculateRunningSeconds() : 0)
