@@ -79,6 +79,7 @@ function NotesPage() {
   const [editingPageData, setEditingPageData] = useState<NotePage | null>(null)
 
   useEffect(() => {
+    console.log("NotesPage component mounted")
     // ノートブック一覧を取得
     const fetchNotebooks = async () => {
       try {
@@ -113,8 +114,16 @@ function NotesPage() {
   // 直接DOMにイベントリスナーを追加（デバッグ用）
   useEffect(() => {
     const button = createButtonRef.current
-    if (!button) return
+    console.log("Button ref:", button)
+    if (!button) {
+      console.log("Button ref is null!")
+      // IDでも試す
+      const buttonById = document.getElementById('create-notebook-button')
+      console.log("Button by ID:", buttonById)
+      return
+    }
 
+    console.log("Adding event listener to button")
     const handleClick = (e: MouseEvent) => {
       console.log("Direct DOM event listener fired!", e)
       e.preventDefault()
@@ -123,6 +132,8 @@ function NotesPage() {
     }
 
     button.addEventListener('click', handleClick, true) // capture phase
+    button.addEventListener('mousedown', () => console.log("Direct mousedown"), true)
+    button.addEventListener('mouseup', () => console.log("Direct mouseup"), true)
 
     return () => {
       button.removeEventListener('click', handleClick, true)
