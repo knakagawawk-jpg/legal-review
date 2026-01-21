@@ -29,6 +29,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { RichTextEditor } from "@/components/editor/rich-text-editor"
 import { Calendar, DatePickerCalendar } from "@/components/ui/calendar"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -472,10 +473,22 @@ function SubjectPage() {
   const [newNotebook, setNewNotebook] = useState({ title: "", description: "" })
   const [creatingNotebook, setCreatingNotebook] = useState(false)
   
+  // ノートブック編集ダイアログ
+  const [editNotebookDialogOpen, setEditNotebookDialogOpen] = useState(false)
+  const [editingNotebookId, setEditingNotebookId] = useState<number | null>(null)
+  const [editingNotebookData, setEditingNotebookData] = useState({ title: "", description: "" })
+  const [updatingNotebook, setUpdatingNotebook] = useState(false)
+  
   // セクション作成ダイアログ
   const [createSectionDialogOpen, setCreateSectionDialogOpen] = useState(false)
   const [newSection, setNewSection] = useState({ notebook_id: 0, title: "" })
   const [creatingSection, setCreatingSection] = useState(false)
+  
+  // セクション編集ダイアログ
+  const [editSectionDialogOpen, setEditSectionDialogOpen] = useState(false)
+  const [editingSectionId, setEditingSectionId] = useState<number | null>(null)
+  const [editingSectionTitle, setEditingSectionTitle] = useState("")
+  const [updatingSection, setUpdatingSection] = useState(false)
   
   // ページ作成ダイアログ
   const [createPageDialogOpen, setCreatePageDialogOpen] = useState(false)
@@ -1416,6 +1429,104 @@ function SubjectPage() {
   const openCreatePageDialog = (sectionId: number) => {
     setNewPage({ section_id: sectionId, title: "", content: "" })
     setCreatePageDialogOpen(true)
+  }
+
+  // ノートブック編集ダイアログを開く
+  const openEditNotebookDialog = (notebook: NotebookWithSections) => {
+    setEditingNotebookId(notebook.id)
+    setEditingNotebookData({ title: notebook.title, description: notebook.description || "" })
+    setEditNotebookDialogOpen(true)
+  }
+
+  // ノートブック更新
+  const handleUpdateNotebook = async () => {
+    if (!editingNotebookId || !editingNotebookData.title.trim()) {
+      alert("タイトルを入力してください")
+      return
+    }
+
+    setUpdatingNotebook(true)
+    try {
+      await apiClient.put(`/api/notebooks/${editingNotebookId}`, {
+        title: editingNotebookData.title.trim(),
+        description: editingNotebookData.description.trim() || null,
+      })
+      await fetchNotebooks()
+      setEditNotebookDialogOpen(false)
+      setEditingNotebookId(null)
+    } catch (err: any) {
+      alert(err?.error || "ノートブックの更新に失敗しました")
+    } finally {
+      setUpdatingNotebook(false)
+    }
+  }
+
+  // ノートブック削除
+  const handleDeleteNotebook = async (notebookId: number) => {
+    if (!confirm("このノートブックを削除しますか？\nセクションとページもすべて削除されます。")) return
+
+    try {
+      await apiClient.delete(`/api/notebooks/${notebookId}`)
+      await fetchNotebooks()
+    } catch (err: any) {
+      alert(err?.error || "ノートブックの削除に失敗しました")
+    }
+  }
+
+  // セクション編集ダイアログを開く
+  const openEditSectionDialog = (section: NoteSectionWithPages) => {
+    setEditingSectionId(section.id)
+    setEditingSectionTitle(section.title)
+    setEditSectionDialogOpen(true)
+  }
+
+  // セクション更新
+  const handleUpdateSection = async () => {
+    if (!editingSectionId || !editingSectionTitle.trim()) {
+      alert("セクション名を入力してください")
+      return
+    }
+
+    setUpdatingSection(true)
+    try {
+      await apiClient.put(`/api/note-sections/${editingSectionId}`, {
+        title: editingSectionTitle.trim(),
+      })
+      await fetchNotebooks()
+      setEditSectionDialogOpen(false)
+      setEditingSectionId(null)
+    } catch (err: any) {
+      alert(err?.error || "セクションの更新に失敗しました")
+    } finally {
+      setUpdatingSection(false)
+    }
+  }
+
+  // セクション削除
+  const handleDeleteSection = async (sectionId: number) => {
+    if (!confirm("このセクションを削除しますか？\nセクション内のページもすべて削除されます。")) return
+
+    try {
+      await apiClient.delete(`/api/note-sections/${sectionId}`)
+      await fetchNotebooks()
+    } catch (err: any) {
+      alert(err?.error || "セクションの削除に失敗しました")
+    }
+  }
+
+  // ページ削除
+  const handleDeletePage = async (pageId: number) => {
+    if (!confirm("このページを削除しますか？")) return
+
+    try {
+      await apiClient.delete(`/api/note-pages/${pageId}`)
+      if (selectedPageId === pageId) {
+        setSelectedPageId(null)
+      }
+      await fetchNotebooks()
+    } catch (err: any) {
+      alert(err?.error || "ページの削除に失敗しました")
+    }
   }
 
   // 選択されたページを取得（3階層対応）
@@ -2375,12 +2486,12 @@ function SubjectPage() {
 
             {/* ノートタブ */}
             {mainTab === "notes" && (
-              <div className="flex items-start gap-4">
+              <div className="flex flex-col h-[calc(100vh-180px)]">
                 {/* メインコンテンツエリア */}
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 flex flex-col">
                   {selectedPage ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-col h-full">
+                      <div className="flex items-center justify-between gap-2 mb-2">
                         <Input
                           value={editingPageTitle}
                           onChange={(e) => setEditingPageTitle(e.target.value)}
@@ -2412,12 +2523,12 @@ function SubjectPage() {
                           </Button>
                         </div>
                       </div>
-                      <div className="border border-amber-200/60 rounded-lg overflow-hidden">
-                        <Textarea
-                          value={editingPageContent}
-                          onChange={(e) => handlePageContentChange(e.target.value)}
+                      <div className="border-0 rounded-lg overflow-hidden flex-1">
+                        <RichTextEditor
+                          key={selectedPage.id}
+                          content={editingPageContent}
+                          onChange={handlePageContentChange}
                           placeholder="ノートの内容を入力..."
-                          className="min-h-[400px] resize-none border-0 focus-visible:ring-0 text-sm text-slate-700 p-4"
                         />
                       </div>
                     </div>
@@ -2506,7 +2617,7 @@ function SubjectPage() {
                   {notebooks.map((notebook) => (
                     <div key={notebook.id} className="border border-amber-200/60 rounded-lg overflow-hidden">
                       {/* ノートブック行 */}
-                      <div className="flex items-center gap-1 p-2 hover:bg-amber-50/40 transition-colors">
+                      <div className="flex items-center gap-1 p-2 hover:bg-amber-50/40 transition-colors group">
                         <button
                           onClick={() => toggleNotebook(notebook.id)}
                           className="flex items-center gap-1 flex-1 text-left min-w-0"
@@ -2533,6 +2644,30 @@ function SubjectPage() {
                         >
                           <Plus className="h-3 w-3 text-amber-600" />
                         </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 w-5 p-0 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <MoreVertical className="h-3 w-3 text-amber-600" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => openEditNotebookDialog(notebook)}>
+                              <Edit className="h-3 w-3 mr-2" />
+                              編集
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteNotebook(notebook.id)}
+                              className="text-destructive"
+                            >
+                              <Trash2 className="h-3 w-3 mr-2" />
+                              削除
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
 
                       {/* セクション一覧 */}
@@ -2542,7 +2677,7 @@ function SubjectPage() {
                             notebook.sections.map((section) => (
                               <div key={section.id} className="border-b border-amber-100 last:border-b-0">
                                 {/* セクション行 */}
-                                <div className="flex items-center gap-1 pl-5 pr-2 py-1.5 hover:bg-amber-50/30 transition-colors">
+                                <div className="flex items-center gap-1 pl-5 pr-2 py-1.5 hover:bg-amber-50/30 transition-colors group/section">
                                   <button
                                     onClick={() => toggleSection(section.id)}
                                     className="flex items-center gap-1 flex-1 text-left min-w-0"
@@ -2564,6 +2699,30 @@ function SubjectPage() {
                                   >
                                     <Plus className="h-2.5 w-2.5 text-amber-500" />
                                   </Button>
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-4 w-4 p-0 shrink-0 opacity-0 group-hover/section:opacity-100 transition-opacity"
+                                      >
+                                        <MoreVertical className="h-2.5 w-2.5 text-amber-500" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuItem onClick={() => openEditSectionDialog(section)}>
+                                        <Edit className="h-3 w-3 mr-2" />
+                                        編集
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={() => handleDeleteSection(section.id)}
+                                        className="text-destructive"
+                                      >
+                                        <Trash2 className="h-3 w-3 mr-2" />
+                                        削除
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
                                 </div>
 
                                 {/* ページ一覧 */}
@@ -2573,30 +2732,48 @@ function SubjectPage() {
                                       section.pages.map((page) => {
                                         const isSelected = page.id === selectedPageId
                                         return (
-                                          <button
+                                          <div
                                             key={page.id}
-                                            onClick={() => {
-                                              setSelectedPageId(page.id)
-                                              try {
-                                                const params = new URLSearchParams(searchParams.toString())
-                                                params.set("tab", "notes")
-                                                params.set("pageId", String(page.id))
-                                                const encodedSubject = encodeURIComponent(selectedSubject)
-                                                router.replace(`/your-page/subjects/${encodedSubject}?${params.toString()}`)
-                                              } catch (error) {
-                                                console.error("Failed to sync pageId to URL:", error)
-                                              }
-                                            }}
                                             className={cn(
-                                              "w-full flex items-center gap-1.5 px-2 py-1 text-left text-[11px] rounded transition-colors",
+                                              "flex items-center gap-1 rounded transition-colors group/page",
                                               isSelected
-                                                ? "bg-amber-200/60 text-amber-900 font-medium"
-                                                : "text-slate-600 hover:bg-amber-50/40"
+                                                ? "bg-amber-200/60"
+                                                : "hover:bg-amber-50/40"
                                             )}
                                           >
-                                            <FileText className="h-2.5 w-2.5 text-amber-500 shrink-0" />
-                                            <span className="truncate">{page.title || "無題"}</span>
-                                          </button>
+                                            <button
+                                              onClick={() => {
+                                                setSelectedPageId(page.id)
+                                                try {
+                                                  const params = new URLSearchParams(searchParams.toString())
+                                                  params.set("tab", "notes")
+                                                  params.set("pageId", String(page.id))
+                                                  const encodedSubject = encodeURIComponent(selectedSubject)
+                                                  router.replace(`/your-page/subjects/${encodedSubject}?${params.toString()}`)
+                                                } catch (error) {
+                                                  console.error("Failed to sync pageId to URL:", error)
+                                                }
+                                              }}
+                                              className={cn(
+                                                "flex-1 flex items-center gap-1.5 px-2 py-1 text-left text-[11px]",
+                                                isSelected
+                                                  ? "text-amber-900 font-medium"
+                                                  : "text-slate-600"
+                                              )}
+                                            >
+                                              <FileText className="h-2.5 w-2.5 text-amber-500 shrink-0" />
+                                              <span className="truncate">{page.title || "無題"}</span>
+                                            </button>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              className="h-4 w-4 p-0 shrink-0 opacity-0 group-hover/page:opacity-100 transition-opacity mr-1"
+                                              onClick={() => handleDeletePage(page.id)}
+                                              title="削除"
+                                            >
+                                              <Trash2 className="h-2.5 w-2.5 text-red-500" />
+                                            </Button>
+                                          </div>
                                         )
                                       })
                                     ) : (
@@ -2745,6 +2922,86 @@ function SubjectPage() {
             </Button>
             <Button onClick={handleCreatePage} disabled={creatingPage}>
               {creatingPage ? "作成中..." : "作成"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ノートブック編集ダイアログ */}
+      <Dialog open={editNotebookDialogOpen} onOpenChange={setEditNotebookDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>ノートブックを編集</DialogTitle>
+            <DialogDescription>
+              ノートブックの情報を編集してください
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-notebook-title">タイトル</Label>
+              <Input
+                id="edit-notebook-title"
+                value={editingNotebookData.title}
+                onChange={(e) => setEditingNotebookData(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="ノートブックのタイトルを入力"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-notebook-description">説明（任意）</Label>
+              <Textarea
+                id="edit-notebook-description"
+                value={editingNotebookData.description}
+                onChange={(e) => setEditingNotebookData(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="ノートブックの説明を入力（任意）"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditNotebookDialogOpen(false)}
+              disabled={updatingNotebook}
+            >
+              キャンセル
+            </Button>
+            <Button onClick={handleUpdateNotebook} disabled={updatingNotebook}>
+              {updatingNotebook ? "更新中..." : "更新"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* セクション編集ダイアログ */}
+      <Dialog open={editSectionDialogOpen} onOpenChange={setEditSectionDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>セクションを編集</DialogTitle>
+            <DialogDescription>
+              セクション名を編集してください
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-section-title">セクション名</Label>
+              <Input
+                id="edit-section-title"
+                value={editingSectionTitle}
+                onChange={(e) => setEditingSectionTitle(e.target.value)}
+                placeholder="セクション名を入力"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditSectionDialogOpen(false)}
+              disabled={updatingSection}
+            >
+              キャンセル
+            </Button>
+            <Button onClick={handleUpdateSection} disabled={updatingSection}>
+              {updatingSection ? "更新中..." : "更新"}
             </Button>
           </DialogFooter>
         </DialogContent>

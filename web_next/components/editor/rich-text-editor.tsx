@@ -110,9 +110,9 @@ export function RichTextEditor({
   }
 
   return (
-    <div className="border rounded-md">
+    <div className="border rounded-md flex flex-col h-full">
       {/* ツールバー */}
-      <div className="flex items-center gap-1 p-2 border-b bg-muted/50 flex-wrap">
+      <div className="flex items-center gap-1 p-2 border-b bg-muted/50 flex-wrap shrink-0">
         {/* 太字 */}
         <Button
           type="button"
@@ -194,7 +194,7 @@ export function RichTextEditor({
       </div>
 
       {/* エディタ */}
-      <EditorContent editor={editor} className="min-h-[200px]" />
+      <EditorContent editor={editor} className="flex-1 overflow-y-auto min-h-[200px] [&>.tiptap]:min-h-full [&>.tiptap]:p-4" />
     </div>
   )
 }
