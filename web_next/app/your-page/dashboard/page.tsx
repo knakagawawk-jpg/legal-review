@@ -2117,7 +2117,7 @@ function YourPageDashboardInner() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead className="w-16 text-[10px] whitespace-nowrap">科目</TableHead>
+                              <TableHead className="w-32 text-[10px] whitespace-nowrap">科目</TableHead>
                               <TableHead className="min-w-[250px] text-[10px]">問題文</TableHead>
                               <TableHead className="min-w-[250px] text-[10px]">回答例</TableHead>
                               <TableHead className="min-w-[200px] text-[10px]">参照情報</TableHead>
@@ -2135,7 +2135,7 @@ function YourPageDashboardInner() {
                                   key={p.id}
                                   onMouseDown={() => touchRecentReviewRow(p.id)}
                                 >
-                                  <TableCell className="align-top py-2">
+                                  <TableCell className="align-top py-2 w-32">
                                     {subj ? (
                                       <span className={cn("text-[10px] px-2 py-0.5 rounded", SUBJECT_COLORS[subj.name] || "bg-muted text-muted-foreground")}>
                                         {subj.name}
@@ -2146,7 +2146,7 @@ function YourPageDashboardInner() {
                                   </TableCell>
 
                                   <TableCell className="align-top py-2">
-                                    <div className="whitespace-pre-wrap text-xs leading-5 max-h-[168px] overflow-y-auto break-words">
+                                    <div className="whitespace-pre-wrap text-xs leading-5 max-h-[100px] overflow-y-auto break-words">
                                       {`問${p.order_index}. ${p.question_text}`}
                                     </div>
                                   </TableCell>
@@ -2165,7 +2165,7 @@ function YourPageDashboardInner() {
                                         回答例を表示
                                       </Button>
                                     ) : (
-                                      <div className="whitespace-pre-wrap text-xs leading-5 max-h-[168px] overflow-y-auto break-words">
+                                      <div className="whitespace-pre-wrap text-xs leading-5 max-h-[100px] overflow-y-auto break-words">
                                         {p.answer_example || ""}
                                       </div>
                                     )}
@@ -2173,7 +2173,7 @@ function YourPageDashboardInner() {
 
                                   <TableCell className="align-top py-2">
                                     {expanded ? (
-                                      <div className="whitespace-pre-wrap text-xs leading-5 max-h-[168px] overflow-y-auto break-words">
+                                      <div className="whitespace-pre-wrap text-xs leading-5 max-h-[100px] overflow-y-auto break-words">
                                         {p.references || ""}
                                       </div>
                                     ) : (
