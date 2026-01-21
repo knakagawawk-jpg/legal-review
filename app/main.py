@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import or_, cast, String, func
 from sqlalchemy.orm import Session
 from typing import Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import uuid
 from zoneinfo import ZoneInfo
 
@@ -1737,12 +1737,15 @@ async def create_notebook(
     if not (1 <= notebook_data.subject_id <= 18):
         raise HTTPException(status_code=400, detail="Invalid subject_id (must be 1-18)")
 
+    now = datetime.now(timezone.utc)
     notebook = Notebook(
         user_id=current_user.id,
         subject_id=notebook_data.subject_id,
         title=notebook_data.title,
         description=notebook_data.description,
-        color=notebook_data.color
+        color=notebook_data.color,
+        created_at=now,
+        updated_at=now
     )
     db.add(notebook)
     db.commit()
@@ -1872,10 +1875,13 @@ async def create_note_section(
     if notebook.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     
+    now = datetime.now(timezone.utc)
     section = NoteSection(
         notebook_id=section_data.notebook_id,
         title=section_data.title,
-        display_order=section_data.display_order or 0
+        display_order=section_data.display_order or 0,
+        created_at=now,
+        updated_at=now
     )
     db.add(section)
     db.commit()
@@ -1945,11 +1951,14 @@ async def create_note_page(
     if notebook.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     
+    now = datetime.now(timezone.utc)
     page = NotePage(
         section_id=page_data.section_id,
         title=page_data.title,
         content=page_data.content,
-        display_order=page_data.display_order or 0
+        display_order=page_data.display_order or 0,
+        created_at=now,
+        updated_at=now
     )
     db.add(page)
     db.commit()
