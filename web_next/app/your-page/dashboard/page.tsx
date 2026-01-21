@@ -405,49 +405,8 @@ function YourPageDashboardInner() {
   // ============================================================================
   // タイマー状態管理
   // ============================================================================
-  /**
-   * 【タイマー実装の現状と問題点】
-   * 
-   * 現在の実装:
-   * 1. handleTimerToggleが呼ばれると、isTimerTogglingRef.current = true を設定
-   * 2. 楽観的更新でsetTimerEnabled(enabled)を実行（UIを即座に更新）
-   * 3. handleTimerStart()またはhandleTimerStop()を呼び出し
-   * 4. 成功時は5秒後にフラグを解除
-   * 5. loadTimerDataは3つのチェックポイントでisTimerTogglingRef.currentをチェック
-   * 
-   * 問題点:
-   * 1. 【競合状態】useEffectでloadTimerDataが呼ばれる可能性がある
-   *    - マウント時に100ms遅延で実行されるが、タイマー操作と競合する可能性がある
-   *    - 他の場所からloadTimerDataが呼ばれる可能性がある
-   * 
-   * 2. 【固定遅延】5秒の固定遅延は不適切
-   *    - API呼び出しが完了した後も不要に長い
-   *    - タイマー操作が完了した時点でフラグを解除すべき
-   * 
-   * 3. 【状態の不整合】loadTimerDataが状態を上書きする可能性
-   *    - タイマー操作中にloadTimerDataが実行されると、状態が上書きされる
-   *    - チェックポイントはあるが、タイミングによっては回避できない可能性がある
-   * 
-   * 4. 【デバッグの困難さ】複数のチェックポイントが散在している
-   *    - 問題の原因を特定するのが困難
-   *    - ログはあるが、根本的な解決には至っていない
-   * 
-   * 推奨される改善策（実装はしていない）:
-   * 1. タイマー操作の完了をPromiseで管理し、完了時にフラグを解除
-   * 2. loadTimerDataの呼び出し元を一元管理
-   * 3. タイマー操作中はloadTimerDataを完全にブロックする仕組みを強化
-   * 4. 状態管理をより明確に分離（操作中フラグとデータ取得を分離）
-   */
-
   // タイマーのON/OFF状態（UI表示用）
   const [timerEnabled, setTimerEnabled] = useState(false)
-
-  // タイマー操作中のフラグ（state版、UI表示用）
-  const [isTimerToggling, setIsTimerToggling] = useState(false)
-
-  // タイマー操作中のフラグ（ref版、useEffectの依存配列を避けるため）
-  // このrefがtrueの間、loadTimerDataは状態を上書きしない
-  const isTimerTogglingRef = useRef(false)
 
   // UI状態
   const [timerDetailsOpen, setTimerDetailsOpen] = useState(false)
@@ -576,7 +535,7 @@ function YourPageDashboardInner() {
   }
 
   // Get study date (4:00 boundary)
-  const getStudyDate = (date: Date = new Date()): string => {
+  const getStudyDate = useCallback((date: Date = new Date()): string => {
     const jstDate = new Date(date.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }))
     const hours = jstDate.getHours()
     const studyDate = new Date(jstDate)
@@ -584,7 +543,7 @@ function YourPageDashboardInner() {
       studyDate.setDate(studyDate.getDate() - 1)
     }
     return studyDate.toISOString().split("T")[0]
-  }
+  }, [])
 
   // Calculate running seconds for today (4:00 boundary)
   const calculateRunningSeconds = (): number => {
@@ -678,50 +637,21 @@ function YourPageDashboardInner() {
   }, [])
 
   // ============================================================================
-  // タイマーデータ取得関数
+  // タイマーデータ取得関数（初期読み込み専用）
   // ============================================================================
   /**
    * タイマーデータをサーバーから取得し、状態を更新する
-   * 
-   * 注意: この関数は以下の場合に状態を更新しない:
-   * 1. isTimerTogglingRef.current === true の場合（タイマー操作中）
-   * 2. skipStateUpdate === true の場合（既に状態が更新済み）
-   * 
-   * @param skipStateUpdate - trueの場合、timerEnabled等の状態を更新しない（データのみ更新）
+   * 初期読み込み・リロード時のみ使用
    */
-  const loadTimerData = useCallback(async (skipStateUpdate = false) => {
-    // 【チェックポイント1】タイマー操作中は状態を上書きしない（最初にチェック）
-    if (isTimerTogglingRef.current) {
-      console.log("[loadTimerData] チェックポイント1: タイマー操作中のためスキップ")
-      return
-    }
-
+  const loadTimerData = useCallback(async () => {
     try {
       const studyDate = getStudyDate()
       const stats = await apiClient.get<TimerDailyStats>(`/api/timer/daily-stats?study_date=${studyDate}`)
       const sessions = await apiClient.get<TimerSession[]>(`/api/timer/sessions?study_date=${studyDate}`)
 
-      // 【チェックポイント2】API呼び出し後にタイマー操作中でないことを再確認
-      if (isTimerTogglingRef.current) {
-        console.log("[loadTimerData] チェックポイント2: API呼び出し後にタイマー操作中を検出、スキップ")
-        return
-      }
-
-      // データのみ更新（状態は更新しない）
+      // データを更新
       setTimerDailyStats(stats)
       setTimerSessions(sessions)
-
-      // skipStateUpdateがtrueの場合は状態を更新しない（handleTimerStart/Stopで既に更新済み）
-      if (skipStateUpdate) {
-        console.log("[loadTimerData] skipStateUpdate=trueのため、状態更新をスキップ")
-        return
-      }
-
-      // 【チェックポイント3】状態更新前にタイマー操作中でないことを最終確認
-      if (isTimerTogglingRef.current) {
-        console.log("[loadTimerData] チェックポイント3: 状態更新前にタイマー操作中を検出、スキップ")
-        return
-      }
 
       // runningセッションを検出して状態を設定
       const runningSession = sessions.find(s => s.status === "running")
@@ -729,56 +659,30 @@ function YourPageDashboardInner() {
         setActiveSessionId(runningSession.id)
         setActiveSessionStartTime(new Date(runningSession.started_at))
         setTimerEnabled(true)
-        console.log("[loadTimerData] タイマー状態を更新: ON")
       } else {
         setActiveSessionId(null)
         setActiveSessionStartTime(null)
         setTimerEnabled(false)
-        console.log("[loadTimerData] タイマー状態を更新: OFF")
       }
     } catch (error) {
       console.error("[loadTimerData] エラー:", error)
-      // エラー時は空のデータを設定（操作中でない場合のみ）
-      if (!isTimerTogglingRef.current && !skipStateUpdate) {
-        const studyDate = getStudyDate()
-        setTimerDailyStats({ study_date: studyDate, total_seconds: 0, sessions_count: 0 })
-        setTimerSessions([])
-        setActiveSessionId(null)
-        setActiveSessionStartTime(null)
-        setTimerEnabled(false)
-        console.log("[loadTimerData] エラー時のデフォルト状態を設定")
-      }
+      // エラー時は空のデータを設定
+      const studyDate = getStudyDate()
+      setTimerDailyStats({ study_date: studyDate, total_seconds: 0, sessions_count: 0 })
+      setTimerSessions([])
+      setActiveSessionId(null)
+      setActiveSessionStartTime(null)
+      setTimerEnabled(false)
     }
-  }, []) // 依存配列を空にして、再作成を防ぐ
+  }, [getStudyDate])
 
   // ============================================================================
   // タイマーデータの初期読み込み
   // ============================================================================
-  /**
-   * コンポーネントマウント時にタイマーデータを読み込む
-   * 
-   * 注意: タイマー操作中（isTimerTogglingRef.current === true）の場合は実行しない
-   * 100msの遅延を設けて、タイマー操作が開始される前に実行されないようにする
-   */
   useEffect(() => {
-    // 【チェックポイント1】タイマー操作中はloadTimerDataを実行しない
-    if (isTimerTogglingRef.current) {
-      console.log("[useEffect] チェックポイント1: タイマー操作中のためloadTimerDataをスキップ")
-      return
-    }
-    // 少し遅延して実行（タイマー操作が開始される前に実行されないようにする）
-    const timer = setTimeout(() => {
-      // 【チェックポイント2】遅延後にもう一度確認
-      if (!isTimerTogglingRef.current) {
-        console.log("[useEffect] チェックポイント2: loadTimerDataを実行")
-        loadTimerData()
-      } else {
-        console.log("[useEffect] チェックポイント2: タイマー操作中を検出、スキップ")
-      }
-    }, 100)
-    return () => clearTimeout(timer)
+    loadTimerData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // 依存配列を空にして、マウント時のみ実行
+  }, []) // マウント時のみ実行
 
   // ============================================================================
   // タイマー開始処理
@@ -786,13 +690,14 @@ function YourPageDashboardInner() {
   /**
    * タイマーを開始する
    * 
-   * 注意: この関数はhandleTimerToggleから呼ばれる
-   * - タイマー操作中フラグ（isTimerTogglingRef.current）がtrueであることを前提とする
-   * - レスポンスから直接状態を設定する（loadTimerDataを呼ばない）
-   * - setTimerEnabledは呼ばない（handleTimerToggleで既に設定済み）
+   * 処理順序:
+   * ①DBへのInsert（API呼び出し）
+   * ②表記上ONにする（setTimerEnabled(true)）
+   * ③カウントアップ開始（elapsedTimeのカウントはuseEffectで自動開始）
+   * ④詳細のログの開始時間を入れる（timerSessionsに追加）
    */
   const handleTimerStart = async () => {
-    console.log("[handleTimerStart] タイマー開始APIを呼び出し")
+    // ①DBへのInsert
     const response = await apiClient.post<{
       active_session_id: string
       study_date: string
@@ -802,19 +707,19 @@ function YourPageDashboardInner() {
       sessions: TimerSession[]
     }>("/api/timer/start", {})
 
-    // レスポンスから直接状態を設定（loadTimerDataを呼ばない）
-    // タイマー操作中であることを確認
-    if (!isTimerTogglingRef.current) {
-      console.warn("[handleTimerStart] 警告: タイマー操作フラグが設定されていません")
-    }
+    // ②表記上ONにする
+    setTimerEnabled(true)
+    
+    // ④詳細のログの開始時間を入れる（レスポンスから取得したsessionsを設定）
+    setTimerSessions(response.sessions)
+    setTimerDailyStats(response.daily_stats)
+    
+    // セッション情報を設定
     setActiveSessionId(response.active_session_id)
     setActiveSessionStartTime(new Date(response.active_started_at_utc))
-    setTimerDailyStats(response.daily_stats)
-    setTimerSessions(response.sessions)
+    
+    // カウントアップ用のelapsedTimeをリセット
     setElapsedTime(0)
-    console.log("[handleTimerStart] タイマー開始成功、状態を更新")
-    // setTimerEnabledはhandleTimerToggleで管理するため、ここでは呼び出さない
-    // 状態は既に楽観的更新で設定済み
   }
 
   // ============================================================================
@@ -823,17 +728,17 @@ function YourPageDashboardInner() {
   /**
    * タイマーを停止する
    * 
-   * 注意: この関数はhandleTimerToggleから呼ばれる
-   * - タイマー操作中フラグ（isTimerTogglingRef.current）がtrueであることを前提とする
-   * - レスポンスから直接状態を設定する（loadTimerDataを呼ばない）
-   * - setTimerEnabledは呼ばない（handleTimerToggleで既に設定済み）
+   * 処理順序:
+   * ①DBの確定（API呼び出し）
+   * ②表記上OFFにする（setTimerEnabled(false)）
+   * ③詳細のログの終了時間を埋める（timerSessionsを更新）
    */
   const handleTimerStop = async () => {
     if (!activeSessionId) {
-      throw new Error("[handleTimerStop] エラー: アクティブなセッションがありません")
+      throw new Error("アクティブなセッションがありません")
     }
 
-    console.log("[handleTimerStop] タイマー停止APIを呼び出し")
+    // ①DBの確定
     const response = await apiClient.post<{
       study_date: string
       confirmed_total_seconds: number
@@ -841,18 +746,16 @@ function YourPageDashboardInner() {
       sessions: TimerSession[]
     }>(`/api/timer/stop/${activeSessionId}`, {})
 
-    // レスポンスから直接状態を設定（loadTimerDataを呼ばない）
-    // タイマー操作中であることを確認
-    if (!isTimerTogglingRef.current) {
-      console.warn("[handleTimerStop] 警告: タイマー操作フラグが設定されていません")
-    }
-    setTimerDailyStats(response.daily_stats)
+    // ②表記上OFFにする
+    setTimerEnabled(false)
+    
+    // ③詳細のログの終了時間を埋める（レスポンスから取得したsessionsを設定）
     setTimerSessions(response.sessions)
+    setTimerDailyStats(response.daily_stats)
+    
+    // セッション情報をクリア
     setActiveSessionId(null)
     setActiveSessionStartTime(null)
-    console.log("[handleTimerStop] タイマー停止成功、状態を更新")
-    // setTimerEnabledはhandleTimerToggleで管理するため、ここでは呼び出さない
-    // 状態は既に楽観的更新で設定済み
   }
 
   // ============================================================================
@@ -861,65 +764,21 @@ function YourPageDashboardInner() {
   /**
    * タイマーのON/OFFを切り替える
    * 
-   * 処理フロー:
-   * 1. isTimerTogglingRef.current = true を設定（最優先）
-   *    → これにより、loadTimerData内のすべてのチェックポイントでブロックされる
-   * 2. 楽観的更新: setTimerEnabled(enabled) を実行（UIを即座に更新）
-   * 3. handleTimerStart() または handleTimerStop() を呼び出し
-   * 4. 成功時: 5秒後にフラグを解除（loadTimerDataが実行されないようにする）
-   * 5. エラー時: フラグを解除してloadTimerDataを呼び、最新の状態を取得
-   * 
-   * 問題点:
-   * - 5秒の固定遅延は、API呼び出しが完了した後も不要に長い可能性がある
-   * - loadTimerDataが他の場所から呼ばれる可能性がある（useEffect等）
-   * - タイマー操作中にloadTimerDataが実行されると、状態が上書きされる可能性がある
-   * 
    * @param enabled - true: タイマーON, false: タイマーOFF
    */
   const handleTimerToggle = async (enabled: boolean) => {
-    console.log(`[handleTimerToggle] ${enabled ? 'ON' : 'OFF'} - 開始`)
-
-    // 【ステップ1】最優先でrefを設定して、loadTimerDataが実行されないようにする
-    // この時点で、loadTimerData内のすべてのチェックポイントでブロックされる
-    isTimerTogglingRef.current = true
-    setIsTimerToggling(true)
-    console.log(`[handleTimerToggle] isTimerTogglingRef.current = true に設定`)
-
-    // 【ステップ2】楽観的更新: すぐに状態を更新（UIを即座に反映）
-    setTimerEnabled(enabled)
-    console.log(`[handleTimerToggle] 楽観的更新: timerEnabled = ${enabled}`)
-
     try {
-      // 【ステップ3】API呼び出し
       if (enabled) {
         await handleTimerStart()
-        console.log("[handleTimerToggle] タイマー開始成功")
       } else {
         await handleTimerStop()
-        console.log("[handleTimerToggle] タイマー停止成功")
       }
-      // 成功時は状態を確定（既に楽観的更新とhandleTimerStart/Stopで設定済み）
-      // loadTimerDataを呼ぶ必要はない
-
-      // 【ステップ4】成功時は、十分な遅延後にフラグを解除
-      // この間、loadTimerDataはisTimerTogglingRef.currentでブロックされる
-      setTimeout(() => {
-        console.log("[handleTimerToggle] 成功: isTimerTogglingRef.current = false に解除（5秒後）")
-        isTimerTogglingRef.current = false
-        setIsTimerToggling(false)
-      }, 5000) // 5000msに延長して、確実に操作が完了し、loadTimerDataが実行されないようにする
     } catch (error) {
       console.error("[handleTimerToggle] エラー:", error)
-      // 【エラー処理】エラー時は状態を元に戻す
+      // エラー時は状態を元に戻す
       setTimerEnabled(!enabled)
-      console.log(`[handleTimerToggle] エラー: timerEnabled = ${!enabled} に戻す`)
-
-      // エラー時はloadTimerDataを呼んで最新の状態を取得
-      isTimerTogglingRef.current = false // エラー時はrefを解除してからloadTimerDataを呼ぶ
-      setIsTimerToggling(false)
-      console.log("[handleTimerToggle] エラー: isTimerTogglingRef.current = false に解除、loadTimerDataを呼び出し")
-      await loadTimerData(false)
-      return // 早期リターンしてsetTimeoutをスキップ
+      // エラー時は初期読み込みで最新の状態を取得
+      await loadTimerData()
     }
   }
 
