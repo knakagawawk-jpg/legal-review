@@ -462,6 +462,7 @@ class DashboardItemCreate(BaseModel):
     status: int = 1  # 1=未了, 2=作業中, 3=完了, 4=後で
     memo: Optional[str] = None
     position: Optional[int] = None  # 指定しない場合は自動採番
+    favorite: Optional[int] = 0  # お気に入りフラグ（0=OFF, 1=ON）
 
 class DashboardItemUpdate(BaseModel):
     """ダッシュボード項目更新用スキーマ"""
@@ -473,6 +474,7 @@ class DashboardItemUpdate(BaseModel):
     status: Optional[int] = None
     memo: Optional[str] = None
     position: Optional[int] = None
+    favorite: Optional[int] = None  # お気に入りフラグ（0=OFF, 1=ON）
 
 class DashboardItemResponse(BaseModel):
     """ダッシュボード項目レスポンス"""
@@ -486,6 +488,7 @@ class DashboardItemResponse(BaseModel):
     status: int
     memo: Optional[str]
     position: int
+    favorite: int  # お気に入りフラグ（0=OFF, 1=ON）
     created_at: str
     updated_at: str
     deleted_at: Optional[str]

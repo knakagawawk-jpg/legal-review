@@ -4,7 +4,7 @@
 from fastapi import Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
 import uuid
 from zoneinfo import ZoneInfo
 
@@ -324,3 +324,239 @@ def register_timer_routes(app):
                 sessions = sessions[:limit]
         
         return [TimerSessionResponse.model_validate(s) for s in sessions]
+
+
+    @app.get("/api/timer/stats/week")
+    async def get_week_stats(
+        current_user: User = Depends(get_current_user_required),
+        db: Session = Depends(get_db)
+    ):
+        """
+        今週（月曜開始）の統計を取得
+        """
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        
+        USER_TIMEZONE = ZoneInfo("Asia/Tokyo")
+        now_utc = datetime.now(ZoneInfo("UTC"))
+        now_local = now_utc.astimezone(USER_TIMEZONE)
+        
+        # 月曜日を取得（4:00切替を考慮）
+        current_hour = now_local.hour
+        if current_hour < 4:
+            today = (now_local.date() - timedelta(days=1))
+        else:
+            today = now_local.date()
+        
+        # 今週の月曜日を計算
+        days_since_monday = today.weekday()
+        monday = today - timedelta(days=days_since_monday)
+        
+        # 週の各日（月～日）の統計を取得
+        week_stats = []
+        for i in range(7):
+            study_date = (monday + timedelta(days=i)).isoformat()
+            stats = db.query(TimerDailyStats).filter(
+                TimerDailyStats.user_id == current_user.id,
+                TimerDailyStats.study_date == study_date
+            ).first()
+            
+            if stats:
+                week_stats.append({
+                    "study_date": study_date,
+                    "total_seconds": stats.total_seconds,
+                    "sessions_count": stats.sessions_count
+                })
+            else:
+                week_stats.append({
+                    "study_date": study_date,
+                    "total_seconds": 0,
+                    "sessions_count": 0
+                })
+        
+        total_seconds = sum(s["total_seconds"] for s in week_stats)
+        
+        return {
+            "week_start": monday.isoformat(),
+            "total_seconds": total_seconds,
+            "daily_stats": week_stats
+        }
+
+
+    @app.get("/api/timer/stats/month")
+    async def get_month_stats(
+        current_user: User = Depends(get_current_user_required),
+        db: Session = Depends(get_db)
+    ):
+        """
+        今月（1日から月末まで）の統計を取得（週ごと）
+        """
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        import calendar
+        
+        USER_TIMEZONE = ZoneInfo("Asia/Tokyo")
+        now_utc = datetime.now(ZoneInfo("UTC"))
+        now_local = now_utc.astimezone(USER_TIMEZONE)
+        
+        # 現在月の1日から月末まで
+        year = now_local.year
+        month = now_local.month
+        first_day = datetime(year, month, 1).date()
+        last_day = datetime(year, month, calendar.monthrange(year, month)[1]).date()
+        
+        # 週ごとに集計
+        week_stats = []
+        current_date = first_day
+        current_week = []
+        
+        while current_date <= last_day:
+            study_date = current_date.isoformat()
+            stats = db.query(TimerDailyStats).filter(
+                TimerDailyStats.user_id == current_user.id,
+                TimerDailyStats.study_date == study_date
+            ).first()
+            
+            total_seconds = stats.total_seconds if stats else 0
+            
+            current_week.append({
+                "study_date": study_date,
+                "total_seconds": total_seconds
+            })
+            
+            # 週の終わり（日曜日）または月末に達したら週を確定
+            if current_date.weekday() == 6 or current_date == last_day:
+                week_total = sum(d["total_seconds"] for d in current_week)
+                week_stats.append({
+                    "week_start": current_week[0]["study_date"],
+                    "week_end": current_week[-1]["study_date"],
+                    "total_seconds": week_total,
+                    "daily_stats": current_week
+                })
+                current_week = []
+            
+            current_date += timedelta(days=1)
+        
+        total_seconds = sum(w["total_seconds"] for w in week_stats)
+        
+        return {
+            "month": f"{year}-{month:02d}",
+            "total_seconds": total_seconds,
+            "week_stats": week_stats
+        }
+
+
+    @app.get("/api/timer/stats/year")
+    async def get_year_stats(
+        current_user: User = Depends(get_current_user_required),
+        db: Session = Depends(get_db)
+    ):
+        """
+        今年（1月1日から12月31日まで）の統計を取得（月ごと）
+        """
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        
+        USER_TIMEZONE = ZoneInfo("Asia/Tokyo")
+        now_utc = datetime.now(ZoneInfo("UTC"))
+        now_local = now_utc.astimezone(USER_TIMEZONE)
+        
+        year = now_local.year
+        
+        # 各月の統計を取得
+        month_stats = []
+        for month in range(1, 13):
+            # 月の1日から月末まで
+            first_day = datetime(year, month, 1).date()
+            if month == 12:
+                last_day = datetime(year + 1, 1, 1).date() - timedelta(days=1)
+            else:
+                last_day = datetime(year, month + 1, 1).date() - timedelta(days=1)
+            
+            # 月の合計を計算
+            month_total = 0
+            current_date = first_day
+            while current_date <= last_day:
+                study_date = current_date.isoformat()
+                stats = db.query(TimerDailyStats).filter(
+                    TimerDailyStats.user_id == current_user.id,
+                    TimerDailyStats.study_date == study_date
+                ).first()
+                
+                if stats:
+                    month_total += stats.total_seconds
+                
+                current_date += timedelta(days=1)
+            
+            month_stats.append({
+                "month": f"{year}-{month:02d}",
+                "total_seconds": month_total
+            })
+        
+        total_seconds = sum(m["total_seconds"] for m in month_stats)
+        
+        return {
+            "year": year,
+            "total_seconds": total_seconds,
+            "month_stats": month_stats
+        }
+
+
+    @app.get("/api/timer/stats/5days")
+    async def get_5days_stats(
+        current_user: User = Depends(get_current_user_required),
+        db: Session = Depends(get_db)
+    ):
+        """
+        過去5日間の統計を取得
+        """
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        
+        USER_TIMEZONE = ZoneInfo("Asia/Tokyo")
+        now_utc = datetime.now(ZoneInfo("UTC"))
+        now_local = now_utc.astimezone(USER_TIMEZONE)
+        
+        # 4:00切替を考慮
+        current_hour = now_local.hour
+        if current_hour < 4:
+            today = (now_local.date() - timedelta(days=1))
+        else:
+            today = now_local.date()
+        
+        # 過去5日間の統計を取得
+        days_stats = []
+        day_labels = ["今日", "昨日", "一昨日", "", ""]
+        
+        for i in range(5):
+            study_date = (today - timedelta(days=i)).isoformat()
+            stats = db.query(TimerDailyStats).filter(
+                TimerDailyStats.user_id == current_user.id,
+                TimerDailyStats.study_date == study_date
+            ).first()
+            
+            total_seconds = stats.total_seconds if stats else 0
+            
+            # ラベルを設定
+            if i < 3:
+                label = day_labels[i]
+            else:
+                date_obj = datetime.strptime(study_date, "%Y-%m-%d")
+                label = f"{date_obj.month}月{date_obj.day}日"
+                if i == 3:
+                    label += "（注：3日前）"
+                else:
+                    label += "（注：4日前）"
+            
+            days_stats.append({
+                "study_date": study_date,
+                "label": label,
+                "total_seconds": total_seconds
+            })
+        
+        total_seconds = sum(d["total_seconds"] for d in days_stats)
+        
+        return {
+            "total_seconds": total_seconds,
+            "daily_stats": days_stats
+        }

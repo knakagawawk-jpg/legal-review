@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
-import { ExternalLink, History, BookOpen, ChevronDown, Filter, Menu } from "lucide-react"
-import { Card, CardContent } from "@/components/ui/card"
+import { useState, useEffect, useMemo, useRef, useCallback } from "react"
+import { ExternalLink, History, BookOpen, ChevronDown, Filter, Menu, Lightbulb, ListTodo, Heart, Calendar as CalendarIcon } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useSidebar } from "@/components/sidebar"
@@ -12,6 +12,12 @@ import { withAuth } from "@/components/auth/with-auth"
 import { apiClient } from "@/lib/api-client"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Button } from "@/components/ui/button"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar, DatePickerCalendar } from "@/components/ui/calendar"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
 type ReviewHistoryItem = {
   id: number
@@ -37,6 +43,37 @@ type ExamRecord = {
   examType: string | null
 }
 
+interface DashboardItem {
+  id: number
+  user_id: number
+  dashboard_date: string
+  entry_type: number  // 1=Point, 2=Task
+  subject: number | null
+  item: string
+  due_date: string | null
+  status: number  // 1=未了, 2=作業中, 3=完了, 4=後で
+  memo: string | null
+  position: number
+  favorite: number  // 0=OFF, 1=ON
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+}
+
+interface TimerDailyStats {
+  study_date: string  // YYYY-MM-DD
+  total_seconds: number
+  sessions_count: number
+}
+
+interface TimerSession {
+  id: string
+  started_at: string  // ISO datetime string
+  ended_at: string | null  // ISO datetime string or null
+  status: "running" | "stopped"
+  stop_reason?: string
+}
+
 // 科目と色の対応表（subjectsページと同じ）
 const SUBJECT_COLORS: Record<string, string> = {
   "憲法": "bg-red-100 text-red-700",
@@ -56,6 +93,113 @@ const SUBJECT_COLORS: Record<string, string> = {
   "環境法": "bg-lime-100 text-lime-700",
   "国際関係法": "bg-slate-100 text-slate-700",
   "一般教養科目": "bg-gray-100 text-gray-700",
+}
+
+// Point行専用のStatusオプション（種類表示用）
+const POINT_STATUS_OPTIONS = [
+  { value: 1, label: "論文", color: "bg-purple-100 text-purple-700" },
+  { value: 2, label: "短答", color: "bg-orange-100 text-orange-700" },
+  { value: 3, label: "判例", color: "bg-cyan-100 text-cyan-700" },
+  { value: 4, label: "その他", color: "bg-gray-100 text-gray-700" },
+]
+
+// Task行専用のStatusオプション
+const TASK_STATUS_OPTIONS = [
+  { value: 1, label: "未了", color: "bg-slate-100 text-slate-700" },
+  { value: 2, label: "作業中", color: "bg-amber-100 text-amber-700" },
+  { value: 3, label: "完了", color: "bg-blue-100 text-blue-700" },
+  { value: 4, label: "後で", color: "bg-emerald-50 text-emerald-600" },
+]
+
+// Memo Field Component（Dashboardから移植）
+function MemoField({
+  value,
+  onChange,
+  placeholder = "",
+}: {
+  value: string
+  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
+  placeholder?: string
+}) {
+  const [isFocused, setIsFocused] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const lineHeight = 24 // 1.5rem = 24px
+  const maxHeight = 24 * 10 // 10行分: 1.5rem * 10 = 240px
+
+  const adjustHeight = useCallback(() => {
+    if (!textareaRef.current) return
+
+    if (isFocused) {
+      textareaRef.current.style.height = 'auto'
+      const scrollHeight = textareaRef.current.scrollHeight
+      textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
+      textareaRef.current.style.maxHeight = `${maxHeight}px`
+    } else {
+      textareaRef.current.scrollTop = 0
+
+      if (!value || value.trim() === '') {
+        textareaRef.current.style.height = '1.5rem'
+        textareaRef.current.style.maxHeight = '1.5rem'
+        return
+      }
+
+      textareaRef.current.style.height = '1.5rem'
+      const scrollHeight = textareaRef.current.scrollHeight
+
+      let displayLines = 1
+      if (scrollHeight > lineHeight + 1) {
+        if (scrollHeight <= lineHeight * 2 + 1) {
+          displayLines = 2
+        } else if (scrollHeight <= lineHeight * 3 + 1) {
+          displayLines = 3
+        } else if (scrollHeight <= lineHeight * 4 + 1) {
+          displayLines = 4
+        } else if (scrollHeight <= lineHeight * 5 + 1) {
+          displayLines = 5
+        } else if (scrollHeight <= lineHeight * 6 + 1) {
+          displayLines = 6
+        } else if (scrollHeight <= lineHeight * 7 + 1) {
+          displayLines = 7
+        } else if (scrollHeight <= lineHeight * 8 + 1) {
+          displayLines = 8
+        } else if (scrollHeight <= lineHeight * 9 + 1) {
+          displayLines = 9
+        } else {
+          displayLines = 10
+        }
+      }
+
+      const displayHeight = displayLines * lineHeight
+      textareaRef.current.style.height = `${displayHeight}px`
+      textareaRef.current.style.maxHeight = `${maxHeight}px`
+    }
+  }, [isFocused, value, lineHeight, maxHeight])
+
+  useEffect(() => {
+    adjustHeight()
+  }, [adjustHeight])
+
+  return (
+    <Textarea
+      ref={textareaRef}
+      value={value}
+      onChange={(e) => {
+        onChange(e)
+        adjustHeight()
+      }}
+      onFocus={() => {
+        setIsFocused(true)
+        adjustHeight()
+      }}
+      onBlur={() => {
+        setIsFocused(false)
+        adjustHeight()
+      }}
+      placeholder={placeholder}
+      className="min-h-[1.5rem] text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0 resize-none overflow-y-auto"
+      style={{ lineHeight: `${lineHeight}px` }}
+    />
+  )
 }
 
 function ExamTable({ data, title }: { data: ExamRecord[]; title: string }) {
@@ -111,6 +255,913 @@ function ExamTable({ data, title }: { data: ExamRecord[]; title: string }) {
         </Table>
       </div>
     </div>
+  )
+}
+
+// 勉強管理ページコンポーネント
+function StudyManagementPage() {
+  const [memoItems, setMemoItems] = useState<DashboardItem[]>([])
+  const [topicItems, setTopicItems] = useState<DashboardItem[]>([])
+  const [loading, setLoading] = useState(true)
+  
+  // MEMO用フィルター
+  const [memoSubjectFilter, setMemoSubjectFilter] = useState<string | null>(null)
+  const [memoStatusFilter, setMemoStatusFilter] = useState<number | null>(null)
+  const [memoStartDate, setMemoStartDate] = useState<Date | undefined>(undefined)
+  const [memoEndDate, setMemoEndDate] = useState<Date | undefined>(undefined)
+  const [memoFavoriteFilter, setMemoFavoriteFilter] = useState<"fav-only" | "fav-except" | "all">("fav-only")
+  
+  // Topics用フィルター
+  const [topicSubjectFilter, setTopicSubjectFilter] = useState<string | null>(null)
+  const [topicStatusFilter, setTopicStatusFilter] = useState<number | null>(null)
+  const [topicStartDate, setTopicStartDate] = useState<Date | undefined>(undefined)
+  const [topicEndDate, setTopicEndDate] = useState<Date | undefined>(undefined)
+  const [topicFavoriteFilter, setTopicFavoriteFilter] = useState<"fav-only" | "fav-except" | "all">("fav-only")
+  
+  // スクロール位置保持用
+  const memoScrollRef = useRef<HTMLDivElement>(null)
+  const topicScrollRef = useRef<HTMLDivElement>(null)
+  
+  // favorite更新用のタイマー
+  const favoriteUpdateTimers = useRef<Record<number, NodeJS.Timeout>>({})
+  
+  // メモ更新用のタイマー
+  const memoUpdateTimers = useRef<Record<number, NodeJS.Timeout>>({})
+  const pendingMemoUpdates = useRef<Record<number, string>>({})
+  
+  // データ取得
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true)
+        const [memoData, topicData] = await Promise.all([
+          apiClient.get<{ items: DashboardItem[], total: number }>("/api/dashboard/items/all?entry_type=1"),
+          apiClient.get<{ items: DashboardItem[], total: number }>("/api/dashboard/items/all?entry_type=2"),
+        ])
+        setMemoItems(memoData.items)
+        setTopicItems(topicData.items)
+        
+        // スクロール位置を復元
+        const memoScrollPos = localStorage.getItem("study-memo-scroll")
+        const topicScrollPos = localStorage.getItem("study-topic-scroll")
+        setTimeout(() => {
+          if (memoScrollRef.current && memoScrollPos) {
+            memoScrollRef.current.scrollTop = parseInt(memoScrollPos)
+          }
+          if (topicScrollRef.current && topicScrollPos) {
+            topicScrollRef.current.scrollTop = parseInt(topicScrollPos)
+          }
+        }, 100)
+      } catch (error) {
+        console.error("Failed to load dashboard items:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadData()
+  }, [])
+  
+  // スクロール位置を保存
+  const handleMemoScroll = useCallback(() => {
+    if (memoScrollRef.current) {
+      localStorage.setItem("study-memo-scroll", memoScrollRef.current.scrollTop.toString())
+    }
+  }, [])
+  
+  const handleTopicScroll = useCallback(() => {
+    if (topicScrollRef.current) {
+      localStorage.setItem("study-topic-scroll", topicScrollRef.current.scrollTop.toString())
+    }
+  }, [])
+  
+  // favorite更新（5秒バッファ付き）
+  const updateFavorite = useCallback(async (itemId: number, favorite: number) => {
+    // 既存のタイマーをクリア
+    if (favoriteUpdateTimers.current[itemId]) {
+      clearTimeout(favoriteUpdateTimers.current[itemId])
+    }
+    
+    // 楽観的更新
+    setMemoItems(prev => prev.map(item => item.id === itemId ? { ...item, favorite } : item))
+    setTopicItems(prev => prev.map(item => item.id === itemId ? { ...item, favorite } : item))
+    
+    // 5秒後にDBに保存
+    favoriteUpdateTimers.current[itemId] = setTimeout(async () => {
+      try {
+        await apiClient.put(`/api/dashboard/items/${itemId}`, { favorite })
+        delete favoriteUpdateTimers.current[itemId]
+      } catch (error) {
+        console.error("Failed to update favorite:", error)
+        // エラー時は元に戻す
+        setMemoItems(prev => prev.map(item => item.id === itemId ? { ...item, favorite: 1 - favorite } : item))
+        setTopicItems(prev => prev.map(item => item.id === itemId ? { ...item, favorite: 1 - favorite } : item))
+      }
+    }, 5000)
+  }, [])
+  
+  // メモ更新（debounce付き）
+  const updateMemo = useCallback(async (itemId: number, memo: string, entryType: number) => {
+    // 楽観的更新
+    if (entryType === 1) {
+      setMemoItems(prev => prev.map(item => item.id === itemId ? { ...item, memo } : item))
+    } else {
+      setTopicItems(prev => prev.map(item => item.id === itemId ? { ...item, memo } : item))
+    }
+    
+    // 既存のタイマーをクリア
+    if (memoUpdateTimers.current[itemId]) {
+      clearTimeout(memoUpdateTimers.current[itemId])
+    }
+    
+    // 更新内容を保存
+    pendingMemoUpdates.current[itemId] = memo
+    
+    // 5秒後にDBに保存
+    memoUpdateTimers.current[itemId] = setTimeout(async () => {
+      try {
+        const memoToSave = pendingMemoUpdates.current[itemId]
+        await apiClient.put(`/api/dashboard/items/${itemId}`, { memo: memoToSave })
+        delete memoUpdateTimers.current[itemId]
+        delete pendingMemoUpdates.current[itemId]
+      } catch (error) {
+        console.error("Failed to update memo:", error)
+        delete memoUpdateTimers.current[itemId]
+        delete pendingMemoUpdates.current[itemId]
+      }
+    }, 5000)
+  }, [])
+  
+  // フィルター適用後のMEMO
+  const filteredMemoItems = useMemo(() => {
+    let filtered = [...memoItems]
+    
+    // 科目フィルター
+    if (memoSubjectFilter !== null) {
+      const subjectId = getSubjectId(memoSubjectFilter)
+      filtered = filtered.filter(item => {
+        if (subjectId !== null) {
+          return item.subject === subjectId
+        }
+        return getSubjectName(item.subject || 0) === memoSubjectFilter
+      })
+    }
+    
+    // 種類フィルター
+    if (memoStatusFilter !== null) {
+      filtered = filtered.filter(item => item.status === memoStatusFilter)
+    }
+    
+    // 期間フィルター
+    if (memoStartDate) {
+      const startStr = memoStartDate.toISOString().split("T")[0]
+      filtered = filtered.filter(item => {
+        if (!item.created_at) return true // NULLも含める
+        return item.created_at >= startStr
+      })
+    }
+    if (memoEndDate) {
+      const endStr = memoEndDate.toISOString().split("T")[0]
+      filtered = filtered.filter(item => {
+        if (!item.created_at) return true // NULLも含める
+        return item.created_at <= endStr
+      })
+    }
+    
+    // favoriteフィルター
+    if (memoFavoriteFilter === "fav-only") {
+      filtered = filtered.filter(item => item.favorite === 1)
+    } else if (memoFavoriteFilter === "fav-except") {
+      filtered = filtered.filter(item => item.favorite === 0)
+    }
+    
+    // ソート: favoriteのうち作成日が新しい順→favoriteじゃないもので作成日が新しい順
+    filtered.sort((a, b) => {
+      if (a.favorite !== b.favorite) {
+        return b.favorite - a.favorite
+      }
+      const aDate = a.created_at || ""
+      const bDate = b.created_at || ""
+      return bDate.localeCompare(aDate)
+    })
+    
+    return filtered
+  }, [memoItems, memoSubjectFilter, memoStatusFilter, memoStartDate, memoEndDate, memoFavoriteFilter])
+  
+  // フィルター適用後のTopics
+  const filteredTopicItems = useMemo(() => {
+    let filtered = [...topicItems]
+    
+    // 科目フィルター
+    if (topicSubjectFilter !== null) {
+      const subjectId = getSubjectId(topicSubjectFilter)
+      filtered = filtered.filter(item => {
+        if (subjectId !== null) {
+          return item.subject === subjectId
+        }
+        return getSubjectName(item.subject || 0) === topicSubjectFilter
+      })
+    }
+    
+    // 種類フィルター
+    if (topicStatusFilter !== null) {
+      filtered = filtered.filter(item => item.status === topicStatusFilter)
+    }
+    
+    // 期間フィルター
+    if (topicStartDate) {
+      const startStr = topicStartDate.toISOString().split("T")[0]
+      filtered = filtered.filter(item => {
+        if (!item.created_at) return true // NULLも含める
+        return item.created_at >= startStr
+      })
+    }
+    if (topicEndDate) {
+      const endStr = topicEndDate.toISOString().split("T")[0]
+      filtered = filtered.filter(item => {
+        if (!item.created_at) return true // NULLも含める
+        return item.created_at <= endStr
+      })
+    }
+    
+    // favoriteフィルター
+    if (topicFavoriteFilter === "fav-only") {
+      filtered = filtered.filter(item => item.favorite === 1)
+    } else if (topicFavoriteFilter === "fav-except") {
+      filtered = filtered.filter(item => item.favorite === 0)
+    }
+    
+    // ソート: favoriteのうち作成日が新しい順→favoriteじゃないもので作成日が新しい順
+    filtered.sort((a, b) => {
+      if (a.favorite !== b.favorite) {
+        return b.favorite - a.favorite
+      }
+      const aDate = a.created_at || ""
+      const bDate = b.created_at || ""
+      return bDate.localeCompare(aDate)
+    })
+    
+    return filtered
+  }, [topicItems, topicSubjectFilter, topicStatusFilter, topicStartDate, topicEndDate, topicFavoriteFilter])
+  
+  // 日付フォーマット
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return ""
+    const date = new Date(dateString)
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+  }
+  
+  // 科目リスト
+  const subjects = FIXED_SUBJECTS.map(name => ({
+    id: getSubjectId(name),
+    name,
+  })).filter(s => s.id !== null) as Array<{ id: number; name: string }>
+  
+  return (
+    <div className="space-y-4">
+      {/* 今月の講評回数（右上） */}
+      <div className="flex justify-end mb-2">
+        <div className="text-sm text-muted-foreground">
+          今月の講評回数：<span className="font-semibold">-回</span>
+        </div>
+      </div>
+      
+      {/* Your MEMO */}
+      <Card className="shadow-sm border-amber-200/60">
+        <CardHeader className="py-1.5 px-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-xs font-medium flex items-center gap-1.5 text-amber-900/80">
+              <Lightbulb className="h-3.5 w-3.5 text-amber-200/60" />
+              Your MEMO
+            </CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="px-3 pb-2">
+          {/* MEMO用フィルター */}
+          <div className="mb-2 flex items-center gap-2 flex-wrap">
+            {/* 科目 */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={cn(
+                  "flex items-center gap-1.5 text-xs transition-colors px-2 py-1 rounded-md hover:opacity-80",
+                  memoSubjectFilter 
+                    ? (SUBJECT_COLORS[memoSubjectFilter] || "bg-amber-100 text-amber-900")
+                    : "bg-gray-100 text-gray-700"
+                )}>
+                  <span>{memoSubjectFilter || "全科目"}</span>
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" side="bottom" className="w-32">
+                <DropdownMenuItem
+                  onClick={() => setMemoSubjectFilter(null)}
+                  className={cn(
+                    "text-xs cursor-pointer rounded-sm",
+                    "bg-gray-100 text-gray-700",
+                    memoSubjectFilter === null && "ring-2 ring-offset-1 ring-amber-500 font-medium"
+                  )}
+                >
+                  全科目
+                </DropdownMenuItem>
+                {FIXED_SUBJECTS.map((subject) => (
+                  <DropdownMenuItem
+                    key={subject}
+                    onClick={() => setMemoSubjectFilter(subject)}
+                    className={cn(
+                      "text-xs cursor-pointer rounded-sm",
+                      SUBJECT_COLORS[subject] || "bg-gray-100 text-gray-700",
+                      memoSubjectFilter === subject && "ring-2 ring-offset-1 ring-amber-500 font-medium"
+                    )}
+                  >
+                    {subject}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            
+            {/* 種類 */}
+            <Select 
+              value={memoStatusFilter?.toString() || "all"} 
+              onValueChange={(value) => {
+                if (value === "all") {
+                  setMemoStatusFilter(null)
+                } else {
+                  setMemoStatusFilter(parseInt(value))
+                }
+              }}
+            >
+              <SelectTrigger className="h-7 text-xs w-24">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" className="text-xs">全種類</SelectItem>
+                {POINT_STATUS_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
+            {/* 期間 */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-7 text-xs">
+                  <CalendarIcon className="h-3 w-3 mr-1" />
+                  {memoStartDate ? formatDate(memoStartDate.toISOString()) : "開始日"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <Calendar
+                  mode="single"
+                  selected={memoStartDate}
+                  onSelect={setMemoStartDate}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+            <span className="text-xs text-muted-foreground">～</span>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-7 text-xs">
+                  <CalendarIcon className="h-3 w-3 mr-1" />
+                  {memoEndDate ? formatDate(memoEndDate.toISOString()) : "終了日"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <Calendar
+                  mode="single"
+                  selected={memoEndDate}
+                  onSelect={setMemoEndDate}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+            
+            {/* fav */}
+            <Select 
+              value={memoFavoriteFilter} 
+              onValueChange={(value) => {
+                setMemoFavoriteFilter(value as "fav-only" | "fav-except" | "all")
+              }}
+            >
+              <SelectTrigger className="h-7 text-xs w-28">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="fav-only" className="text-xs">favのみ</SelectItem>
+                <SelectItem value="fav-except" className="text-xs">fav以外</SelectItem>
+                <SelectItem value="all" className="text-xs">フィルターなし</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          
+          {/* MEMOテーブル */}
+          <div 
+            ref={memoScrollRef}
+            onScroll={handleMemoScroll}
+            className="overflow-y-auto"
+            style={{ maxHeight: "240px" }} // 10行分（1.5rem * 10）
+          >
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-xs text-muted-foreground sticky top-0 bg-white">
+                  <th className="py-1 px-0.5 w-14 text-left font-medium">科目</th>
+                  <th className="py-1 px-1 w-[120px] text-left font-medium">項目</th>
+                  <th className="py-1 px-0 w-14 text-left font-medium">種類</th>
+                  <th className="py-1 px-1 text-left font-medium">メモ</th>
+                  <th className="py-1 px-1 w-8 text-center font-medium">♡</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <TableCell colSpan={5} className="text-center text-muted-foreground py-6 text-sm">
+                      読み込み中...
+                    </TableCell>
+                  </tr>
+                ) : filteredMemoItems.length === 0 ? (
+                  <tr>
+                    <TableCell colSpan={5} className="text-center text-muted-foreground py-6 text-sm">
+                      データがありません
+                    </TableCell>
+                  </tr>
+                ) : (
+                  filteredMemoItems.map((item) => {
+                    const statusOption = POINT_STATUS_OPTIONS.find((s) => s.value === item.status)
+                    const selectedSubject = subjects.find(s => s.id === item.subject)
+                    return (
+                      <tr key={item.id} className="hover:bg-amber-50/40">
+                        <TableCell className="py-1.5 px-0.5 w-14 align-top">
+                          {selectedSubject ? (
+                            <span className={cn("text-xs px-1.5 py-0.5 rounded", SUBJECT_COLORS[selectedSubject.name] || "")}>
+                              {selectedSubject.name}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">--</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-1.5 px-1 w-[120px] align-top">
+                          <span className="text-xs">{item.item}</span>
+                        </TableCell>
+                        <TableCell className="py-1.5 px-0 w-14 align-top">
+                          {statusOption ? (
+                            <span className={cn("text-xs px-1.5 py-0.5 rounded", statusOption.color)}>
+                              {statusOption.label}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">--</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-1.5 px-1 align-top">
+                          <MemoField
+                            value={item.memo || ""}
+                            onChange={(e) => updateMemo(item.id, e.target.value, 1)}
+                          />
+                        </TableCell>
+                        <TableCell className="py-1.5 px-1 w-8 align-top text-center">
+                          <button
+                            onClick={() => updateFavorite(item.id, item.favorite === 1 ? 0 : 1)}
+                            className={cn(
+                              "text-lg transition-colors",
+                              item.favorite === 1 ? "text-red-500" : "text-gray-300"
+                            )}
+                          >
+                            <Heart className={cn("h-4 w-4", item.favorite === 1 && "fill-current")} />
+                          </button>
+                        </TableCell>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+      
+      {/* Your Topics */}
+      <Card className="shadow-sm border-amber-200/60">
+        <CardHeader className="py-1.5 px-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-xs font-medium flex items-center gap-1.5 text-amber-900/80">
+              <ListTodo className="h-3.5 w-3.5 text-amber-200/60" />
+              Your Topics
+            </CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="px-3 pb-2">
+          {/* Topics用フィルター */}
+          <div className="mb-2 flex items-center gap-2 flex-wrap">
+            {/* 科目 */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={cn(
+                  "flex items-center gap-1.5 text-xs transition-colors px-2 py-1 rounded-md hover:opacity-80",
+                  topicSubjectFilter 
+                    ? (SUBJECT_COLORS[topicSubjectFilter] || "bg-amber-100 text-amber-900")
+                    : "bg-gray-100 text-gray-700"
+                )}>
+                  <span>{topicSubjectFilter || "全科目"}</span>
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" side="bottom" className="w-32">
+                <DropdownMenuItem
+                  onClick={() => setTopicSubjectFilter(null)}
+                  className={cn(
+                    "text-xs cursor-pointer rounded-sm",
+                    "bg-gray-100 text-gray-700",
+                    topicSubjectFilter === null && "ring-2 ring-offset-1 ring-amber-500 font-medium"
+                  )}
+                >
+                  全科目
+                </DropdownMenuItem>
+                {FIXED_SUBJECTS.map((subject) => (
+                  <DropdownMenuItem
+                    key={subject}
+                    onClick={() => setTopicSubjectFilter(subject)}
+                    className={cn(
+                      "text-xs cursor-pointer rounded-sm",
+                      SUBJECT_COLORS[subject] || "bg-gray-100 text-gray-700",
+                      topicSubjectFilter === subject && "ring-2 ring-offset-1 ring-amber-500 font-medium"
+                    )}
+                  >
+                    {subject}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            
+            {/* 種類 */}
+            <Select 
+              value={topicStatusFilter?.toString() || "all"} 
+              onValueChange={(value) => {
+                if (value === "all") {
+                  setTopicStatusFilter(null)
+                } else {
+                  setTopicStatusFilter(parseInt(value))
+                }
+              }}
+            >
+              <SelectTrigger className="h-7 text-xs w-24">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" className="text-xs">全種類</SelectItem>
+                {TASK_STATUS_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
+            {/* 期間 */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-7 text-xs">
+                  <CalendarIcon className="h-3 w-3 mr-1" />
+                  {topicStartDate ? formatDate(topicStartDate.toISOString()) : "開始日"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <Calendar
+                  mode="single"
+                  selected={topicStartDate}
+                  onSelect={setTopicStartDate}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+            <span className="text-xs text-muted-foreground">～</span>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-7 text-xs">
+                  <CalendarIcon className="h-3 w-3 mr-1" />
+                  {topicEndDate ? formatDate(topicEndDate.toISOString()) : "終了日"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <Calendar
+                  mode="single"
+                  selected={topicEndDate}
+                  onSelect={setTopicEndDate}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+            
+            {/* fav */}
+            <Select 
+              value={topicFavoriteFilter} 
+              onValueChange={(value) => {
+                setTopicFavoriteFilter(value as "fav-only" | "fav-except" | "all")
+              }}
+            >
+              <SelectTrigger className="h-7 text-xs w-28">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="fav-only" className="text-xs">favのみ</SelectItem>
+                <SelectItem value="fav-except" className="text-xs">fav以外</SelectItem>
+                <SelectItem value="all" className="text-xs">フィルターなし</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          
+          {/* Topicsテーブル */}
+          <div 
+            ref={topicScrollRef}
+            onScroll={handleTopicScroll}
+            className="overflow-y-auto"
+            style={{ maxHeight: "240px" }} // 10行分（1.5rem * 10）
+          >
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-xs text-muted-foreground sticky top-0 bg-white">
+                  <th className="py-1 px-0.5 w-14 text-left font-medium">科目</th>
+                  <th className="py-1 px-1 text-left font-medium">項目</th>
+                  <th className="py-1 px-1 w-12 text-center font-medium">作成</th>
+                  <th className="py-1 px-0 w-14 text-left font-medium">期限</th>
+                  <th className="py-1 px-0 w-14 text-left font-medium">種類</th>
+                  <th className="py-1 px-1 text-left font-medium">メモ</th>
+                  <th className="py-1 px-1 w-8 text-center font-medium">♡</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <TableCell colSpan={7} className="text-center text-muted-foreground py-6 text-sm">
+                      読み込み中...
+                    </TableCell>
+                  </tr>
+                ) : filteredTopicItems.length === 0 ? (
+                  <tr>
+                    <TableCell colSpan={7} className="text-center text-muted-foreground py-6 text-sm">
+                      データがありません
+                    </TableCell>
+                  </tr>
+                ) : (
+                  filteredTopicItems.map((item) => {
+                    const statusOption = TASK_STATUS_OPTIONS.find((s) => s.value === item.status)
+                    const selectedSubject = subjects.find(s => s.id === item.subject)
+                    return (
+                      <tr key={item.id} className="hover:bg-amber-50/40">
+                        <TableCell className="py-1.5 px-0.5 w-14 align-top">
+                          {selectedSubject ? (
+                            <span className={cn("text-xs px-1.5 py-0.5 rounded", SUBJECT_COLORS[selectedSubject.name] || "")}>
+                              {selectedSubject.name}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">--</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-1.5 px-1 align-top">
+                          <span className="text-xs">{item.item}</span>
+                        </TableCell>
+                        <TableCell className="py-1.5 px-1 w-12 align-top text-center">
+                          <span className="text-xs text-muted-foreground">{formatDate(item.created_at)}</span>
+                        </TableCell>
+                        <TableCell className="py-1.5 px-0 w-14 align-top">
+                          {item.due_date ? (
+                            <span className="text-xs text-muted-foreground">{formatDate(item.due_date)}</span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">--</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-1.5 px-0 w-14 align-top">
+                          {statusOption ? (
+                            <span className={cn("text-xs px-1.5 py-0.5 rounded", statusOption.color)}>
+                              {statusOption.label}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">--</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-1.5 px-1 align-top">
+                          <MemoField
+                            value={item.memo || ""}
+                            onChange={(e) => updateMemo(item.id, e.target.value, 2)}
+                          />
+                        </TableCell>
+                        <TableCell className="py-1.5 px-1 w-8 align-top text-center">
+                          <button
+                            onClick={() => updateFavorite(item.id, item.favorite === 1 ? 0 : 1)}
+                            className={cn(
+                              "text-lg transition-colors",
+                              item.favorite === 1 ? "text-red-500" : "text-gray-300"
+                            )}
+                          >
+                            <Heart className={cn("h-4 w-4", item.favorite === 1 && "fill-current")} />
+                          </button>
+                        </TableCell>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+      
+      {/* 勉強時間（一旦プレースホルダー） */}
+      <Card className="shadow-sm border-amber-200/60">
+        <CardHeader className="py-1.5 px-3">
+          <CardTitle className="text-xs font-medium flex items-center gap-1.5 text-amber-900/80">
+            勉強時間
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-3 pb-2">
+          <div className="text-center text-muted-foreground py-4 text-sm">
+            勉強時間統計（今後実装予定）
+          </div>
+        </CardContent>
+      </Card>
+      
+      {/* 過去のフリーチャット履歴（空箱） */}
+      <Card className="shadow-sm border-amber-200/60">
+        <CardContent className="p-4">
+          <div className="text-center text-muted-foreground py-8 text-sm">
+            過去のフリーチャット履歴（今後実装予定）
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+// 勉強時間セクションコンポーネント
+function StudyTimeSection() {
+  const [todayStats, setTodayStats] = useState<TimerDailyStats | null>(null)
+  const [todaySessions, setTodaySessions] = useState<TimerSession[]>([])
+  const [weekStats, setWeekStats] = useState<any>(null)
+  const [fiveDaysStats, setFiveDaysStats] = useState<any>(null)
+  const [monthStats, setMonthStats] = useState<any>(null)
+  const [yearStats, setYearStats] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [openCollapsibles, setOpenCollapsibles] = useState<Record<string, boolean>>({})
+  
+  useEffect(() => {
+    const loadStats = async () => {
+      try {
+        setLoading(true)
+        const [today, sessions, week, fiveDays, month, year] = await Promise.all([
+          apiClient.get<TimerDailyStats>("/api/timer/daily-stats"),
+          apiClient.get<TimerSession[]>("/api/timer/sessions?limit=10"),
+          apiClient.get("/api/timer/stats/week"),
+          apiClient.get("/api/timer/stats/5days"),
+          apiClient.get("/api/timer/stats/month"),
+          apiClient.get("/api/timer/stats/year"),
+        ])
+        setTodayStats(today)
+        setTodaySessions(sessions)
+        setWeekStats(week)
+        setFiveDaysStats(fiveDays)
+        setMonthStats(month)
+        setYearStats(year)
+      } catch (error) {
+        console.error("Failed to load timer stats:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadStats()
+  }, [])
+  
+  // 時間フォーマット（時間と分）
+  const formatTime = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    return `${hours}時間${minutes.toString().padStart(2, "0")}分`
+  }
+  
+  // 日付フォーマット（M/D）
+  const formatDateShort = (dateString: string): string => {
+    const date = new Date(dateString)
+    return `${date.getMonth() + 1}/${date.getDate()}`
+  }
+  
+  // 曜日名
+  const getWeekdayName = (index: number): string => {
+    const weekdays = ["月", "火", "水", "木", "金", "土", "日"]
+    return weekdays[index]
+  }
+  
+  const toggleCollapsible = (key: string) => {
+    setOpenCollapsibles(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+  
+  return (
+    <Card className="shadow-sm border-amber-200/60">
+      <CardHeader className="py-1.5 px-3">
+        <CardTitle className="text-xs font-medium flex items-center gap-1.5 text-amber-900/80">
+          勉強時間
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="px-3 pb-2 space-y-2">
+        {loading ? (
+          <div className="text-center text-muted-foreground py-4 text-sm">読み込み中...</div>
+        ) : (
+          <>
+            {/* Today */}
+            <Collapsible open={openCollapsibles["today"]} onOpenChange={() => toggleCollapsible("today")}>
+              <CollapsibleTrigger className="w-full flex items-center justify-between py-1.5 px-2 hover:bg-amber-50/40 rounded text-sm">
+                <span>Today: {todayStats ? formatTime(todayStats.total_seconds) : "0時間00分"}</span>
+                <ChevronDown className={cn("h-4 w-4 transition-transform", openCollapsibles["today"] && "rotate-180")} />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="px-2 pb-2">
+                <div className="space-y-1 text-xs">
+                  {todaySessions.length === 0 ? (
+                    <div className="text-muted-foreground py-2">セッションがありません</div>
+                  ) : (
+                    todaySessions.map((session) => {
+                      const start = new Date(session.started_at)
+                      const end = session.ended_at ? new Date(session.ended_at) : new Date()
+                      const duration = Math.floor((end.getTime() - start.getTime()) / 1000)
+                      return (
+                        <div key={session.id} className="flex justify-between py-1">
+                          <span>{start.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })} - {end.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}</span>
+                          <span>{formatTime(duration)}</span>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+            
+            {/* This Week */}
+            <Collapsible open={openCollapsibles["week"]} onOpenChange={() => toggleCollapsible("week")}>
+              <CollapsibleTrigger className="w-full flex items-center justify-between py-1.5 px-2 hover:bg-amber-50/40 rounded text-sm">
+                <span>This Week: {weekStats ? formatTime(weekStats.total_seconds) : "0時間00分"}</span>
+                <ChevronDown className={cn("h-4 w-4 transition-transform", openCollapsibles["week"] && "rotate-180")} />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="px-2 pb-2">
+                <div className="space-y-1 text-xs">
+                  {weekStats?.daily_stats?.map((day: any, index: number) => (
+                    <div key={index} className="flex justify-between py-1">
+                      <span>{getWeekdayName(index)}：{formatTime(day.total_seconds)}</span>
+                    </div>
+                  ))}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+            
+            {/* This 5days */}
+            <Collapsible open={openCollapsibles["5days"]} onOpenChange={() => toggleCollapsible("5days")}>
+              <CollapsibleTrigger className="w-full flex items-center justify-between py-1.5 px-2 hover:bg-amber-50/40 rounded text-sm">
+                <span>This 5days: {fiveDaysStats ? formatTime(fiveDaysStats.total_seconds) : "0時間00分"}</span>
+                <ChevronDown className={cn("h-4 w-4 transition-transform", openCollapsibles["5days"] && "rotate-180")} />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="px-2 pb-2">
+                <div className="space-y-1 text-xs">
+                  {fiveDaysStats?.daily_stats?.map((day: any) => (
+                    <div key={day.study_date} className="flex justify-between py-1">
+                      <span>{day.label}：{formatTime(day.total_seconds)}</span>
+                    </div>
+                  ))}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+            
+            {/* This Month */}
+            <Collapsible open={openCollapsibles["month"]} onOpenChange={() => toggleCollapsible("month")}>
+              <CollapsibleTrigger className="w-full flex items-center justify-between py-1.5 px-2 hover:bg-amber-50/40 rounded text-sm">
+                <span>This Month: {monthStats ? formatTime(monthStats.total_seconds) : "0時間00分"}</span>
+                <ChevronDown className={cn("h-4 w-4 transition-transform", openCollapsibles["month"] && "rotate-180")} />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="px-2 pb-2">
+                <div className="space-y-1 text-xs">
+                  {monthStats?.week_stats?.map((week: any, index: number) => (
+                    <div key={index} className="flex justify-between py-1">
+                      <span>週{index + 1}：{formatTime(week.total_seconds)}</span>
+                    </div>
+                  ))}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+            
+            {/* This Year */}
+            <Collapsible open={openCollapsibles["year"]} onOpenChange={() => toggleCollapsible("year")}>
+              <CollapsibleTrigger className="w-full flex items-center justify-between py-1.5 px-2 hover:bg-amber-50/40 rounded text-sm">
+                <span>This Year: {yearStats ? formatTime(yearStats.total_seconds) : "0時間00分"}</span>
+                <ChevronDown className={cn("h-4 w-4 transition-transform", openCollapsibles["year"] && "rotate-180")} />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="px-2 pb-2">
+                <div className="space-y-1 text-xs">
+                  {yearStats?.month_stats?.map((month: any) => (
+                    <div key={month.month} className="flex justify-between py-1">
+                      <span>{month.month.replace("-", "年").replace("-", "月")}：{formatTime(month.total_seconds)}</span>
+                    </div>
+                  ))}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          </>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -185,8 +1236,23 @@ function HistoryPage() {
   }
 
   const formatItemName = (item: ReviewHistoryItem) => {
-    // subject_nameが優先、なければsubject_idから科目名を取得
-    const subjectName = item.subject_name || (item.subject ? getSubjectName(item.subject) : "不明")
+    // 科目名を取得
+    let subjectName: string
+    if (item.exam_type === "司法試験" || item.exam_type === "予備試験") {
+      // 司法試験・予備試験の場合は、subject_idから積極的に科目名を取得
+      // subject_nameがあれば優先、なければsubject_idから取得
+      if (item.subject_name) {
+        subjectName = item.subject_name
+      } else if (item.subject) {
+        subjectName = getSubjectName(item.subject)
+      } else {
+        // データ不整合の場合のみ「不明」
+        subjectName = "不明"
+      }
+    } else {
+      // その他の試験の場合は従来通り
+      subjectName = item.subject_name || (item.subject ? getSubjectName(item.subject) : "不明")
+    }
     
     if (item.year) {
       // 年度から元号記号を計算（2019年以降はR、1989年以降はH）
@@ -309,13 +1375,7 @@ function HistoryPage() {
       {/* Main Content */}
       <main className="container mx-auto px-20 py-4 max-w-6xl">
         {mainTab === "study" && (
-          <Card className="shadow-sm border-amber-200/60">
-            <CardContent className="p-4">
-              <div className="text-center text-muted-foreground py-8">
-                勉強管理ページ（今後実装予定）
-              </div>
-            </CardContent>
-          </Card>
+          <StudyManagementPage />
         )}
 
         {mainTab === "past-questions" && (

@@ -156,6 +156,15 @@ def _startup_migrate_reviews():
     except Exception as e:
         logger.warning(f"Startup official_questions seed skipped/failed: {str(e)}")
 
+    # dashboard_items に favorite カラムを追加
+    try:
+        from .migrate_dashboard_items_favorite import migrate_dashboard_items_favorite
+
+        migrate_dashboard_items_favorite()
+        logger.info("✓ Startup dashboard_items favorite migration completed")
+    except Exception as e:
+        logger.warning(f"Startup dashboard_items favorite migration skipped/failed: {str(e)}")
+
 # グローバルエラーハンドラーを追加（HTTPExceptionは除外）
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -2382,6 +2391,31 @@ async def get_dashboard_items(
         total=len(items)
     )
 
+@app.get("/v1/dashboard/items/all", response_model=DashboardItemListResponse)
+async def get_all_dashboard_items(
+    entry_type: Optional[int] = Query(None, description="種別（1=Point, 2=Task）"),
+    current_user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """ダッシュボード項目を全期間で取得（勉強管理ページ用）"""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="認証が必要です")
+    
+    query = db.query(DashboardItem).filter(
+        DashboardItem.user_id == current_user.id,
+        DashboardItem.deleted_at.is_(None)
+    )
+    
+    if entry_type:
+        query = query.filter(DashboardItem.entry_type == entry_type)
+    
+    items = query.order_by(DashboardItem.created_at.desc()).all()
+    
+    return DashboardItemListResponse(
+        items=[DashboardItemResponse.model_validate(item) for item in items],
+        total=len(items)
+    )
+
 @app.get("/v1/dashboard/items/left", response_model=DashboardItemListResponse)
 async def get_dashboard_items_left(
     dashboard_date: str = Query(..., description="表示日（YYYY-MM-DD）"),
@@ -2444,7 +2478,8 @@ async def create_dashboard_item(
         due_date=item.due_date,
         status=item.status,
         memo=item.memo,
-        position=position
+        position=position,
+        favorite=item.favorite if item.favorite is not None else 0
     )
     
     db.add(db_item)

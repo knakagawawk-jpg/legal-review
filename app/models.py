@@ -844,6 +844,7 @@ class DashboardItem(Base):
     status = Column(Integer, nullable=False)  # 1=未了, 2=作業中, 3=完了, 4=後で
     memo = Column(Text, nullable=True)  # メモ（自由記述）
     position = Column(Integer, nullable=False)  # 並び順（間隔方式：10,20,30...）
+    favorite = Column(Integer, nullable=False, default=0)  # お気に入りフラグ（0=OFF, 1=ON）
     
     created_at = Column(String(30), nullable=False, server_default=sql_text("datetime('now')"))
     updated_at = Column(String(30), nullable=False, server_default=sql_text("datetime('now')"))
