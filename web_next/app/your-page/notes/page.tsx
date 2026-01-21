@@ -104,6 +104,11 @@ function NotesPage() {
     fetchNotebooks()
   }, [])
 
+  // デバッグ用: createDialogOpenの状態変化を監視
+  useEffect(() => {
+    console.log("createDialogOpen state changed:", createDialogOpen)
+  }, [createDialogOpen])
+
   const handleCreateNotebook = async () => {
     if (!newNotebook.title.trim()) {
       alert("タイトルを入力してください")
@@ -388,7 +393,14 @@ function NotesPage() {
             <p className="text-muted-foreground text-lg">OneNote風のノート管理</p>
           </div>
           <div className="flex items-center gap-4">
-            <Button onClick={() => setCreateDialogOpen(true)}>
+            <Button 
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                console.log("Create notebook button clicked")
+                setCreateDialogOpen(true)
+              }}
+            >
               <Plus className="h-4 w-4 mr-2" />
               新しいノートブック
             </Button>
@@ -407,7 +419,14 @@ function NotesPage() {
             ) : notebooks.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-muted-foreground mb-4">ノートブックがありません</p>
-                <Button onClick={() => setCreateDialogOpen(true)}>
+                <Button 
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    console.log("Create notebook button clicked (empty state)")
+                    setCreateDialogOpen(true)
+                  }}
+                >
                   <Plus className="h-4 w-4 mr-2" />
                   最初のノートブックを作成
                 </Button>
@@ -590,7 +609,13 @@ function NotesPage() {
         </Card>
 
         {/* 新規作成ダイアログ */}
-        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <Dialog 
+          open={createDialogOpen} 
+          onOpenChange={(open) => {
+            console.log("Dialog onOpenChange:", open)
+            setCreateDialogOpen(open)
+          }}
+        >
           <DialogContent>
             <DialogHeader>
               <DialogTitle>新しいノートブックを作成</DialogTitle>
