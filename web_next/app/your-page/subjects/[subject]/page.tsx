@@ -1566,6 +1566,22 @@ function SubjectPage() {
     }
   }, [fetchNotebooks])
 
+  // 保留中の変更を即座に保存する関数
+  const flushPendingPageSave = useCallback(async () => {
+    // タイマーをクリア
+    if (pageContentTimeoutRef.current) {
+      clearTimeout(pageContentTimeoutRef.current)
+      pageContentTimeoutRef.current = null
+    }
+    
+    // 保留中の保存があればフラッシュ
+    const pending = pendingPageSaveRef.current
+    if (pending) {
+      pendingPageSaveRef.current = null
+      await savePageContent(pending.pageId, pending.title, pending.content)
+    }
+  }, [savePageContent])
+
   // ページ離脱時・アンマウント時に未保存の変更をフラッシュ
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -1608,22 +1624,6 @@ function SubjectPage() {
       savePageContent(selectedPage.id, editingPageTitle, editingPageContent)
     }
   }
-
-  // 保留中の変更を即座に保存する関数
-  const flushPendingPageSave = useCallback(async () => {
-    // タイマーをクリア
-    if (pageContentTimeoutRef.current) {
-      clearTimeout(pageContentTimeoutRef.current)
-      pageContentTimeoutRef.current = null
-    }
-    
-    // 保留中の保存があればフラッシュ
-    const pending = pendingPageSaveRef.current
-    if (pending) {
-      pendingPageSaveRef.current = null
-      await savePageContent(pending.pageId, pending.title, pending.content)
-    }
-  }, [savePageContent])
 
   // コンテンツ変更時（デバウンス自動保存）
   const handlePageContentChange = (newContent: string) => {
