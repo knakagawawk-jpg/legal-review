@@ -594,6 +594,16 @@ function YourPageDashboardInner() {
     return `${hrs}時間${mins}分`
   }
 
+  // UTC日時文字列をDateオブジェクトに変換（タイムゾーン情報がない場合はUTCとして解釈）
+  const parseUtcDateString = (dateStr: string): Date => {
+    // 既にタイムゾーン情報（Z, +00:00など）がある場合はそのままパース
+    if (dateStr.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(dateStr)) {
+      return new Date(dateStr)
+    }
+    // タイムゾーン情報がない場合はUTCとして解釈
+    return new Date(dateStr + 'Z')
+  }
+
   // study_date（4:00境界）は共通ユーティリティ（getStudyDate）で計算する
 
   // Calculate running seconds for today (4:00 boundary)
@@ -712,7 +722,7 @@ function YourPageDashboardInner() {
       // runningセッションを検出して状態を設定
       const runningSession = sessions.find(s => s.status === "running")
       if (runningSession) {
-        const startTime = new Date(runningSession.started_at_utc)
+        const startTime = parseUtcDateString(runningSession.started_at_utc)
         setActiveSessionId(runningSession.id)
         setActiveSessionStartTime(startTime)
         setTimerEnabled(true)
@@ -848,7 +858,7 @@ function YourPageDashboardInner() {
     
     // セッション情報を設定
     setActiveSessionId(response.active_session_id)
-    setActiveSessionStartTime(new Date(response.active_started_at_utc))
+    setActiveSessionStartTime(parseUtcDateString(response.active_started_at_utc))
     
     // カウントアップ用のelapsedTimeをリセット
     setElapsedTime(0)
@@ -1825,8 +1835,8 @@ function YourPageDashboardInner() {
                           <p className="text-[10px] text-muted-foreground text-center py-2">ログがありません</p>
                         ) : (
                           timerSessions.slice(0, 5).map((session) => {
-                            const startTime = new Date(session.started_at_utc)
-                            const endTime = session.ended_at_utc ? new Date(session.ended_at_utc) : null
+                            const startTime = parseUtcDateString(session.started_at_utc)
+                            const endTime = session.ended_at_utc ? parseUtcDateString(session.ended_at_utc) : null
                             const duration = endTime
                               ? Math.floor((endTime.getTime() - startTime.getTime()) / 1000)
                               : (timerEnabled && session.id === activeSessionId ? calculateRunningSeconds() : 0)
