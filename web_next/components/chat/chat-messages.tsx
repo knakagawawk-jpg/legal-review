@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { cn } from "@/lib/utils"
 import type { Message } from "@/types/api"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 
 interface ChatMessagesProps {
   messages: Message[]
@@ -59,7 +61,15 @@ function MessageBubble({ message }: { message: Message }) {
               : "bg-white text-foreground rounded-tl-sm border border-indigo-100/80 shadow-sm",
           )}
         >
-          <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+          {isUser ? (
+            <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+          ) : (
+            <div className="prose prose-sm max-w-none prose-headings:mt-4 prose-headings:mb-2 prose-headings:font-semibold prose-h1:text-xl prose-h2:text-lg prose-h3:text-base prose-p:my-2 prose-p:leading-relaxed prose-ul:my-2 prose-ol:my-2 prose-li:my-1 prose-strong:font-semibold prose-strong:text-foreground prose-code:text-sm prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-muted prose-pre:p-3 prose-pre:rounded-lg prose-pre:overflow-x-auto prose-table:my-3 prose-table:w-full prose-th:border prose-th:border-border prose-th:px-3 prose-th:py-2 prose-th:bg-muted prose-th:font-semibold prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2 prose-blockquote:border-l-4 prose-blockquote:border-muted-foreground prose-blockquote:pl-4 prose-blockquote:italic prose-blockquote:text-muted-foreground">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {message.content}
+              </ReactMarkdown>
+            </div>
+          )}
         </div>
 
         {/* Actions & Timestamp */}

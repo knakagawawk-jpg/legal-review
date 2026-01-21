@@ -782,6 +782,13 @@ function YourPageDashboardInner() {
     }
   }
 
+  // Switchコンポーネント用のハンドラー（非同期関数をラップ）
+  const handleTimerSwitchChange = (checked: boolean) => {
+    handleTimerToggle(checked).catch((error) => {
+      console.error("[handleTimerSwitchChange] エラー:", error)
+    })
+  }
+
   // Load dashboard items
   const loadDashboardItems = useCallback(async () => {
     try {
@@ -1659,7 +1666,7 @@ function YourPageDashboardInner() {
                 <Switch
                   id="timer-switch"
                   checked={timerEnabled}
-                  onCheckedChange={handleTimerToggle}
+                  onCheckedChange={handleTimerSwitchChange}
                   className="scale-90"
                 />
                 <span className="text-xs font-medium min-w-[60px] text-right">
