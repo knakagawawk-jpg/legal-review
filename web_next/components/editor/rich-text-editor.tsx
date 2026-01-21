@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useRef } from "react"
 import { useEditor, EditorContent } from "@tiptap/react"
 import StarterKit from "@tiptap/starter-kit"
 import Underline from "@tiptap/extension-underline"
@@ -66,6 +67,10 @@ export function RichTextEditor({
   placeholder = "内容を入力...",
   className,
 }: RichTextEditorProps) {
+  // 外部からのcontent変更を追跡するためのフラグ
+  const isExternalUpdate = useRef(false)
+  const prevContentRef = useRef(content)
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -85,7 +90,10 @@ export function RichTextEditor({
     ],
     content,
     onUpdate: ({ editor }) => {
-      onChange(editor.getHTML())
+      // 外部からの更新中は onChange を呼ばない（無限ループ防止）
+      if (!isExternalUpdate.current) {
+        onChange(editor.getHTML())
+      }
     },
     editorProps: {
       attributes: {
@@ -96,6 +104,20 @@ export function RichTextEditor({
       },
     },
   })
+
+  // content プロパティが外部から変更された時にエディタを更新
+  useEffect(() => {
+    if (editor && content !== prevContentRef.current) {
+      // エディタの現在の内容と異なる場合のみ更新
+      const currentContent = editor.getHTML()
+      if (currentContent !== content) {
+        isExternalUpdate.current = true
+        editor.commands.setContent(content || '')
+        isExternalUpdate.current = false
+      }
+      prevContentRef.current = content
+    }
+  }, [content, editor])
 
   if (!editor) {
     return null

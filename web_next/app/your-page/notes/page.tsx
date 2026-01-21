@@ -759,7 +759,16 @@ function NotesPage() {
         </Dialog>
 
         {/* ページ作成ダイアログ */}
-        <Dialog open={createPageDialogOpen} onOpenChange={setCreatePageDialogOpen}>
+        <Dialog 
+          open={createPageDialogOpen} 
+          onOpenChange={(open) => {
+            setCreatePageDialogOpen(open)
+            if (!open) {
+              // ダイアログが閉じられた時に状態をリセット
+              setNewPage({ section_id: 0, title: "", content: "" })
+            }
+          }}
+        >
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>新しいページを作成</DialogTitle>
@@ -806,7 +815,17 @@ function NotesPage() {
         </Dialog>
 
         {/* ページ編集ダイアログ */}
-        <Dialog open={editPageDialogOpen} onOpenChange={setEditPageDialogOpen}>
+        <Dialog 
+          open={editPageDialogOpen} 
+          onOpenChange={(open) => {
+            setEditPageDialogOpen(open)
+            if (!open) {
+              // ダイアログが閉じられた時に状態をリセット
+              setEditingPageData(null)
+              setNewPage({ section_id: 0, title: "", content: "" })
+            }
+          }}
+        >
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>ページを編集</DialogTitle>

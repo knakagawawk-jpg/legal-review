@@ -501,6 +501,9 @@ function SubjectPage() {
   const [savingPage, setSavingPage] = useState(false)
   const pageContentTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   
+  // 保留中の保存を追跡（ページ切り替え前にフラッシュするため）
+  const pendingPageSaveRef = useRef<{ pageId: number; title: string; content: string } | null>(null)
+  
   const getInitialSelectedPageId = (): number | null => {
     if (typeof window === "undefined") return null
     try {
@@ -1563,6 +1566,41 @@ function SubjectPage() {
     }
   }, [fetchNotebooks])
 
+  // ページ離脱時・アンマウント時に未保存の変更をフラッシュ
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      // 同期的にフラッシュ（keepalive使用）
+      const pending = pendingPageSaveRef.current
+      if (pending) {
+        pendingPageSaveRef.current = null
+        // タイマーをクリア
+        if (pageContentTimeoutRef.current) {
+          clearTimeout(pageContentTimeoutRef.current)
+          pageContentTimeoutRef.current = null
+        }
+        // keepalive: true でページ離脱後もリクエストを完了させる
+        const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        if (token) headers['Authorization'] = `Bearer ${token}`
+        
+        fetch(`/api/note-pages/${pending.pageId}`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({ title: pending.title || null, content: pending.content || null }),
+          keepalive: true,
+        }).catch(() => {})
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      // アンマウント時にもフラッシュ
+      flushPendingPageSave()
+    }
+  }, [flushPendingPageSave])
+
   // タイトル変更時（フォーカスアウトで保存）
   const handlePageTitleBlur = () => {
     if (!selectedPage) return
@@ -1570,6 +1608,22 @@ function SubjectPage() {
       savePageContent(selectedPage.id, editingPageTitle, editingPageContent)
     }
   }
+
+  // 保留中の変更を即座に保存する関数
+  const flushPendingPageSave = useCallback(async () => {
+    // タイマーをクリア
+    if (pageContentTimeoutRef.current) {
+      clearTimeout(pageContentTimeoutRef.current)
+      pageContentTimeoutRef.current = null
+    }
+    
+    // 保留中の保存があればフラッシュ
+    const pending = pendingPageSaveRef.current
+    if (pending) {
+      pendingPageSaveRef.current = null
+      await savePageContent(pending.pageId, pending.title, pending.content)
+    }
+  }, [savePageContent])
 
   // コンテンツ変更時（デバウンス自動保存）
   const handlePageContentChange = (newContent: string) => {
@@ -1580,10 +1634,21 @@ function SubjectPage() {
       clearTimeout(pageContentTimeoutRef.current)
     }
     
+    // タイマー設定時点でページIDをキャプチャ（クロージャの問題を回避）
+    const currentPageId = selectedPageId
+    const currentTitle = editingPageTitle
+    
+    if (!currentPageId) return
+    
+    // 保留中の保存を更新
+    pendingPageSaveRef.current = { pageId: currentPageId, title: currentTitle, content: newContent }
+    
     // 1秒後に自動保存
     pageContentTimeoutRef.current = setTimeout(() => {
-      if (selectedPage) {
-        savePageContent(selectedPage.id, editingPageTitle, newContent)
+      if (pendingPageSaveRef.current && pendingPageSaveRef.current.pageId === currentPageId) {
+        const pending = pendingPageSaveRef.current
+        pendingPageSaveRef.current = null
+        savePageContent(pending.pageId, pending.title, pending.content)
       }
     }, 1000)
   }
@@ -2742,7 +2807,9 @@ function SubjectPage() {
                                             )}
                                           >
                                             <button
-                                              onClick={() => {
+                                              onClick={async () => {
+                                                // ページ切り替え前に未保存の変更をフラッシュ
+                                                await flushPendingPageSave()
                                                 setSelectedPageId(page.id)
                                                 try {
                                                   const params = new URLSearchParams(searchParams.toString())
