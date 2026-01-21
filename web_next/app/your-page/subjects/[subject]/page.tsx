@@ -9,8 +9,17 @@ import { Button } from "@/components/ui/button"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { FIXED_SUBJECTS, getSubjectId } from "@/lib/subjects"
-import { BookOpen, FileText, StickyNote, Plus, Folder, ChevronRight, ChevronDown, ChevronLeft, X, Menu, GripVertical, Trash2, CalendarDays } from "lucide-react"
-import type { Notebook, NotePage } from "@/types/api"
+import { BookOpen, FileText, StickyNote, Plus, Folder, ChevronRight, ChevronDown, ChevronLeft, X, Menu, GripVertical, Trash2, CalendarDays, MoreVertical, Edit } from "lucide-react"
+import type { Notebook, NoteSection, NotePage } from "@/types/api"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
 import { withAuth } from "@/components/auth/with-auth"
 import { apiClient } from "@/lib/api-client"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -40,8 +49,12 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 
-type NotebookWithPages = Notebook & {
+type NoteSectionWithPages = NoteSection & {
   pages?: NotePage[]
+}
+
+type NotebookWithSections = Notebook & {
+  sections?: NoteSectionWithPages[]
 }
 
 // Dashboardと同じ高さ制御ロジック（入力時は最大5行、表示時は1〜3行）
@@ -449,9 +462,25 @@ function SubjectPage() {
     }
     return "study"
   })
-  const [notebooks, setNotebooks] = useState<NotebookWithPages[]>([])
+  const [notebooks, setNotebooks] = useState<NotebookWithSections[]>([])
   const [loadingNotebooks, setLoadingNotebooks] = useState(false)
   const [expandedNotebooks, setExpandedNotebooks] = useState<Set<number>>(new Set())
+  const [expandedSections, setExpandedSections] = useState<Set<number>>(new Set())
+  
+  // ノートブック作成ダイアログ
+  const [createNotebookDialogOpen, setCreateNotebookDialogOpen] = useState(false)
+  const [newNotebook, setNewNotebook] = useState({ title: "", description: "" })
+  const [creatingNotebook, setCreatingNotebook] = useState(false)
+  
+  // セクション作成ダイアログ
+  const [createSectionDialogOpen, setCreateSectionDialogOpen] = useState(false)
+  const [newSection, setNewSection] = useState({ notebook_id: 0, title: "" })
+  const [creatingSection, setCreatingSection] = useState(false)
+  
+  // ページ作成ダイアログ
+  const [createPageDialogOpen, setCreatePageDialogOpen] = useState(false)
+  const [newPage, setNewPage] = useState({ section_id: 0, title: "", content: "" })
+  const [creatingPage, setCreatingPage] = useState(false)
   const getInitialSelectedPageId = (): number | null => {
     if (typeof window === "undefined") return null
     try {
@@ -769,53 +798,47 @@ function SubjectPage() {
     }
   }, [selectedSubject])
 
-  // ノートブック一覧を取得（ページも含む）
+  // ノートブック一覧を取得（セクション・ページを含む3階層）
+  const fetchNotebooks = useCallback(async () => {
+    setLoadingNotebooks(true)
+    try {
+      const subjectId = getSubjectId(selectedSubject)
+      if (!subjectId) {
+        setNotebooks([])
+        return
+      }
+      const notebooksData = await apiClient.get<Notebook[]>(
+        `/api/notebooks?subject_id=${subjectId}`
+      )
+      // 各ノートブックの詳細（セクション・ページを含む）を取得
+      const notebooksWithSections = await Promise.all(
+        notebooksData.map(async (notebook) => {
+          try {
+            const detail = await apiClient.get<{ sections: NoteSectionWithPages[] }>(`/api/notebooks/${notebook.id}`)
+            return { ...notebook, sections: detail.sections || [] }
+          } catch (err) {
+            console.error(`Failed to fetch notebook ${notebook.id} details:`, err)
+            return { ...notebook, sections: [] }
+          }
+        })
+      )
+      setNotebooks(notebooksWithSections)
+    } catch (err) {
+      console.error("Failed to fetch notebooks:", err)
+      setNotebooks([])
+    } finally {
+      setLoadingNotebooks(false)
+    }
+  }, [selectedSubject])
+
   useEffect(() => {
     if (mainTab === "notes") {
-      const fetchNotebooks = async () => {
-        setLoadingNotebooks(true)
-        try {
-          const subjectId = getSubjectId(selectedSubject)
-          if (!subjectId) {
-            setNotebooks([])
-            return
-          }
-          const notebooksData = await apiClient.get<Notebook[]>(
-            `/api/notebooks?subject_id=${subjectId}`
-          )
-          // 各ノートブックの詳細（ページを含む）を取得
-          const notebooksWithPages = await Promise.all(
-            notebooksData.map(async (notebook) => {
-              try {
-                const detail = await apiClient.get<{ sections: Array<{ pages: NotePage[] }> }>(`/api/notebooks/${notebook.id}`)
-                // Sectionを無視して、すべてのPageを直接Notebookに紐付ける
-                const allPages: NotePage[] = []
-                detail.sections?.forEach((section) => {
-                  if (section.pages) {
-                    allPages.push(...section.pages)
-                  }
-                })
-                return { ...notebook, pages: allPages }
-              } catch (err) {
-                console.error(`Failed to fetch notebook ${notebook.id} details:`, err)
-                return { ...notebook, pages: [] }
-              }
-            })
-          )
-          setNotebooks(notebooksWithPages)
-        } catch (err) {
-          console.error("Failed to fetch notebooks:", err)
-          setNotebooks([])
-        } finally {
-          setLoadingNotebooks(false)
-        }
-      }
       fetchNotebooks()
     } else {
       // My規範・My論点タブの場合は右サイドバーを閉じる
       setIsRightSidebarOpen(false)
     }
-  }, [mainTab, selectedSubject, toUiStudyItem])
+  }, [mainTab, selectedSubject, fetchNotebooks])
 
   // My規範・My論点のデータを取得（DB）
   useEffect(() => {
@@ -1287,9 +1310,111 @@ function SubjectPage() {
     setExpandedNotebooks(newExpanded)
   }
 
-  // 選択されたページを取得
+  const toggleSection = (sectionId: number) => {
+    const newExpanded = new Set(expandedSections)
+    if (newExpanded.has(sectionId)) {
+      newExpanded.delete(sectionId)
+    } else {
+      newExpanded.add(sectionId)
+    }
+    setExpandedSections(newExpanded)
+  }
+
+  // ノートブック作成
+  const handleCreateNotebook = async () => {
+    if (!newNotebook.title.trim()) {
+      alert("タイトルを入力してください")
+      return
+    }
+
+    const subjectId = getSubjectId(selectedSubject)
+    if (!subjectId) {
+      alert("科目が選択されていません")
+      return
+    }
+
+    setCreatingNotebook(true)
+    try {
+      await apiClient.post<Notebook>("/api/notebooks", {
+        subject_id: subjectId,
+        title: newNotebook.title.trim(),
+        description: newNotebook.description.trim() || null,
+      })
+      await fetchNotebooks()
+      setNewNotebook({ title: "", description: "" })
+      setCreateNotebookDialogOpen(false)
+    } catch (err: any) {
+      alert(err?.error || "ノートブックの作成に失敗しました")
+    } finally {
+      setCreatingNotebook(false)
+    }
+  }
+
+  // セクション作成
+  const handleCreateSection = async () => {
+    if (!newSection.title.trim()) {
+      alert("セクション名を入力してください")
+      return
+    }
+
+    setCreatingSection(true)
+    try {
+      await apiClient.post("/api/note-sections", {
+        notebook_id: newSection.notebook_id,
+        title: newSection.title.trim(),
+        display_order: 0,
+      })
+      await fetchNotebooks()
+      setNewSection({ notebook_id: 0, title: "" })
+      setCreateSectionDialogOpen(false)
+    } catch (err: any) {
+      alert(err?.error || "セクションの作成に失敗しました")
+    } finally {
+      setCreatingSection(false)
+    }
+  }
+
+  // ページ作成
+  const handleCreatePage = async () => {
+    if (!newPage.title?.trim() && !newPage.content?.trim()) {
+      alert("タイトルまたは内容を入力してください")
+      return
+    }
+
+    setCreatingPage(true)
+    try {
+      await apiClient.post("/api/note-pages", {
+        section_id: newPage.section_id,
+        title: newPage.title?.trim() || null,
+        content: newPage.content?.trim() || null,
+        display_order: 0,
+      })
+      await fetchNotebooks()
+      setNewPage({ section_id: 0, title: "", content: "" })
+      setCreatePageDialogOpen(false)
+    } catch (err: any) {
+      alert(err?.error || "ページの作成に失敗しました")
+    } finally {
+      setCreatingPage(false)
+    }
+  }
+
+  // セクション作成ダイアログを開く
+  const openCreateSectionDialog = (notebookId: number) => {
+    setNewSection({ notebook_id: notebookId, title: "" })
+    setCreateSectionDialogOpen(true)
+  }
+
+  // ページ作成ダイアログを開く
+  const openCreatePageDialog = (sectionId: number) => {
+    setNewPage({ section_id: sectionId, title: "", content: "" })
+    setCreatePageDialogOpen(true)
+  }
+
+  // 選択されたページを取得（3階層対応）
   const selectedPage = notebooks
-    .flatMap(nb => nb.pages || [])
+    .flatMap(nb => nb.sections || [])
+    .flatMap(section => section.pages || [])
     .find(page => page.id === selectedPageId)
 
   // note_pageの直近アクセス履歴（最大5件）をlocalStorageに保存
@@ -2260,11 +2385,11 @@ function SubjectPage() {
         </Card>
       </main>
 
-      {/* 右側サイドパネル（ノート管理） */}
+      {/* 右側サイドパネル（ノート管理 - 3階層対応） */}
       {mainTab === "notes" && (
         <aside
           className={cn(
-            "fixed right-0 top-0 h-full w-64 bg-white/95 backdrop-blur-sm border-l border-amber-200/60 shadow-lg z-30 transition-transform duration-300 ease-out",
+            "fixed right-0 top-0 h-full w-72 bg-white/95 backdrop-blur-sm border-l border-amber-200/60 shadow-lg z-30 transition-transform duration-300 ease-out",
             isRightSidebarOpen ? "translate-x-0" : "translate-x-full"
           )}
         >
@@ -2284,10 +2409,14 @@ function SubjectPage() {
             </div>
 
             {/* コンテンツ */}
-            <div className="flex-1 overflow-y-auto p-4">
-              <div className="flex items-center justify-between mb-4">
+            <div className="flex-1 overflow-y-auto p-3">
+              <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-medium text-amber-900/80">{selectedSubject}のノート</span>
-                <Button size="sm" className="h-6 text-xs px-2">
+                <Button 
+                  size="sm" 
+                  className="h-6 text-xs px-2"
+                  onClick={() => setCreateNotebookDialogOpen(true)}
+                >
                   <Plus className="h-3 w-3 mr-1" />
                   新規
                 </Button>
@@ -2297,68 +2426,125 @@ function SubjectPage() {
               ) : notebooks.length === 0 ? (
                 <div className="text-center py-8 border border-amber-200/60 rounded-lg">
                   <p className="text-muted-foreground mb-3 text-xs">ノートブックがありません</p>
-                  <Button size="sm" className="h-6 text-xs px-2">
+                  <Button 
+                    size="sm" 
+                    className="h-6 text-xs px-2"
+                    onClick={() => setCreateNotebookDialogOpen(true)}
+                  >
                     <Plus className="h-3 w-3 mr-1" />
                     作成
                   </Button>
                 </div>
               ) : (
-                <div className="space-y-1">
+                <div className="space-y-2">
                   {notebooks.map((notebook) => (
                     <div key={notebook.id} className="border border-amber-200/60 rounded-lg overflow-hidden">
-                      <button
-                        onClick={() => toggleNotebook(notebook.id)}
-                        className="w-full flex items-center gap-2 p-2 hover:bg-amber-50/40 transition-colors text-left"
-                      >
-                        {expandedNotebooks.has(notebook.id) ? (
-                          <ChevronDown className="h-3 w-3 text-amber-600 shrink-0" />
-                        ) : (
-                          <ChevronRight className="h-3 w-3 text-amber-600 shrink-0" />
-                        )}
-                        <Folder className="h-3.5 w-3.5 text-amber-700 shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-xs text-slate-700 truncate">{notebook.title}</h3>
-                          {notebook.description && (
-                            <p className="text-[10px] text-slate-500 mt-0.5 truncate">{notebook.description}</p>
-                          )}
-                        </div>
-                      </button>
-                      {expandedNotebooks.has(notebook.id) && (
-                        <div className="pl-6 pr-2 pb-2 space-y-0.5">
-                          {notebook.pages && notebook.pages.length > 0 ? (
-                            notebook.pages.map((page) => {
-                              const isSelected = page.id === selectedPageId
-                              return (
-                                <button
-                                  key={page.id}
-                                  onClick={() => {
-                                    setSelectedPageId(page.id)
-                                    // URLにも反映（サイドバーの直近アクセスから復元できるようにする）
-                                    try {
-                                      const params = new URLSearchParams(searchParams.toString())
-                                      params.set("tab", "notes")
-                                      params.set("pageId", String(page.id))
-                                      const encodedSubject = encodeURIComponent(selectedSubject)
-                                      router.replace(`/your-page/subjects/${encodedSubject}?${params.toString()}`)
-                                    } catch (error) {
-                                      console.error("Failed to sync pageId to URL:", error)
-                                    }
-                                  }}
-                                  className={cn(
-                                    "w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs rounded transition-colors",
-                                    isSelected
-                                      ? "bg-amber-200/60 text-amber-900 font-medium"
-                                      : "text-slate-600 hover:bg-amber-50/40"
-                                  )}
-                                >
-                                  <FileText className="h-3 w-3 text-amber-600 shrink-0" />
-                                  <span className="truncate">{page.title || "無題"}</span>
-                                </button>
-                              )
-                            })
+                      {/* ノートブック行 */}
+                      <div className="flex items-center gap-1 p-2 hover:bg-amber-50/40 transition-colors">
+                        <button
+                          onClick={() => toggleNotebook(notebook.id)}
+                          className="flex items-center gap-1 flex-1 text-left min-w-0"
+                        >
+                          {expandedNotebooks.has(notebook.id) ? (
+                            <ChevronDown className="h-3 w-3 text-amber-600 shrink-0" />
                           ) : (
-                            <div className="text-[10px] text-muted-foreground pl-4 py-1">
-                              ページがありません
+                            <ChevronRight className="h-3 w-3 text-amber-600 shrink-0" />
+                          )}
+                          <Folder className="h-3.5 w-3.5 text-amber-700 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold text-xs text-slate-700 truncate">{notebook.title}</h3>
+                            {notebook.description && (
+                              <p className="text-[10px] text-slate-500 mt-0.5 truncate">{notebook.description}</p>
+                            )}
+                          </div>
+                        </button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-5 w-5 p-0 shrink-0"
+                          onClick={() => openCreateSectionDialog(notebook.id)}
+                          title="セクションを追加"
+                        >
+                          <Plus className="h-3 w-3 text-amber-600" />
+                        </Button>
+                      </div>
+
+                      {/* セクション一覧 */}
+                      {expandedNotebooks.has(notebook.id) && (
+                        <div className="border-t border-amber-100">
+                          {notebook.sections && notebook.sections.length > 0 ? (
+                            notebook.sections.map((section) => (
+                              <div key={section.id} className="border-b border-amber-100 last:border-b-0">
+                                {/* セクション行 */}
+                                <div className="flex items-center gap-1 pl-5 pr-2 py-1.5 hover:bg-amber-50/30 transition-colors">
+                                  <button
+                                    onClick={() => toggleSection(section.id)}
+                                    className="flex items-center gap-1 flex-1 text-left min-w-0"
+                                  >
+                                    {expandedSections.has(section.id) ? (
+                                      <ChevronDown className="h-2.5 w-2.5 text-amber-500 shrink-0" />
+                                    ) : (
+                                      <ChevronRight className="h-2.5 w-2.5 text-amber-500 shrink-0" />
+                                    )}
+                                    <StickyNote className="h-3 w-3 text-amber-500 shrink-0" />
+                                    <span className="text-[11px] font-medium text-slate-600 truncate">{section.title}</span>
+                                  </button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-4 w-4 p-0 shrink-0"
+                                    onClick={() => openCreatePageDialog(section.id)}
+                                    title="ページを追加"
+                                  >
+                                    <Plus className="h-2.5 w-2.5 text-amber-500" />
+                                  </Button>
+                                </div>
+
+                                {/* ページ一覧 */}
+                                {expandedSections.has(section.id) && (
+                                  <div className="pl-10 pr-2 pb-1">
+                                    {section.pages && section.pages.length > 0 ? (
+                                      section.pages.map((page) => {
+                                        const isSelected = page.id === selectedPageId
+                                        return (
+                                          <button
+                                            key={page.id}
+                                            onClick={() => {
+                                              setSelectedPageId(page.id)
+                                              try {
+                                                const params = new URLSearchParams(searchParams.toString())
+                                                params.set("tab", "notes")
+                                                params.set("pageId", String(page.id))
+                                                const encodedSubject = encodeURIComponent(selectedSubject)
+                                                router.replace(`/your-page/subjects/${encodedSubject}?${params.toString()}`)
+                                              } catch (error) {
+                                                console.error("Failed to sync pageId to URL:", error)
+                                              }
+                                            }}
+                                            className={cn(
+                                              "w-full flex items-center gap-1.5 px-2 py-1 text-left text-[11px] rounded transition-colors",
+                                              isSelected
+                                                ? "bg-amber-200/60 text-amber-900 font-medium"
+                                                : "text-slate-600 hover:bg-amber-50/40"
+                                            )}
+                                          >
+                                            <FileText className="h-2.5 w-2.5 text-amber-500 shrink-0" />
+                                            <span className="truncate">{page.title || "無題"}</span>
+                                          </button>
+                                        )
+                                      })
+                                    ) : (
+                                      <div className="text-[10px] text-muted-foreground py-1">
+                                        ページがありません
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            ))
+                          ) : (
+                            <div className="text-[10px] text-muted-foreground text-center py-2">
+                              セクションがありません
                             </div>
                           )}
                         </div>
@@ -2382,6 +2568,121 @@ function SubjectPage() {
           <ChevronLeft className="h-4 w-4 text-amber-600" />
         </button>
       )}
+
+      {/* ノートブック作成ダイアログ */}
+      <Dialog open={createNotebookDialogOpen} onOpenChange={setCreateNotebookDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>新しいノートブックを作成</DialogTitle>
+            <DialogDescription>
+              {selectedSubject}のノートブックを作成します
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="notebook-title">タイトル</Label>
+              <Input
+                id="notebook-title"
+                value={newNotebook.title}
+                onChange={(e) => setNewNotebook(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="ノートブックのタイトルを入力"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="notebook-description">説明（任意）</Label>
+              <Textarea
+                id="notebook-description"
+                value={newNotebook.description}
+                onChange={(e) => setNewNotebook(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="ノートブックの説明を入力（任意）"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCreateNotebookDialogOpen(false)}
+              disabled={creatingNotebook}
+            >
+              キャンセル
+            </Button>
+            <Button onClick={handleCreateNotebook} disabled={creatingNotebook}>
+              {creatingNotebook ? "作成中..." : "作成"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* セクション作成ダイアログ */}
+      <Dialog open={createSectionDialogOpen} onOpenChange={setCreateSectionDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>新しいセクションを作成</DialogTitle>
+            <DialogDescription>
+              セクション名を入力してください
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="section-title">セクション名</Label>
+              <Input
+                id="section-title"
+                value={newSection.title}
+                onChange={(e) => setNewSection(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="セクション名を入力"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCreateSectionDialogOpen(false)}
+              disabled={creatingSection}
+            >
+              キャンセル
+            </Button>
+            <Button onClick={handleCreateSection} disabled={creatingSection}>
+              {creatingSection ? "作成中..." : "作成"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ページ作成ダイアログ */}
+      <Dialog open={createPageDialogOpen} onOpenChange={setCreatePageDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>新しいページを作成</DialogTitle>
+            <DialogDescription>
+              ページのタイトルを入力してください
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="page-title">タイトル（任意）</Label>
+              <Input
+                id="page-title"
+                value={newPage.title}
+                onChange={(e) => setNewPage(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="ページのタイトルを入力（任意）"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCreatePageDialogOpen(false)}
+              disabled={creatingPage}
+            >
+              キャンセル
+            </Button>
+            <Button onClick={handleCreatePage} disabled={creatingPage}>
+              {creatingPage ? "作成中..." : "作成"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
