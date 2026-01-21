@@ -184,7 +184,7 @@ function PastExamsPage() {
     // subject_nameが優先、なければsubject_idから科目名を取得
     const subjectName = item.subject_name || (item.subject ? getSubjectName(item.subject) : "不明")
     
-    if (item.year && subjectName !== "不明") {
+    if (item.year) {
       // 年度から元号記号を計算（2019年以降はR、1989年以降はH）
       let eraYear = item.year
       let eraPrefix = ""
@@ -203,6 +203,7 @@ function PastExamsPage() {
     return subjectName
   }
 
+  // フィルター適用後のデータ（司法試験・予備試験）
   const currentData = {
     shihou: filteredData
       .filter((item) => item.exam_type === "司法試験")
@@ -230,7 +231,11 @@ function PastExamsPage() {
         year: item.year,
         examType: item.exam_type,
       })),
-    other: filteredData
+  }
+
+  // 「その他」はフィルターに関わらず常に全データから抽出
+  const otherData = useMemo(() => {
+    return reviewHistory
       .filter((item) => !item.exam_type || (item.exam_type !== "司法試験" && item.exam_type !== "予備試験"))
       .map((item) => ({
         id: item.id,
@@ -242,8 +247,8 @@ function PastExamsPage() {
         subject: item.subject_name || (item.subject ? getSubjectName(item.subject) : "不明"),
         year: item.year,
         examType: item.exam_type,
-      })),
-  }
+      }))
+  }, [reviewHistory])
 
   return (
     <div 
@@ -361,9 +366,7 @@ function PastExamsPage() {
               <>
                 <ExamTable data={currentData.shihou} title="司法試験" />
                 <ExamTable data={currentData.yobi} title="予備試験" />
-                {currentData.other.length > 0 && (
-                  <ExamTable data={currentData.other} title="その他の試験" />
-                )}
+                <ExamTable data={otherData} title="その他の試験" />
               </>
             )}
           </CardContent>
