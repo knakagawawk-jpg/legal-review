@@ -2112,91 +2112,93 @@ function YourPageDashboardInner() {
                   }
 
                   return (
-                    <div className="mt-2 overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-16 text-[10px]">科目</TableHead>
-                            <TableHead className="text-[10px]">問題文</TableHead>
-                            <TableHead className="text-[10px]">回答例</TableHead>
-                            <TableHead className="text-[10px]">参照情報</TableHead>
-                            <TableHead className="w-14 text-[10px] text-center">保存</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {s.problems.map((p) => {
-                            const subj = p.subject_id ? subjects.find(su => su.id === p.subject_id) : undefined
-                            const expanded = !!recentReviewExpanded[p.id]
-                            const isPending = recentReviewSavePendingRef.current.has(p.id)
+                    <div className="mt-2 overflow-x-auto -mx-3 px-3">
+                      <div className="min-w-[800px]">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="w-16 text-[10px] whitespace-nowrap">科目</TableHead>
+                              <TableHead className="min-w-[250px] text-[10px]">問題文</TableHead>
+                              <TableHead className="min-w-[250px] text-[10px]">回答例</TableHead>
+                              <TableHead className="min-w-[200px] text-[10px]">参照情報</TableHead>
+                              <TableHead className="w-14 text-[10px] text-center whitespace-nowrap">保存</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {s.problems.map((p) => {
+                              const subj = p.subject_id ? subjects.find(su => su.id === p.subject_id) : undefined
+                              const expanded = !!recentReviewExpanded[p.id]
+                              const isPending = recentReviewSavePendingRef.current.has(p.id)
 
-                            return (
-                              <TableRow
-                                key={p.id}
-                                onMouseDown={() => touchRecentReviewRow(p.id)}
-                              >
-                                <TableCell className="align-top py-2">
-                                  {subj ? (
-                                    <span className={cn("text-[10px] px-2 py-0.5 rounded", SUBJECT_COLORS[subj.name] || "bg-muted text-muted-foreground")}>
-                                      {subj.name}
-                                    </span>
-                                  ) : (
-                                    <span className="text-[10px] text-muted-foreground">--</span>
-                                  )}
-                                </TableCell>
+                              return (
+                                <TableRow
+                                  key={p.id}
+                                  onMouseDown={() => touchRecentReviewRow(p.id)}
+                                >
+                                  <TableCell className="align-top py-2">
+                                    {subj ? (
+                                      <span className={cn("text-[10px] px-2 py-0.5 rounded", SUBJECT_COLORS[subj.name] || "bg-muted text-muted-foreground")}>
+                                        {subj.name}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] text-muted-foreground">--</span>
+                                    )}
+                                  </TableCell>
 
-                                <TableCell className="align-top py-2">
-                                  <div className="whitespace-pre-wrap text-xs leading-5 max-h-[168px] overflow-y-auto">
-                                    {`問${p.order_index}. ${p.question_text}`}
-                                  </div>
-                                </TableCell>
+                                  <TableCell className="align-top py-2">
+                                    <div className="whitespace-pre-wrap text-xs leading-5 max-h-[168px] overflow-y-auto break-words">
+                                      {`問${p.order_index}. ${p.question_text}`}
+                                    </div>
+                                  </TableCell>
 
-                                <TableCell className="align-top py-2">
-                                  {!expanded ? (
-                                    <Button
-                                      variant="secondary"
-                                      size="sm"
-                                      className="h-7 px-2 text-[10px]"
-                                      onClick={() => {
-                                        touchRecentReviewRow(p.id)
-                                        setRecentReviewExpanded(prev => ({ ...prev, [p.id]: true }))
+                                  <TableCell className="align-top py-2">
+                                    {!expanded ? (
+                                      <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        className="h-7 px-2 text-[10px]"
+                                        onClick={() => {
+                                          touchRecentReviewRow(p.id)
+                                          setRecentReviewExpanded(prev => ({ ...prev, [p.id]: true }))
+                                        }}
+                                      >
+                                        回答例を表示
+                                      </Button>
+                                    ) : (
+                                      <div className="whitespace-pre-wrap text-xs leading-5 max-h-[168px] overflow-y-auto break-words">
+                                        {p.answer_example || ""}
+                                      </div>
+                                    )}
+                                  </TableCell>
+
+                                  <TableCell className="align-top py-2">
+                                    {expanded ? (
+                                      <div className="whitespace-pre-wrap text-xs leading-5 max-h-[168px] overflow-y-auto break-words">
+                                        {p.references || ""}
+                                      </div>
+                                    ) : (
+                                      <div className="text-xs text-muted-foreground"> </div>
+                                    )}
+                                  </TableCell>
+
+                                  <TableCell className="align-top py-2 text-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={p.saved}
+                                      disabled={p.saved || isPending}
+                                      onChange={() => {
+                                        // 保存は「チェック後、5秒操作なし」でInsert。成功したらチェックが入る。
+                                        if (p.saved || isPending) return
+                                        requestSaveRecentReviewProblem(p.id)
                                       }}
-                                    >
-                                      回答例を表示
-                                    </Button>
-                                  ) : (
-                                    <div className="whitespace-pre-wrap text-xs leading-5 max-h-[168px] overflow-y-auto">
-                                      {p.answer_example || ""}
-                                    </div>
-                                  )}
-                                </TableCell>
-
-                                <TableCell className="align-top py-2">
-                                  {expanded ? (
-                                    <div className="whitespace-pre-wrap text-xs leading-5 max-h-[168px] overflow-y-auto">
-                                      {p.references || ""}
-                                    </div>
-                                  ) : (
-                                    <div className="text-xs text-muted-foreground"> </div>
-                                  )}
-                                </TableCell>
-
-                                <TableCell className="align-top py-2 text-center">
-                                  <input
-                                    type="checkbox"
-                                    checked={p.saved}
-                                    disabled={p.saved || isPending}
-                                    onChange={() => {
-                                      // 保存は「チェック後、5秒操作なし」でInsert。成功したらチェックが入る。
-                                      if (p.saved || isPending) return
-                                      requestSaveRecentReviewProblem(p.id)
-                                    }}
-                                  />
-                                </TableCell>
-                              </TableRow>
-                            )
-                          })}
-                        </TableBody>
-                      </Table>
+                                    />
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
                     </div>
                   )
                 })()}
