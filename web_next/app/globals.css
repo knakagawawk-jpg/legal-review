@@ -88,6 +88,20 @@
     outline: none;
     min-height: 200px;
     padding: 1rem;
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  .ProseMirror p {
+    margin: 0.25rem 0;
+  }
+
+  .ProseMirror p:first-child {
+    margin-top: 0;
+  }
+
+  .ProseMirror p:last-child {
+    margin-bottom: 0;
   }
 
   .ProseMirror p.is-editor-empty:first-child::before {

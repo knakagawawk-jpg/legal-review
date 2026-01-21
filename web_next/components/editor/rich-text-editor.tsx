@@ -90,7 +90,7 @@ export function RichTextEditor({
     editorProps: {
       attributes: {
         class: cn(
-          "prose prose-sm sm:prose-base lg:prose-lg xl:prose-xl max-w-none focus:outline-none",
+          "focus:outline-none text-sm leading-relaxed",
           className
         ),
       },
@@ -110,9 +110,9 @@ export function RichTextEditor({
   }
 
   return (
-    <div className="border rounded-md flex flex-col h-full">
+    <div className="border border-amber-200/60 rounded-md flex flex-col h-full bg-white">
       {/* ツールバー */}
-      <div className="flex items-center gap-1 p-2 border-b bg-muted/50 flex-wrap shrink-0">
+      <div className="flex items-center gap-1 p-2 border-b border-amber-200/60 bg-amber-50/30 flex-wrap shrink-0">
         {/* 太字 */}
         <Button
           type="button"
@@ -194,7 +194,10 @@ export function RichTextEditor({
       </div>
 
       {/* エディタ */}
-      <EditorContent editor={editor} className="flex-1 overflow-y-auto min-h-[200px] [&>.tiptap]:min-h-full [&>.tiptap]:p-4" />
+      <EditorContent 
+        editor={editor} 
+        className="flex-1 overflow-y-auto min-h-[200px] bg-white [&>.tiptap]:min-h-full" 
+      />
     </div>
   )
 }
