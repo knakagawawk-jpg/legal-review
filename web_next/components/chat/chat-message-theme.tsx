@@ -17,11 +17,12 @@ type ChatMessageTheme = {
 }
 
 const reviewTheme: ChatMessageTheme = {
-  layout: "align-end",
-  rowClassName: "gap-2",
-  bubbleBaseClassName: "max-w-[85%] rounded-2xl px-4 py-2",
-  bubbleUserClassName: "bg-primary text-primary-foreground rounded-br-md",
-  bubbleAssistantClassName: "bg-secondary text-secondary-foreground rounded-bl-md",
+  layout: "reverse",
+  rowClassName: "gap-3 px-4 py-3",
+  contentWrapperClassName: "max-w-[75%]",
+  bubbleBaseClassName: "relative rounded-2xl px-4 py-3",
+  bubbleUserClassName: "bg-gradient-to-br from-slate-600 to-slate-800 text-white rounded-tr-sm shadow-sm",
+  bubbleAssistantClassName: "bg-white text-foreground rounded-tl-sm border border-indigo-100/80 shadow-sm",
   markdownClassName: "prose-headings:mt-4 prose-headings:mb-2 \
     prose-h1:text-xl prose-h1:font-bold prose-h1:text-foreground prose-h1:mt-4 prose-h1:mb-3 \
     prose-h2:text-lg prose-h2:font-semibold prose-h2:text-foreground prose-h2:mt-3 prose-h2:mb-2 prose-h2:border-b prose-h2:border-border/50 prose-h2:pb-1.5 \
@@ -42,7 +43,10 @@ const reviewTheme: ChatMessageTheme = {
     prose-hr:my-4 prose-hr:border-border \
     prose-a:text-primary prose-a:no-underline hover:prose-a:underline \
     prose-img:rounded-md prose-img:shadow-sm prose-img:my-3",
-  loadingDotClassName: "bg-lime-600",
+  avatarBaseClassName: "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+  avatarUserClassName: "bg-gradient-to-br from-slate-500 to-slate-700",
+  avatarAssistantClassName: "bg-gradient-to-br from-indigo-500 to-sky-500",
+  loadingDotClassName: "bg-muted-foreground/40",
 }
 
 const freeTheme: ChatMessageTheme = {
