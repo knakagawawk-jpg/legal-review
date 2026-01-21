@@ -1,16 +1,16 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { ExternalLink, BookOpen } from "lucide-react"
+import { useState, useEffect, useMemo } from "react"
+import { ExternalLink, BookOpen, ChevronDown, Filter } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { FIXED_SUBJECTS, getSubjectName, getSubjectId } from "@/lib/subjects"
 import { withAuth } from "@/components/auth/with-auth"
 import { apiClient } from "@/lib/api-client"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 type ReviewHistoryItem = {
   id: number
@@ -31,6 +31,30 @@ type ExamRecord = {
   score: number | null
   attemptCount: number
   reviewLink: string
+  subject: string
+  year: number | null
+  examType: string | null
+}
+
+// 科目と色の対応表（subjectsページと同じ）
+const SUBJECT_COLORS: Record<string, string> = {
+  "憲法": "bg-red-100 text-red-700",
+  "行政法": "bg-rose-100 text-rose-700",
+  "民法": "bg-blue-100 text-blue-700",
+  "商法": "bg-cyan-100 text-cyan-700",
+  "民事訴訟法": "bg-sky-100 text-sky-700",
+  "刑法": "bg-green-100 text-green-700",
+  "刑事訴訟法": "bg-emerald-100 text-emerald-700",
+  "労働法": "bg-indigo-100 text-indigo-700",
+  "知的財産法": "bg-teal-100 text-teal-700",
+  "倒産法": "bg-violet-100 text-violet-700",
+  "租税法": "bg-purple-100 text-purple-700",
+  "経済法": "bg-fuchsia-100 text-fuchsia-700",
+  "国際関係法（公法系）": "bg-pink-100 text-pink-700",
+  "国際関係法（私法系）": "bg-slate-100 text-slate-700",
+  "環境法": "bg-lime-100 text-lime-700",
+  "国際関係法": "bg-slate-100 text-slate-700",
+  "一般教養科目": "bg-gray-100 text-gray-700",
 }
 
 function ExamTable({ data, title }: { data: ExamRecord[]; title: string }) {
@@ -91,23 +115,18 @@ function ExamTable({ data, title }: { data: ExamRecord[]; title: string }) {
 
 function PastExamsPage() {
   const { isOpen } = useSidebar()
-  const [selectedSubject, setSelectedSubject] = useState<string>(FIXED_SUBJECTS[0] as string)
   const [reviewHistory, setReviewHistory] = useState<ReviewHistoryItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [selectedSubject, setSelectedSubject] = useState<string | null>(null)  // null = 全科目
+  const [selectedYear, setSelectedYear] = useState<number | null>(null)  // null = 全年度
 
   useEffect(() => {
     const loadReviewHistory = async () => {
       try {
         setLoading(true)
-        // 科目名からIDに変換
-        const subjectId = selectedSubject ? getSubjectId(selectedSubject) : null
-        const queryParam = subjectId 
-          ? `subject=${subjectId}` 
-          : selectedSubject 
-            ? `subject_name=${encodeURIComponent(selectedSubject)}`
-            : ""
+        // 全科目を取得（フィルターはクライアント側で行う）
         const data = await apiClient.get<ReviewHistoryItem[]>(
-          `/api/review-history${queryParam ? `?${queryParam}` : ""}`
+          `/api/review-history`
         )
         setReviewHistory(data)
       } catch (error) {
@@ -119,7 +138,41 @@ function PastExamsPage() {
     }
 
     loadReviewHistory()
-  }, [selectedSubject])
+  }, [])
+
+  // 利用可能な年度のリストを取得
+  const availableYears = useMemo(() => {
+    const years = new Set<number>()
+    reviewHistory.forEach((item) => {
+      if (item.year !== null) {
+        years.add(item.year)
+      }
+    })
+    return Array.from(years).sort((a, b) => b - a)  // 降順
+  }, [reviewHistory])
+
+  // フィルター適用後のデータ
+  const filteredData = useMemo(() => {
+    let filtered = reviewHistory
+
+    // 科目フィルター
+    if (selectedSubject !== null) {
+      const subjectId = getSubjectId(selectedSubject)
+      filtered = filtered.filter((item) => {
+        if (subjectId !== null) {
+          return item.subject === subjectId
+        }
+        return item.subject_name === selectedSubject
+      })
+    }
+
+    // 年度フィルター
+    if (selectedYear !== null) {
+      filtered = filtered.filter((item) => item.year === selectedYear)
+    }
+
+    return filtered
+  }, [reviewHistory, selectedSubject, selectedYear])
 
   // データを試験種別ごとに分類
   const formatDate = (dateString: string) => {
@@ -132,26 +185,26 @@ function PastExamsPage() {
     const subjectName = item.subject_name || (item.subject ? getSubjectName(item.subject) : "不明")
     
     if (item.year && subjectName !== "不明") {
-      // 年度から元号を計算（2019年以降は令和）
+      // 年度から元号記号を計算（2019年以降はR、1989年以降はH）
       let eraYear = item.year
-      let eraName = ""
+      let eraPrefix = ""
       if (item.year >= 2019) {
         eraYear = item.year - 2018
-        eraName = "令和"
+        eraPrefix = "R"
       } else if (item.year >= 1989) {
         eraYear = item.year - 1988
-        eraName = "平成"
+        eraPrefix = "H"
       } else {
         eraYear = item.year - 1925
-        eraName = "昭和"
+        eraPrefix = "S"
       }
-      return `${eraName}${eraYear}年 ${subjectName}`
+      return `${eraPrefix}${eraYear}${subjectName}`
     }
     return subjectName
   }
 
   const currentData = {
-    shihou: reviewHistory
+    shihou: filteredData
       .filter((item) => item.exam_type === "司法試験")
       .map((item) => ({
         id: item.id,
@@ -160,8 +213,11 @@ function PastExamsPage() {
         score: item.score,
         attemptCount: item.attempt_count,
         reviewLink: `/your-page/review/${item.review_id}`,
+        subject: item.subject_name || (item.subject ? getSubjectName(item.subject) : "不明"),
+        year: item.year,
+        examType: item.exam_type,
       })),
-    yobi: reviewHistory
+    yobi: filteredData
       .filter((item) => item.exam_type === "予備試験")
       .map((item) => ({
         id: item.id,
@@ -170,8 +226,11 @@ function PastExamsPage() {
         score: item.score,
         attemptCount: item.attempt_count,
         reviewLink: `/your-page/review/${item.review_id}`,
+        subject: item.subject_name || (item.subject ? getSubjectName(item.subject) : "不明"),
+        year: item.year,
+        examType: item.exam_type,
       })),
-    other: reviewHistory
+    other: filteredData
       .filter((item) => !item.exam_type || (item.exam_type !== "司法試験" && item.exam_type !== "予備試験"))
       .map((item) => ({
         id: item.id,
@@ -180,6 +239,9 @@ function PastExamsPage() {
         score: item.score,
         attemptCount: item.attempt_count,
         reviewLink: `/your-page/review/${item.review_id}`,
+        subject: item.subject_name || (item.subject ? getSubjectName(item.subject) : "不明"),
+        year: item.year,
+        examType: item.exam_type,
       })),
   }
 
@@ -193,27 +255,98 @@ function PastExamsPage() {
       {/* Fixed Header */}
       <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-amber-200/60 shadow-sm">
         <div className="container mx-auto px-20 py-3 max-w-6xl">
-          <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <BookOpen className="h-4 w-4 text-amber-600" />
-              <h1 className="text-base font-semibold text-amber-900">科目別過去問一覧</h1>
+              <h1 className="text-base font-semibold text-amber-900">過去問一覧</h1>
             </div>
-            <Tabs value={selectedSubject} onValueChange={setSelectedSubject}>
-              <ScrollArea className="w-full">
-                <TabsList className="inline-flex w-max h-8 bg-amber-100/60 p-0.5">
-                  {FIXED_SUBJECTS.map((subject) => (
-                    <TabsTrigger
-                      key={subject}
-                      value={subject}
-                      className="text-xs px-2.5 py-1 data-[state=active]:bg-white data-[state=active]:text-amber-800 data-[state=active]:shadow-sm"
+            <div className="flex items-center gap-3">
+              {/* 科目フィルター */}
+              <div className="flex items-center gap-2">
+                <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">科目</span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className={cn(
+                      "flex items-center gap-1.5 text-xs transition-colors px-2 py-1 rounded-md hover:opacity-80",
+                      selectedSubject 
+                        ? (SUBJECT_COLORS[selectedSubject] || "bg-amber-100 text-amber-900")
+                        : "bg-gray-100 text-gray-700"
+                    )}>
+                      <span>{selectedSubject || "全科目"}</span>
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" side="bottom" className="w-32">
+                    <DropdownMenuItem
+                      onClick={() => setSelectedSubject(null)}
+                      className={cn(
+                        "text-xs cursor-pointer rounded-sm",
+                        "bg-gray-100 text-gray-700",
+                        selectedSubject === null && "ring-2 ring-offset-1 ring-amber-500 font-medium"
+                      )}
                     >
-                      {subject}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-                <ScrollBar orientation="horizontal" className="h-1.5" />
-              </ScrollArea>
-            </Tabs>
+                      全科目
+                    </DropdownMenuItem>
+                    {FIXED_SUBJECTS.map((subject) => (
+                      <DropdownMenuItem
+                        key={subject}
+                        onClick={() => setSelectedSubject(subject)}
+                        className={cn(
+                          "text-xs cursor-pointer rounded-sm",
+                          SUBJECT_COLORS[subject] || "bg-gray-100 text-gray-700",
+                          selectedSubject === subject && "ring-2 ring-offset-1 ring-amber-500 font-medium"
+                        )}
+                      >
+                        {subject}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+
+              {/* 年度フィルター */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">年度</span>
+                <Select 
+                  value={selectedYear?.toString() || "all"} 
+                  onValueChange={(value) => {
+                    if (value === "all") {
+                      setSelectedYear(null)
+                    } else {
+                      setSelectedYear(parseInt(value))
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-7 text-xs w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="text-xs">全年度</SelectItem>
+                    {availableYears.map((year) => {
+                      // 年度を元号表記に変換
+                      let eraYear = year
+                      let eraPrefix = ""
+                      if (year >= 2019) {
+                        eraYear = year - 2018
+                        eraPrefix = "R"
+                      } else if (year >= 1989) {
+                        eraYear = year - 1988
+                        eraPrefix = "H"
+                      } else {
+                        eraYear = year - 1925
+                        eraPrefix = "S"
+                      }
+                      return (
+                        <SelectItem key={year} value={year.toString()} className="text-xs">
+                          {eraPrefix}{eraYear}
+                        </SelectItem>
+                      )
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </div>
         </div>
       </header>
@@ -228,7 +361,9 @@ function PastExamsPage() {
               <>
                 <ExamTable data={currentData.shihou} title="司法試験" />
                 <ExamTable data={currentData.yobi} title="予備試験" />
-                <ExamTable data={currentData.other} title="その他の試験" />
+                {currentData.other.length > 0 && (
+                  <ExamTable data={currentData.other} title="その他の試験" />
+                )}
               </>
             )}
           </CardContent>

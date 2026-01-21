@@ -898,13 +898,25 @@ async def create_review(
         score = None
         if isinstance(review_json, dict):
             # review_jsonから点数を取得（構造に応じて調整が必要）
-            if "総合評価" in review_json:
+            # 新しい形式: evaluation.overall_review.score
+            if "evaluation" in review_json:
+                eval_data = review_json["evaluation"]
+                if isinstance(eval_data, dict) and "overall_review" in eval_data:
+                    overall_review = eval_data["overall_review"]
+                    if isinstance(overall_review, dict) and "score" in overall_review:
+                        try:
+                            score = float(overall_review["score"])
+                        except (ValueError, TypeError):
+                            pass
+            # 旧形式1: 総合評価.点数
+            elif "総合評価" in review_json:
                 eval_data = review_json["総合評価"]
                 if isinstance(eval_data, dict) and "点数" in eval_data:
                     try:
                         score = float(eval_data["点数"])
                     except (ValueError, TypeError):
                         pass
+            # 旧形式2: 直接score
             elif "score" in review_json:
                 try:
                     score = float(review_json["score"])
