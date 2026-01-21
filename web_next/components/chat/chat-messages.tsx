@@ -64,7 +64,27 @@ function MessageBubble({ message }: { message: Message }) {
           {isUser ? (
             <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
           ) : (
-            <div className="prose prose-sm max-w-none prose-headings:mt-4 prose-headings:mb-2 prose-headings:font-semibold prose-h1:text-xl prose-h2:text-lg prose-h3:text-base prose-p:my-2 prose-p:leading-relaxed prose-ul:my-2 prose-ol:my-2 prose-li:my-1 prose-strong:font-semibold prose-strong:text-foreground prose-code:text-sm prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-muted prose-pre:p-3 prose-pre:rounded-lg prose-pre:overflow-x-auto prose-table:my-3 prose-table:w-full prose-th:border prose-th:border-border prose-th:px-3 prose-th:py-2 prose-th:bg-muted prose-th:font-semibold prose-td:border prose-td:border-border prose-td:px-3 prose-td:py-2 prose-blockquote:border-l-4 prose-blockquote:border-muted-foreground prose-blockquote:pl-4 prose-blockquote:italic prose-blockquote:text-muted-foreground">
+            <div className="prose prose-sm max-w-none 
+              prose-headings:mt-6 prose-headings:mb-3 
+              prose-h1:text-2xl prose-h1:font-bold prose-h1:text-indigo-900 prose-h1:mt-6 prose-h1:mb-4
+              prose-h2:text-xl prose-h2:font-semibold prose-h2:text-indigo-800 prose-h2:mt-5 prose-h2:mb-3 prose-h2:border-b prose-h2:border-indigo-200 prose-h2:pb-2
+              prose-h3:text-lg prose-h3:font-semibold prose-h3:text-indigo-700 prose-h3:mt-4 prose-h3:mb-2
+              prose-p:my-3 prose-p:leading-7 prose-p:text-foreground prose-p:text-sm
+              prose-ul:my-3 prose-ul:space-y-1 prose-ul:list-disc prose-ul:pl-6
+              prose-ol:my-3 prose-ol:space-y-1 prose-ol:list-decimal prose-ol:pl-6
+              prose-li:my-1 prose-li:leading-6 prose-li:text-sm
+              prose-strong:font-bold prose-strong:text-foreground
+              prose-em:text-foreground prose-em:italic
+              prose-code:text-sm prose-code:bg-indigo-50 prose-code:text-indigo-800 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:font-mono prose-code:before:content-[''] prose-code:after:content-['']
+              prose-pre:bg-slate-900 prose-pre:text-slate-100 prose-pre:p-4 prose-pre:rounded-lg prose-pre:overflow-x-auto prose-pre:shadow-lg prose-pre:my-4
+              prose-pre code:bg-transparent prose-pre code:text-inherit prose-pre code:p-0 prose-pre code:before:content-[''] prose-pre code:after:content-['']
+              prose-blockquote:border-l-4 prose-blockquote:border-indigo-400 prose-blockquote:bg-indigo-50/50 prose-blockquote:pl-4 prose-blockquote:pr-4 prose-blockquote:py-2 prose-blockquote:my-4 prose-blockquote:italic prose-blockquote:text-slate-700
+              prose-table:my-4 prose-table:w-full prose-table:border-collapse prose-table:text-sm
+              prose-th:border prose-th:border-slate-300 prose-th:bg-indigo-50 prose-th:px-4 prose-th:py-2 prose-th:text-left prose-th:font-semibold prose-th:text-indigo-900
+              prose-td:border prose-td:border-slate-300 prose-td:px-4 prose-td:py-2 prose-td:text-slate-700
+              prose-hr:my-6 prose-hr:border-slate-300
+              prose-a:text-indigo-600 prose-a:no-underline hover:prose-a:text-indigo-800 hover:prose-a:underline
+              prose-img:rounded-lg prose-img:shadow-md prose-img:my-4">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {message.content}
               </ReactMarkdown>
