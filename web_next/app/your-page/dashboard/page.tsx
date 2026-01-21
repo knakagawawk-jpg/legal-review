@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils"
 import { withAuth } from "@/components/auth/with-auth"
 import { Calendar, DatePickerCalendar } from "@/components/ui/calendar"
 import { apiClient } from "@/lib/api-client"
+import { getStudyDate } from "@/lib/study-date"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
@@ -71,6 +72,37 @@ interface TimerDailyStats {
   study_date: string  // YYYY-MM-DD
   total_seconds: number
   sessions_count: number
+}
+
+// 最近の復習問題（ダッシュボード）
+interface RecentReviewProblem {
+  id: number
+  order_index: number
+  subject_id: number | null
+  question_text: string
+  answer_example: string | null
+  references: string | null
+  saved: boolean
+  saved_id: number | null
+}
+
+interface RecentReviewProblemSession {
+  id: number
+  study_date: string
+  mode: "generate" | "regenerate"
+  status: "success" | "failed"
+  error_message?: string | null
+  created_at: string
+  problems: RecentReviewProblem[]
+}
+
+interface RecentReviewProblemSessionsResponse {
+  study_date: string
+  used_count: number
+  remaining_count: number
+  daily_limit: number
+  sessions: RecentReviewProblemSession[]
+  total: number
 }
 
 const STATUS_OPTIONS = [
@@ -451,7 +483,22 @@ function YourPageDashboardInner() {
   // Subjects
   const [subjects, setSubjects] = useState<Subject[]>([])
 
-  // Current date (YYYY-MM-DD) - URLクエリパラメータから取得、なければ今日の日付
+  // ============================================================================
+  // 最近の復習問題（カード）
+  // ============================================================================
+  const [recentReview, setRecentReview] = useState<RecentReviewProblemSessionsResponse | null>(null)
+  const [recentReviewSelectedSessionId, setRecentReviewSelectedSessionId] = useState<string>("")
+  const [recentReviewGenerating, setRecentReviewGenerating] = useState(false)
+  const [recentReviewUiMode, setRecentReviewUiMode] = useState<"idle" | "retry" | "limit">("idle")
+
+  // 回答例表示（ローカル）
+  const [recentReviewExpanded, setRecentReviewExpanded] = useState<Record<number, boolean>>({})
+
+  // 保存（5秒後Insert）管理
+  const recentReviewSaveTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
+  const recentReviewSavePendingRef = useRef<Set<number>>(new Set())
+
+  // Current date (YYYY-MM-DD) - URLクエリパラメータから取得、なければ「study_date（4:00境界）」を使用
   const [currentDate, setCurrentDate] = useState(() => {
     const dateParam = searchParams.get("date")
     if (dateParam) {
@@ -461,9 +508,7 @@ function YourPageDashboardInner() {
         return dateParam
       }
     }
-    const now = new Date()
-    const jstDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }))
-    return jstDate.toISOString().split("T")[0]
+    return getStudyDate()
   })
 
   // URLクエリパラメータの変更を監視
@@ -476,6 +521,21 @@ function YourPageDashboardInner() {
       }
     }
   }, [searchParams])
+
+  const loadRecentReviewSessions = useCallback(async () => {
+    try {
+      const data = await apiClient.get<RecentReviewProblemSessionsResponse>("/api/recent-review-problems/sessions")
+      setRecentReview(data)
+      // 新しい順が先頭想定なので、未選択なら先頭へ
+      const first = data.sessions?.[0]
+      if (first && !recentReviewSelectedSessionId) {
+        setRecentReviewSelectedSessionId(String(first.id))
+      }
+      setRecentReviewUiMode("idle")
+    } catch (e: any) {
+      console.error("Failed to load recent review sessions:", e)
+    }
+  }, [recentReviewSelectedSessionId])
 
   // Debounce save
   const saveTimeoutsRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
@@ -534,16 +594,7 @@ function YourPageDashboardInner() {
     return `${hrs}時間${mins}分`
   }
 
-  // Get study date (4:00 boundary)
-  const getStudyDate = useCallback((date: Date = new Date()): string => {
-    const jstDate = new Date(date.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }))
-    const hours = jstDate.getHours()
-    const studyDate = new Date(jstDate)
-    if (hours < 4) {
-      studyDate.setDate(studyDate.getDate() - 1)
-    }
-    return studyDate.toISOString().split("T")[0]
-  }, [])
+  // study_date（4:00境界）は共通ユーティリティ（getStudyDate）で計算する
 
   // Calculate running seconds for today (4:00 boundary)
   const calculateRunningSeconds = (): number => {
@@ -636,6 +687,11 @@ function YourPageDashboardInner() {
     loadSubjects()
   }, [])
 
+  // 最近の復習問題（当日のセッションをロード）
+  useEffect(() => {
+    loadRecentReviewSessions()
+  }, [loadRecentReviewSessions])
+
   // ============================================================================
   // タイマーデータ取得関数（初期読み込み専用）
   // ============================================================================
@@ -674,7 +730,77 @@ function YourPageDashboardInner() {
       setActiveSessionStartTime(null)
       setTimerEnabled(false)
     }
-  }, [getStudyDate])
+  }, [])
+
+  const getRecentReviewSelectedSession = useCallback((): RecentReviewProblemSession | null => {
+    if (!recentReview || !recentReviewSelectedSessionId) return null
+    const id = Number(recentReviewSelectedSessionId)
+    if (!id) return null
+    return recentReview.sessions.find(s => s.id === id) || null
+  }, [recentReview, recentReviewSelectedSessionId])
+
+  const touchRecentReviewRow = useCallback((problemId: number) => {
+    if (!recentReviewSavePendingRef.current.has(problemId)) return
+    const t = recentReviewSaveTimersRef.current[problemId]
+    if (t) clearTimeout(t)
+    // 既存のpendingを維持したまま、5秒後に再予約
+    recentReviewSaveTimersRef.current[problemId] = setTimeout(async () => {
+      try {
+        const resp = await apiClient.post<{ saved_id: number }>(`/api/recent-review-problems/problems/${problemId}/save`)
+        setRecentReview(prev => {
+          if (!prev) return prev
+          const nextSessions = prev.sessions.map(s => ({
+            ...s,
+            problems: s.problems.map(p =>
+              p.id === problemId ? { ...p, saved: true, saved_id: resp.saved_id } : p
+            ),
+          }))
+          return { ...prev, sessions: nextSessions }
+        })
+      } catch (e) {
+        console.error("Failed to save review problem:", e)
+        // 失敗時は表示を変えない（チェックが入らない）
+      } finally {
+        recentReviewSavePendingRef.current.delete(problemId)
+        delete recentReviewSaveTimersRef.current[problemId]
+      }
+    }, 5000)
+  }, [])
+
+  const requestSaveRecentReviewProblem = useCallback((problemId: number) => {
+    if (recentReviewSavePendingRef.current.has(problemId)) return
+    recentReviewSavePendingRef.current.add(problemId)
+    touchRecentReviewRow(problemId)
+  }, [touchRecentReviewRow])
+
+  const handleGenerateRecentReview = useCallback(async (opts?: { source_session_id?: number }) => {
+    setRecentReviewGenerating(true)
+    try {
+      const payload = opts?.source_session_id ? { source_session_id: opts.source_session_id } : {}
+      const created = await apiClient.post<RecentReviewProblemSession>("/api/recent-review-problems/sessions", payload)
+      if (created.status !== "success") {
+        setRecentReviewUiMode("retry")
+      } else {
+        setRecentReviewUiMode("idle")
+      }
+      await loadRecentReviewSessions()
+      // 新規は先頭に来る想定なので、ロード後に先頭へ寄せる
+      setTimeout(() => {
+        setRecentReviewSelectedSessionId(String(created.id))
+      }, 0)
+    } catch (e: any) {
+      // 429（制限）
+      if (e?.status === 429) {
+        setRecentReviewUiMode("limit")
+      } else {
+        setRecentReviewUiMode("retry")
+      }
+      console.error("Failed to generate recent review problems:", e)
+      await loadRecentReviewSessions()
+    } finally {
+      setRecentReviewGenerating(false)
+    }
+  }, [loadRecentReviewSessions])
 
   // ============================================================================
   // タイマーデータの初期読み込み
@@ -1876,16 +2002,204 @@ function YourPageDashboardInner() {
 
             {/* Yesterday's Review */}
             <Card className="shadow-sm">
-              <CardHeader className="py-1.5 px-3">
-                <CardTitle className="text-xs font-medium flex items-center gap-1.5 text-amber-900/80">
-                  <RotateCcw className="h-3.5 w-3.5 text-amber-200/60" />
-                  昨日の復習問題
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="px-3 pb-2">
-                <div className="flex items-center justify-center py-6 bg-muted/20 rounded border border-dashed">
-                  <p className="text-xs text-muted-foreground">復習問題は今後実装予定です...</p>
+              <CardHeader className="py-1.5 px-3 flex flex-row items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <CardTitle className="text-xs font-medium flex items-center gap-1.5 text-amber-900/80">
+                    <Sparkles className="h-3.5 w-3.5 text-amber-600" />
+                    最近の復習問題
+                  </CardTitle>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                    ここ最近のあなたの学習履歴から復習用の問題を生成します。
+                  </div>
                 </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 px-2 text-[10px] whitespace-nowrap"
+                  disabled={
+                    recentReviewGenerating ||
+                    recentReviewUiMode === "limit" ||
+                    !recentReview?.sessions?.length
+                  }
+                  onClick={() => {
+                    const selected = getRecentReviewSelectedSession()
+                    const sourceId = selected?.id || recentReview?.sessions?.[0]?.id
+                    if (!sourceId) return
+                    handleGenerateRecentReview({ source_session_id: sourceId })
+                  }}
+                >
+                  <RotateCcw className="h-3 w-3 mr-1" />
+                  再生成
+                </Button>
+              </CardHeader>
+
+              <CardContent className="px-3 pb-2">
+                {/* セッションタブ */}
+                {recentReview?.sessions?.length ? (
+                  <Tabs
+                    value={recentReviewSelectedSessionId || String(recentReview.sessions[0].id)}
+                    onValueChange={(v) => setRecentReviewSelectedSessionId(v)}
+                  >
+                    <div className="overflow-x-auto pb-1">
+                      <TabsList className="h-6">
+                        {recentReview.sessions.map((s, idx) => (
+                          <TabsTrigger
+                            key={s.id}
+                            value={String(s.id)}
+                            className="text-[10px] px-2 h-5"
+                          >
+                            {idx === 0 ? "最新" : `履歴${idx + 1}`}
+                            {s.status === "failed" ? "（失敗）" : ""}
+                          </TabsTrigger>
+                        ))}
+                      </TabsList>
+                    </div>
+                  </Tabs>
+                ) : null}
+
+                {/* 状態表示（未生成/生成中/リトライ/制限） */}
+                {!recentReview?.sessions?.length ? (
+                  <div className="flex flex-col items-center justify-center py-6 bg-muted/20 rounded border border-dashed gap-2">
+                    <Button
+                      onClick={() => handleGenerateRecentReview()}
+                      disabled={recentReviewGenerating || recentReviewUiMode === "limit"}
+                      className="h-8 px-4 text-xs"
+                    >
+                      {recentReviewUiMode === "retry"
+                        ? "リトライ"
+                        : recentReviewGenerating
+                          ? "復習問題を生成中"
+                          : "今日の復習問題を生成"}
+                    </Button>
+                    {recentReviewUiMode === "limit" ? (
+                      <div className="text-xs text-muted-foreground">本日の制限に達しました。</div>
+                    ) : recentReviewUiMode === "retry" ? (
+                      <div className="text-xs text-muted-foreground">
+                        申し訳ありませんが生成に失敗しました。再度生成しますか？
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {/* テーブル（選択セッション） */}
+                {(() => {
+                  const s = getRecentReviewSelectedSession() || recentReview?.sessions?.[0] || null
+                  if (!s) return null
+
+                  if (s.status === "failed") {
+                    return (
+                      <div className="mt-2 flex flex-col items-center justify-center py-4 bg-muted/20 rounded border border-dashed gap-2">
+                        <div className="text-xs text-muted-foreground">
+                          申し訳ありませんが生成に失敗しました。再度生成しますか？
+                        </div>
+                        <Button
+                          onClick={() => handleGenerateRecentReview({ source_session_id: s.id })}
+                          disabled={recentReviewGenerating || recentReviewUiMode === "limit"}
+                          className="h-8 px-4 text-xs"
+                        >
+                          {recentReviewGenerating ? "復習問題を生成中" : "リトライ"}
+                        </Button>
+                        {recentReviewUiMode === "limit" ? (
+                          <div className="text-xs text-muted-foreground">本日の制限に達しました。</div>
+                        ) : null}
+                      </div>
+                    )
+                  }
+
+                  if (!s.problems?.length) {
+                    return null
+                  }
+
+                  return (
+                    <div className="mt-2 overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-16 text-[10px]">科目</TableHead>
+                            <TableHead className="text-[10px]">問題文</TableHead>
+                            <TableHead className="text-[10px]">回答例</TableHead>
+                            <TableHead className="text-[10px]">参照情報</TableHead>
+                            <TableHead className="w-14 text-[10px] text-center">保存</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {s.problems.map((p) => {
+                            const subj = p.subject_id ? subjects.find(su => su.id === p.subject_id) : undefined
+                            const expanded = !!recentReviewExpanded[p.id]
+                            const isPending = recentReviewSavePendingRef.current.has(p.id)
+
+                            return (
+                              <TableRow
+                                key={p.id}
+                                onMouseDown={() => touchRecentReviewRow(p.id)}
+                              >
+                                <TableCell className="align-top py-2">
+                                  {subj ? (
+                                    <span className={cn("text-[10px] px-2 py-0.5 rounded", SUBJECT_COLORS[subj.name] || "bg-muted text-muted-foreground")}>
+                                      {subj.name}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-muted-foreground">--</span>
+                                  )}
+                                </TableCell>
+
+                                <TableCell className="align-top py-2">
+                                  <div className="whitespace-pre-wrap text-xs leading-5 max-h-[168px] overflow-y-auto">
+                                    {`問${p.order_index}. ${p.question_text}`}
+                                  </div>
+                                </TableCell>
+
+                                <TableCell className="align-top py-2">
+                                  {!expanded ? (
+                                    <Button
+                                      variant="secondary"
+                                      size="sm"
+                                      className="h-7 px-2 text-[10px]"
+                                      onClick={() => {
+                                        touchRecentReviewRow(p.id)
+                                        setRecentReviewExpanded(prev => ({ ...prev, [p.id]: true }))
+                                      }}
+                                    >
+                                      回答例を表示
+                                    </Button>
+                                  ) : (
+                                    <div className="whitespace-pre-wrap text-xs leading-5 max-h-[168px] overflow-y-auto">
+                                      {p.answer_example || ""}
+                                    </div>
+                                  )}
+                                </TableCell>
+
+                                <TableCell className="align-top py-2">
+                                  {expanded ? (
+                                    <div className="whitespace-pre-wrap text-xs leading-5 max-h-[168px] overflow-y-auto">
+                                      {p.references || ""}
+                                    </div>
+                                  ) : (
+                                    <div className="text-xs text-muted-foreground"> </div>
+                                  )}
+                                </TableCell>
+
+                                <TableCell className="align-top py-2 text-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={p.saved}
+                                    disabled={p.saved || isPending}
+                                    onChange={() => {
+                                      // 保存は「チェック後、5秒操作なし」でInsert。成功したらチェックが入る。
+                                      if (p.saved || isPending) return
+                                      requestSaveRecentReviewProblem(p.id)
+                                    }}
+                                  />
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )
+                })()}
               </CardContent>
             </Card>
 

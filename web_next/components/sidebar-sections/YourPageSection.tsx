@@ -7,6 +7,7 @@ import { LayoutDashboard, FileText, BookOpen, StickyNote, ChevronDown, History }
 import { useMemo, Suspense, useState, useEffect } from "react"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { FIXED_SUBJECTS } from "@/lib/subjects"
+import { getStudyDate, getRecentStudyDates } from "@/lib/study-date"
 
 const yourPageNav = [
   {
@@ -33,13 +34,7 @@ function formatDateForDisplay(date: Date): string {
   return `${month}/${day}`
 }
 
-// YYYY-MM-DD形式の日付文字列を取得
-function getDateString(date: Date): string {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, "0")
-  const day = String(date.getDate()).padStart(2, "0")
-  return `${year}-${month}-${day}`
-}
+// YYYY-MM-DD形式の日付文字列は study-date.ts を使用（4:00境界で統一）
 
 function YourPageSectionInner() {
   const pathname = usePathname()
@@ -76,23 +71,18 @@ function YourPageSectionInner() {
     }
   }, [pathname, searchParams]) // クエリ変更でも再読み込み
 
-  // 過去5日分の日付を計算
+  // 過去5日分（study_date, 4:00境界）の日付を計算
   const dateOptions = useMemo(() => {
-    const now = new Date()
-    // JSTに変換
-    const jstDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }))
-    
-    const dates = []
-    for (let i = 0; i < 5; i++) {
-      const date = new Date(jstDate)
-      date.setDate(date.getDate() - i)
-      dates.push({
+    const ymds = getRecentStudyDates(5)
+    return ymds.map((ymd, i) => {
+      // 表示ラベルだけは暦日表記（MM/DD）にする
+      const date = new Date(`${ymd}T12:00:00+09:00`)
+      return {
         date,
-        dateString: getDateString(date),
+        dateString: ymd,
         label: i === 0 ? "today" : i === 1 ? "yesterday" : formatDateForDisplay(date),
-      })
-    }
-    return dates
+      }
+    })
   }, [])
 
   const handleDateClick = (dateString: string) => {
@@ -101,7 +91,7 @@ function YourPageSectionInner() {
     router.push(`/your-page/dashboard?${params.toString()}`)
   }
 
-  const currentSelectedDate = searchParams.get("date") || getDateString(new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Tokyo" })))
+  const currentSelectedDate = searchParams.get("date") || getStudyDate()
 
   return (
     <div className="space-y-1 px-2">

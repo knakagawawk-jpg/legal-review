@@ -338,48 +338,78 @@ def _extract_json_from_response(content: str) -> str:
     original_content = content
     content = content.strip()
     
-    # ```json ... ``` のパターンを探す
-    json_block_pattern = r'```(?:json)?\s*(\{.*?\})\s*```'
+    # ```json ... ``` のパターンを探す（object/array両対応）
+    json_block_pattern = r'```(?:json)?\s*([\s\S]*?)\s*```'
     match = re.search(json_block_pattern, content, re.DOTALL)
     if match:
         extracted = match.group(1).strip()
-        # 改行文字を保持したまま返す（後で_try_repair_jsonで処理）
+        # 先頭のJSON開始記号まで切り詰め
+        brace = extracted.find("{")
+        bracket = extracted.find("[")
+        starts = [x for x in [brace, bracket] if x != -1]
+        if starts:
+            extracted = extracted[min(starts):].strip()
         return extracted
     
     # ``` ... ``` のパターンを探す（json指定なし）
-    code_block_pattern = r'```\s*(\{.*?\})\s*```'
+    code_block_pattern = r'```\s*([\s\S]*?)\s*```'
     match = re.search(code_block_pattern, content, re.DOTALL)
     if match:
         extracted = match.group(1).strip()
+        brace = extracted.find("{")
+        bracket = extracted.find("[")
+        starts = [x for x in [brace, bracket] if x != -1]
+        if starts:
+            extracted = extracted[min(starts):].strip()
         return extracted
     
-    # { から始まるJSONを探す
-    json_start = content.find('{')
-    if json_start != -1:
-        # 対応する } を見つける（ネストを考慮）
+    # { または [ から始まるJSONを探す（ネスト考慮）
+    brace_start = content.find("{")
+    bracket_start = content.find("[")
+    starts = [(brace_start, "{"), (bracket_start, "[")]
+    starts = [(i, c) for (i, c) in starts if i != -1]
+    if starts:
+        json_start, start_char = min(starts, key=lambda x: x[0])
         brace_count = 0
+        bracket_count = 0
         json_end = -1
         in_string = False
         escape_next = False
-        
+
         for i in range(json_start, len(content)):
             char = content[i]
-            
+
             if escape_next:
                 escape_next = False
-            elif char == '\\':
+                continue
+            if char == "\\":
                 escape_next = True
-            elif char == '"' and not escape_next:
+                continue
+            if char == '"' and not escape_next:
                 in_string = not in_string
-            elif not in_string:
-                if char == '{':
-                    brace_count += 1
-                elif char == '}':
-                    brace_count -= 1
-                    if brace_count == 0:
-                        json_end = i + 1
-                        break
-        
+                continue
+
+            if in_string:
+                continue
+
+            if char == "{":
+                brace_count += 1
+            elif char == "}":
+                brace_count -= 1
+            elif char == "[":
+                bracket_count += 1
+            elif char == "]":
+                bracket_count -= 1
+
+            # 開始が { の場合は brace が0に戻ったら終了
+            if start_char == "{" and brace_count == 0 and i > json_start:
+                json_end = i + 1
+                break
+            # 開始が [ の場合は bracket が0に戻ったら終了
+            if start_char == "[" and bracket_count == 0 and i > json_start:
+                json_end = i + 1
+                break
+
         if json_end != -1:
             return content[json_start:json_end].strip()
     
@@ -391,6 +421,96 @@ def _extract_json_from_response(content: str) -> str:
     if content.endswith("```"):
         content = content[:-3]  # ``` を削除
     return content.strip()
+
+
+def generate_recent_review_problems(
+    prompt: str,
+    max_tokens: int = 4096,
+    temperature: float = 0.4,
+) -> tuple[list[Dict[str, Any]], str, str, Optional[int], Optional[int]]:
+    """
+    最近の復習問題を生成（JSON配列を返す）
+
+    Returns:
+        (items, raw_output, model_name, input_tokens, output_tokens)
+    """
+    # APIキーが設定されていない場合はダミー
+    if not ANTHROPIC_API_KEY:
+        dummy = [
+            {
+                "subject_id": 1,
+                "question_text": "（ダミー）違憲審査基準の使い分けを説明せよ。",
+                "answer_example": "規制目的・手段の審査密度に応じて基準を使い分ける。",
+                "references": "まず権利の性質と規制態様を特定し、目的重要性と手段必要性・合理性の観点で審査密度を整理する。",
+            }
+        ]
+        return dummy, json.dumps(dummy, ensure_ascii=False), "dummy", None, None
+
+    client = Anthropic(api_key=ANTHROPIC_API_KEY)
+
+    system_prompt = (
+        "あなたは司法試験・予備試験の学習支援者です。"
+        "与えられた学習履歴に基づき、復習問題を作成してください。"
+        "出力は必ずJSONのみで、余計な文章を付けないでください。"
+    )
+
+    message = client.messages.create(
+        model=ANTHROPIC_MODEL,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        system=system_prompt,
+        messages=[
+            {
+                "role": "user",
+                "content": (prompt or "").strip()
+                + "\n\n重要: レスポンスは必ず有効なJSON配列のみで返してください。文字列内の改行や特殊文字は適切にエスケープしてください。",
+            }
+        ],
+    )
+
+    raw_output = message.content[0].text if message.content and len(message.content) > 0 else ""
+
+    input_tokens = None
+    output_tokens = None
+    if hasattr(message, "usage") and message.usage:
+        input_tokens = getattr(message.usage, "input_tokens", None)
+        output_tokens = getattr(message.usage, "output_tokens", None)
+
+    content = _extract_json_from_response(raw_output)
+    content = _try_repair_json(content)
+
+    data = json.loads(content)
+    if isinstance(data, dict):
+        # たまに {"items": [...]} の形で返るのを吸収
+        data = data.get("items", [])
+    if not isinstance(data, list):
+        raise Exception("LLM output is not a JSON array")
+
+    items: list[Dict[str, Any]] = []
+    for obj in data[:5]:
+        if not isinstance(obj, dict):
+            continue
+        subject_id = obj.get("subject_id")
+        if subject_id is not None:
+            try:
+                subject_id = int(subject_id)
+            except Exception:
+                subject_id = None
+        if subject_id is not None and not (1 <= subject_id <= 18):
+            subject_id = None
+        question_text = str(obj.get("question_text") or "").strip()
+        if not question_text:
+            continue
+        items.append(
+            {
+                "subject_id": subject_id,
+                "question_text": question_text,
+                "answer_example": (str(obj.get("answer_example") or "").strip() or None),
+                "references": (str(obj.get("references") or "").strip() or None),
+            }
+        )
+
+    return items, raw_output, ANTHROPIC_MODEL, input_tokens, output_tokens
 
 
 # _build_final_review関数は削除（1段階処理では不要）

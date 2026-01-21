@@ -23,6 +23,7 @@ from .models import (
     Thread, Message,
     UserPreference, UserDashboard, UserDashboardHistory, UserReviewHistory,
     DashboardItem, Subject, OfficialQuestion,
+    RecentReviewProblemSession, RecentReviewProblem, SavedReviewProblem,
     TimerSession, TimerDailyChunk, TimerDailyStats,
     StudyTag, StudyItem as StudyItemModel
 )
@@ -46,16 +47,19 @@ from .schemas import (
     MessageCreate, MessageResponse, MessageListResponse, ThreadMessageCreate,
     UserUpdate, UserResponse,
     DashboardItemCreate, DashboardItemUpdate, DashboardItemResponse, DashboardItemListResponse,
+    RecentReviewProblemResponse, RecentReviewProblemSessionResponse, RecentReviewProblemSessionsResponse,
+    RecentReviewProblemGenerateRequest, SaveReviewProblemResponse,
     TimerSessionResponse, TimerDailyStatsResponse, TimerStartResponse, TimerStopResponse,
     StudyTagCreate, StudyTagResponse,
     StudyItemCreate, StudyItemUpdate, StudyItemResponse, StudyItemReorderRequest,
     OfficialQuestionYearsResponse, OfficialQuestionActiveResponse
 )
 from pydantic import BaseModel
-from .llm_service import generate_review, chat_about_review, free_chat
+from .llm_service import generate_review, chat_about_review, free_chat, generate_recent_review_problems
 from .auth import get_current_user, get_current_user_required, verify_google_token, get_or_create_user, create_access_token
 from config.settings import AUTH_ENABLED
 from .timer_api import register_timer_routes
+from .timer_utils import get_study_date as get_study_date_4am
 
 
 def _normalize_subject_id(subject_value) -> Optional[int]:
@@ -173,6 +177,15 @@ def _startup_migrate_reviews():
         logger.info("✓ Startup threads favorite migration completed")
     except Exception as e:
         logger.warning(f"Startup threads favorite migration skipped/failed: {str(e)}")
+
+    # 最近の復習問題（ダッシュボード）用テーブルを作成
+    try:
+        from .migrate_recent_review_problems import migrate_recent_review_problems
+
+        migrate_recent_review_problems()
+        logger.info("✓ Startup recent review problems migration completed")
+    except Exception as e:
+        logger.warning(f"Startup recent review problems migration skipped/failed: {str(e)}")
 
 # グローバルエラーハンドラーを追加（HTTPExceptionは除外）
 @app.exception_handler(Exception)
@@ -2928,3 +2941,435 @@ async def reorder_dashboard_item(
         recalculate_positions(db, current_user.id, db_item.dashboard_date, db_item.entry_type)
     
     return {"message": "並び順を更新しました"}
+
+
+# ============================================================================
+# 最近の復習問題（ダッシュボード）
+# ============================================================================
+
+RECENT_REVIEW_DAILY_LIMIT = 5
+
+
+def _get_current_study_date_4am() -> str:
+    return get_study_date_4am(datetime.now(ZoneInfo("UTC")))
+
+
+def _get_recent_ymds(base_ymd: str, days: int) -> list[str]:
+    base = datetime.strptime(base_ymd, "%Y-%m-%d").date()
+    return [(base - timedelta(days=i)).isoformat() for i in range(days)]
+
+
+def _safe_review_eval_subset(review_json_obj: dict) -> dict:
+    ev = (review_json_obj or {}).get("evaluation") or {}
+    subset = {
+        "weaknesses": ev.get("weaknesses") or [],
+        "important_points": ev.get("important_points") or [],
+        "future_considerations": ev.get("future_considerations") or [],
+    }
+    return subset
+
+
+def _format_dashboard_items_for_llm(items: list[DashboardItem]) -> list[dict]:
+    out: list[dict] = []
+    for it in items:
+        out.append(
+            {
+                "dashboard_date": it.dashboard_date,
+                "subject_id": _normalize_subject_id(it.subject),
+                "item": it.item,
+                "memo": it.memo,
+            }
+        )
+    return out
+
+
+def _format_free_chat_threads_for_llm(db: Session, user_id: int) -> list[dict]:
+    threads = (
+        db.query(Thread)
+        .filter(
+            Thread.user_id == user_id,
+            Thread.type == "free_chat",
+            Thread.last_message_at.isnot(None),
+        )
+        .order_by(Thread.last_message_at.desc())
+        .limit(5)
+        .all()
+    )
+    out: list[dict] = []
+    for th in threads:
+        msgs = (
+            db.query(Message)
+            .filter(Message.thread_id == th.id)
+            .order_by(Message.created_at.desc())
+            .limit(10)
+            .all()
+        )
+        msgs = list(reversed(msgs))
+        out.append(
+            {
+                "thread_id": th.id,
+                "title": th.title,
+                "last_message_at": th.last_message_at.isoformat() if th.last_message_at else None,
+                "messages": [{"role": m.role, "content": m.content} for m in msgs],
+            }
+        )
+    return out
+
+
+def _format_review_chat_threads_for_llm(db: Session, reviews: list[Review]) -> list[dict]:
+    out: list[dict] = []
+    for r in reviews:
+        if not r.thread_id:
+            continue
+        th = db.query(Thread).filter(Thread.id == r.thread_id).first()
+        if not th or th.type != "review_chat":
+            continue
+        msgs = (
+            db.query(Message)
+            .filter(Message.thread_id == th.id)
+            .order_by(Message.created_at.desc())
+            .limit(10)
+            .all()
+        )
+        msgs = list(reversed(msgs))
+        out.append(
+            {
+                "review_id": r.id,
+                "thread_id": th.id,
+                "title": th.title,
+                "messages": [{"role": m.role, "content": m.content} for m in msgs],
+            }
+        )
+    return out
+
+
+def _build_recent_review_prompt(
+    *,
+    study_date: str,
+    dashboard_items_json: str,
+    reviews_json: str,
+    review_chat_threads_json: str,
+    free_chat_threads_json: str,
+    previous_questions_json: str,
+) -> str:
+    template = _load_prompt_text("recent_review_problems")
+    if not template:
+        raise HTTPException(status_code=500, detail="recent_review_problems prompt not found")
+    return (
+        template.replace("{STUDY_DATE}", study_date)
+        .replace("{DASHBOARD_ITEMS_JSON}", dashboard_items_json)
+        .replace("{REVIEWS_JSON}", reviews_json)
+        .replace("{REVIEW_CHAT_THREADS_JSON}", review_chat_threads_json)
+        .replace("{FREE_CHAT_THREADS_JSON}", free_chat_threads_json)
+        .replace("{PREVIOUS_QUESTIONS_JSON}", previous_questions_json)
+    )
+
+
+def _count_recent_review_success_sessions(db: Session, user_id: int, study_date: str) -> int:
+    return (
+        db.query(RecentReviewProblemSession)
+        .filter(
+            RecentReviewProblemSession.user_id == user_id,
+            RecentReviewProblemSession.study_date == study_date,
+            RecentReviewProblemSession.status == "success",
+        )
+        .count()
+    )
+
+
+@app.get("/v1/recent-review-problems/sessions", response_model=RecentReviewProblemSessionsResponse)
+async def list_recent_review_problem_sessions(
+    study_date: Optional[str] = Query(None, description="学習日（YYYY-MM-DD, 4:00境界）。省略時は今日"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    sd = (study_date or "").strip() or _get_current_study_date_4am()
+
+    sessions = (
+        db.query(RecentReviewProblemSession)
+        .filter(
+            RecentReviewProblemSession.user_id == current_user.id,
+            RecentReviewProblemSession.study_date == sd,
+        )
+        .order_by(RecentReviewProblemSession.created_at.desc())
+        .all()
+    )
+
+    # problems と saved をまとめて解決
+    all_problem_ids: list[int] = []
+    by_session: dict[int, list[RecentReviewProblem]] = {}
+    for s in sessions:
+        probs = (
+            db.query(RecentReviewProblem)
+            .filter(RecentReviewProblem.session_id == s.id)
+            .order_by(RecentReviewProblem.order_index.asc())
+            .all()
+        )
+        by_session[s.id] = probs
+        all_problem_ids.extend([p.id for p in probs])
+
+    saved_map: dict[int, int] = {}
+    if all_problem_ids:
+        saved_rows = (
+            db.query(SavedReviewProblem)
+            .filter(
+                SavedReviewProblem.user_id == current_user.id,
+                SavedReviewProblem.source_problem_id.in_(all_problem_ids),
+            )
+            .all()
+        )
+        saved_map = {r.source_problem_id: r.id for r in saved_rows}
+
+    session_resps: list[RecentReviewProblemSessionResponse] = []
+    for s in sessions:
+        probs = by_session.get(s.id, [])
+        p_resps: list[RecentReviewProblemResponse] = []
+        for p in probs:
+            sid = saved_map.get(p.id)
+            p_resps.append(
+                RecentReviewProblemResponse(
+                    id=p.id,
+                    order_index=p.order_index,
+                    subject_id=p.subject_id,
+                    question_text=p.question_text,
+                    answer_example=p.answer_example,
+                    references=p.references,
+                    saved=bool(sid),
+                    saved_id=sid,
+                )
+            )
+        session_resps.append(
+            RecentReviewProblemSessionResponse(
+                id=s.id,
+                study_date=s.study_date,
+                mode=s.mode,
+                status=s.status,
+                error_message=s.error_message,
+                created_at=s.created_at,
+                problems=p_resps,
+            )
+        )
+
+    used = _count_recent_review_success_sessions(db, current_user.id, sd)
+    remaining = max(0, RECENT_REVIEW_DAILY_LIMIT - used)
+
+    return RecentReviewProblemSessionsResponse(
+        study_date=sd,
+        used_count=used,
+        remaining_count=remaining,
+        daily_limit=RECENT_REVIEW_DAILY_LIMIT,
+        sessions=session_resps,
+        total=len(session_resps),
+    )
+
+
+@app.post("/v1/recent-review-problems/sessions", response_model=RecentReviewProblemSessionResponse)
+async def create_recent_review_problem_session(
+    payload: RecentReviewProblemGenerateRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    sd = _get_current_study_date_4am()
+    used = _count_recent_review_success_sessions(db, current_user.id, sd)
+    if used >= RECENT_REVIEW_DAILY_LIMIT:
+        raise HTTPException(status_code=429, detail="本日の制限に達しました。")
+
+    mode = "regenerate" if payload.source_session_id else "generate"
+
+    # previous questions（同日セッションすべて）
+    prev_questions: list[str] = []
+    prev_sessions = (
+        db.query(RecentReviewProblemSession.id)
+        .filter(
+            RecentReviewProblemSession.user_id == current_user.id,
+            RecentReviewProblemSession.study_date == sd,
+            RecentReviewProblemSession.status == "success",
+        )
+        .all()
+    )
+    prev_session_ids = [r[0] for r in prev_sessions]
+    if prev_session_ids:
+        prev_probs = (
+            db.query(RecentReviewProblem.question_text)
+            .filter(RecentReviewProblem.session_id.in_(prev_session_ids))
+            .all()
+        )
+        prev_questions = [r[0] for r in prev_probs if r and r[0]]
+
+    # dashboard items（直近4日、最大20件）
+    ymds = _get_recent_ymds(sd, 4)
+    dash_items = (
+        db.query(DashboardItem)
+        .filter(
+            DashboardItem.user_id == current_user.id,
+            DashboardItem.deleted_at.is_(None),
+            DashboardItem.dashboard_date.in_(ymds),
+        )
+        .order_by(DashboardItem.dashboard_date.desc(), DashboardItem.position.asc())
+        .limit(20)
+        .all()
+    )
+
+    # reviews（直近1週間、最大2件）
+    one_week_ago_utc = datetime.now(ZoneInfo("UTC")) - timedelta(days=7)
+    reviews = (
+        db.query(Review)
+        .filter(
+            Review.user_id == current_user.id,
+            Review.created_at >= one_week_ago_utc,
+        )
+        .order_by(Review.created_at.desc())
+        .limit(2)
+        .all()
+    )
+    reviews_payload: list[dict] = []
+    for r in reviews:
+        try:
+            review_json_obj = json.loads(r.kouhyo_kekka) if isinstance(r.kouhyo_kekka, str) else (r.kouhyo_kekka or {})
+        except Exception:
+            review_json_obj = {}
+        hist = db.query(UserReviewHistory).filter(UserReviewHistory.review_id == r.id).first()
+        reviews_payload.append(
+            {
+                "review_id": r.id,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "subject_id": _normalize_subject_id(hist.subject if hist else None),
+                "question_title": (hist.question_title if hist else None),
+                "evaluation_subset": _safe_review_eval_subset(review_json_obj),
+            }
+        )
+
+    review_chat_threads_payload = _format_review_chat_threads_for_llm(db, reviews)
+    free_chat_threads_payload = _format_free_chat_threads_for_llm(db, current_user.id)
+
+    dashboard_items_json = json.dumps(_format_dashboard_items_for_llm(dash_items), ensure_ascii=False, indent=2)
+    reviews_json = json.dumps(reviews_payload, ensure_ascii=False, indent=2)
+    review_chat_threads_json = json.dumps(review_chat_threads_payload, ensure_ascii=False, indent=2)
+    free_chat_threads_json = json.dumps(free_chat_threads_payload, ensure_ascii=False, indent=2)
+    previous_questions_json = json.dumps(prev_questions, ensure_ascii=False, indent=2)
+
+    prompt_text = _build_recent_review_prompt(
+        study_date=sd,
+        dashboard_items_json=_truncate_text(dashboard_items_json, limit=12000),
+        reviews_json=_truncate_text(reviews_json, limit=12000),
+        review_chat_threads_json=_truncate_text(review_chat_threads_json, limit=12000),
+        free_chat_threads_json=_truncate_text(free_chat_threads_json, limit=12000),
+        previous_questions_json=_truncate_text(previous_questions_json, limit=8000),
+    )
+
+    session = RecentReviewProblemSession(
+        user_id=current_user.id,
+        study_date=sd,
+        mode=mode,
+        source_session_id=payload.source_session_id,
+        status="failed",  # まず失敗で作り、成功で上書き
+    )
+    db.add(session)
+    db.flush()
+
+    try:
+        items, raw_output, model_name, in_tok, out_tok = generate_recent_review_problems(prompt_text)
+        session.llm_model = model_name
+        session.prompt_version = "recent_review_problems_v1"
+        session.llm_raw_output = _truncate_text(raw_output or "", limit=16000)
+
+        if not items:
+            raise Exception("LLM returned empty items")
+
+        # 保存
+        idx = 1
+        created_probs: list[RecentReviewProblem] = []
+        for it in items[:5]:
+            p = RecentReviewProblem(
+                session_id=session.id,
+                user_id=current_user.id,
+                order_index=idx,
+                subject_id=_normalize_subject_id(it.get("subject_id")),
+                question_text=(it.get("question_text") or "").strip(),
+                answer_example=(it.get("answer_example") or None),
+                references=(it.get("references") or None),
+            )
+            db.add(p)
+            created_probs.append(p)
+            idx += 1
+
+        session.status = "success"
+        session.error_message = None
+        db.commit()
+
+        # response
+        db.refresh(session)
+        for p in created_probs:
+            db.refresh(p)
+
+        p_resps = [
+            RecentReviewProblemResponse(
+                id=p.id,
+                order_index=p.order_index,
+                subject_id=p.subject_id,
+                question_text=p.question_text,
+                answer_example=p.answer_example,
+                references=p.references,
+                saved=False,
+                saved_id=None,
+            )
+            for p in created_probs
+        ]
+        return RecentReviewProblemSessionResponse(
+            id=session.id,
+            study_date=session.study_date,
+            mode=session.mode,
+            status=session.status,
+            error_message=session.error_message,
+            created_at=session.created_at,
+            problems=p_resps,
+        )
+    except Exception as e:
+        session.status = "failed"
+        session.error_message = str(e)
+        db.commit()
+        return RecentReviewProblemSessionResponse(
+            id=session.id,
+            study_date=session.study_date,
+            mode=session.mode,
+            status=session.status,
+            error_message=session.error_message,
+            created_at=session.created_at,
+            problems=[],
+        )
+
+
+@app.post("/v1/recent-review-problems/problems/{problem_id}/save", response_model=SaveReviewProblemResponse)
+async def save_recent_review_problem(
+    problem_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    p = (
+        db.query(RecentReviewProblem)
+        .filter(RecentReviewProblem.id == problem_id, RecentReviewProblem.user_id == current_user.id)
+        .first()
+    )
+    if not p:
+        raise HTTPException(status_code=404, detail="Problem not found")
+
+    existing = (
+        db.query(SavedReviewProblem)
+        .filter(SavedReviewProblem.user_id == current_user.id, SavedReviewProblem.source_problem_id == p.id)
+        .first()
+    )
+    if existing:
+        return SaveReviewProblemResponse(saved_id=existing.id)
+
+    row = SavedReviewProblem(
+        user_id=current_user.id,
+        source_problem_id=p.id,
+        subject_id=p.subject_id,
+        question_text=p.question_text,
+        answer_example=p.answer_example,
+        references=p.references,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return SaveReviewProblemResponse(saved_id=row.id)

@@ -429,14 +429,19 @@ function StudyManagementPage() {
     
     // 期間フィルター
     if (memoStartDate) {
-      const startStr = memoStartDate.toISOString().split("T")[0]
+      // JST 4:00区切り（=28時の「今日」）と整合するため、JSTの暦日で比較する
+      const startStr = new Date(memoStartDate.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }))
+        .toISOString()
+        .split("T")[0]
       filtered = filtered.filter(item => {
         if (!item.created_at) return true // NULLも含める
         return item.created_at >= startStr
       })
     }
     if (memoEndDate) {
-      const endStr = memoEndDate.toISOString().split("T")[0]
+      const endStr = new Date(memoEndDate.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }))
+        .toISOString()
+        .split("T")[0]
       filtered = filtered.filter(item => {
         if (!item.created_at) return true // NULLも含める
         return item.created_at <= endStr
@@ -485,14 +490,18 @@ function StudyManagementPage() {
     
     // 期間フィルター
     if (topicStartDate) {
-      const startStr = topicStartDate.toISOString().split("T")[0]
+      const startStr = new Date(topicStartDate.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }))
+        .toISOString()
+        .split("T")[0]
       filtered = filtered.filter(item => {
         if (!item.created_at) return true // NULLも含める
         return item.created_at >= startStr
       })
     }
     if (topicEndDate) {
-      const endStr = topicEndDate.toISOString().split("T")[0]
+      const endStr = new Date(topicEndDate.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }))
+        .toISOString()
+        .split("T")[0]
       filtered = filtered.filter(item => {
         if (!item.created_at) return true // NULLも含める
         return item.created_at <= endStr

@@ -504,6 +504,55 @@ class DashboardItemListResponse(BaseModel):
 
 
 # ============================================================================
+# 最近の復習問題（ダッシュボード）
+# ============================================================================
+
+class RecentReviewProblemResponse(BaseModel):
+    id: int
+    order_index: int
+    subject_id: Optional[int] = None  # 1-18 or NULL
+    question_text: str
+    answer_example: Optional[str] = None
+    references: Optional[str] = None
+    saved: bool = False
+    saved_id: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+
+class RecentReviewProblemSessionResponse(BaseModel):
+    id: int
+    study_date: str  # YYYY-MM-DD（4:00境界）
+    mode: str  # generate / regenerate
+    status: str  # success / failed
+    error_message: Optional[str] = None
+    created_at: datetime
+    problems: List[RecentReviewProblemResponse] = []
+
+    class Config:
+        from_attributes = True
+
+
+class RecentReviewProblemSessionsResponse(BaseModel):
+    study_date: str
+    used_count: int
+    remaining_count: int
+    daily_limit: int
+    sessions: List[RecentReviewProblemSessionResponse]
+    total: int
+
+
+class RecentReviewProblemGenerateRequest(BaseModel):
+    # 再生成の場合に指定（未指定なら最新セッションを元にする）
+    source_session_id: Optional[int] = None
+
+
+class SaveReviewProblemResponse(BaseModel):
+    saved_id: int
+
+
+# ============================================================================
 # タイマー関連スキーマ
 # ============================================================================
 

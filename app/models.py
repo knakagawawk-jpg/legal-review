@@ -868,6 +868,127 @@ class DashboardItem(Base):
 
 
 # ============================================================================
+# 最近の復習問題（ダッシュボード）
+# ============================================================================
+
+class RecentReviewProblemSession(Base):
+    """
+    最近の復習問題: 生成セッション
+
+    - 生成/再生成の1回 = 1セッション
+    - 4:00境界の study_date と user_id で回数制限をかける（成功のみ消費）
+    - 生成結果（生出力）も保持（デバッグ/再現用）
+    """
+    __tablename__ = "recent_review_problem_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # 4:00境界の学習日（YYYY-MM-DD）
+    study_date = Column(String(10), nullable=False, index=True)
+
+    # generate / regenerate
+    mode = Column(String(20), nullable=False)
+    source_session_id = Column(Integer, ForeignKey("recent_review_problem_sessions.id", ondelete="SET NULL"), nullable=True)
+
+    # LLMメタ（任意）
+    llm_model = Column(String(100), nullable=True)
+    prompt_version = Column(String(50), nullable=True)
+    llm_raw_output = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    # success / failed
+    status = Column(String(20), nullable=False, default="success", index=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", foreign_keys=[user_id])
+    problems = relationship(
+        "RecentReviewProblem",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="RecentReviewProblem.order_index",
+    )
+
+    __table_args__ = (
+        CheckConstraint("mode IN ('generate', 'regenerate')", name="ck_recent_review_problem_session_mode"),
+        CheckConstraint("status IN ('success', 'failed')", name="ck_recent_review_problem_session_status"),
+        Index("idx_rrps_user_date_status", "user_id", "study_date", "status"),
+        Index("idx_rrps_user_created", "user_id", "created_at"),
+    )
+
+
+class RecentReviewProblem(Base):
+    """
+    最近の復習問題: 生成された各問題（最大5）
+
+    - セッションに紐づく
+    - UIの表示状態（回答表示など）は保存しない（ローカル管理）
+    """
+    __tablename__ = "recent_review_problems"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(Integer, ForeignKey("recent_review_problem_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # 1..5
+    order_index = Column(Integer, nullable=False)
+
+    subject_id = Column(Integer, nullable=True, index=True)  # 1-18 or NULL
+    question_text = Column(Text, nullable=False)
+    answer_example = Column(Text, nullable=True)
+    references = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    session = relationship("RecentReviewProblemSession", back_populates="problems")
+    user = relationship("User", foreign_keys=[user_id])
+    saved_records = relationship("SavedReviewProblem", back_populates="source_problem")
+
+    __table_args__ = (
+        CheckConstraint("order_index BETWEEN 1 AND 5", name="ck_recent_review_problem_order"),
+        CheckConstraint("subject_id IS NULL OR (subject_id BETWEEN 1 AND 18)", name="ck_recent_review_problem_subject"),
+        UniqueConstraint("session_id", "order_index", name="uq_recent_review_problem_session_order"),
+        Index("idx_rrp_user_session", "user_id", "session_id"),
+    )
+
+
+class SavedReviewProblem(Base):
+    """
+    保存済みの復習問題（問題ごと）
+
+    - 「保存チェック後5秒操作なし」→ Insert する対象
+    - 将来のタグ/メモ/ステータス管理の母体
+    """
+    __tablename__ = "saved_review_problems"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_problem_id = Column(Integer, ForeignKey("recent_review_problems.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # スナップショット（後で元セッションを消しても残る想定）
+    subject_id = Column(Integer, nullable=True, index=True)  # 1-18 or NULL
+    question_text = Column(Text, nullable=False)
+    answer_example = Column(Text, nullable=True)
+    references = Column(Text, nullable=True)
+
+    memo = Column(Text, nullable=True)
+    tags = Column(Text, nullable=True)  # JSON配列など将来拡張用
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    user = relationship("User", foreign_keys=[user_id])
+    source_problem = relationship("RecentReviewProblem", back_populates="saved_records")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "source_problem_id", name="uq_saved_review_problem_user_source"),
+        CheckConstraint("subject_id IS NULL OR (subject_id BETWEEN 1 AND 18)", name="ck_saved_review_problem_subject"),
+        Index("idx_saved_review_problem_user_created", "user_id", "created_at"),
+    )
+
+
+# ============================================================================
 # タイマー管理
 # ============================================================================
 
