@@ -19,8 +19,15 @@ def get_study_date(date: datetime = None) -> str:
     Returns:
         study_date (YYYY-MM-DD): 4:00開始の「学習日」
     """
+    UTC = ZoneInfo("UTC")
     if date is None:
-        date = datetime.now(ZoneInfo("UTC"))
+        date = datetime.now(UTC)
+    else:
+        # タイムゾーン情報を保証
+        if date.tzinfo is None:
+            date = date.replace(tzinfo=UTC)
+        elif date.tzinfo != UTC:
+            date = date.astimezone(UTC)
     
     # UTCをユーザーTZに変換
     local_datetime = date.astimezone(USER_TIMEZONE)
@@ -47,6 +54,18 @@ def split_session_by_date_boundary(started_at_utc: datetime, ended_at_utc: datet
     Returns:
         List[tuple]: [(study_date, chunk_start_utc, chunk_end_utc, seconds), ...]
     """
+    # タイムゾーン情報を保証（DBから取得したdatetimeがタイムゾーン情報を持たない場合がある）
+    UTC = ZoneInfo("UTC")
+    if started_at_utc.tzinfo is None:
+        started_at_utc = started_at_utc.replace(tzinfo=UTC)
+    elif started_at_utc.tzinfo != UTC:
+        started_at_utc = started_at_utc.astimezone(UTC)
+    
+    if ended_at_utc.tzinfo is None:
+        ended_at_utc = ended_at_utc.replace(tzinfo=UTC)
+    elif ended_at_utc.tzinfo != UTC:
+        ended_at_utc = ended_at_utc.astimezone(UTC)
+    
     chunks = []
     current_start = started_at_utc
     
@@ -67,7 +86,7 @@ def split_session_by_date_boundary(started_at_utc: datetime, ended_at_utc: datet
         
         # 翌日の4:00（このstudy_dateの終了時刻）
         next_boundary_local = boundary_local + timedelta(days=1)
-        next_boundary_utc = next_boundary_local.replace(tzinfo=USER_TIMEZONE).astimezone(ZoneInfo("UTC"))
+        next_boundary_utc = next_boundary_local.replace(tzinfo=USER_TIMEZONE).astimezone(UTC)
         
         # チャンクの終了時刻は、セッション終了時刻と次の境界のうち早い方
         chunk_end = min(ended_at_utc, next_boundary_utc)
