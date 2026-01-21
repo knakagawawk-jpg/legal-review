@@ -481,6 +481,13 @@ function SubjectPage() {
   const [createPageDialogOpen, setCreatePageDialogOpen] = useState(false)
   const [newPage, setNewPage] = useState({ section_id: 0, title: "", content: "" })
   const [creatingPage, setCreatingPage] = useState(false)
+  
+  // ページ編集用
+  const [editingPageTitle, setEditingPageTitle] = useState("")
+  const [editingPageContent, setEditingPageContent] = useState("")
+  const [savingPage, setSavingPage] = useState(false)
+  const pageContentTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  
   const getInitialSelectedPageId = (): number | null => {
     if (typeof window === "undefined") return null
     try {
@@ -1417,6 +1424,59 @@ function SubjectPage() {
     .flatMap(section => section.pages || [])
     .find(page => page.id === selectedPageId)
 
+  // 選択ページが変わったら編集用状態を同期
+  useEffect(() => {
+    if (selectedPage) {
+      setEditingPageTitle(selectedPage.title || "")
+      setEditingPageContent(selectedPage.content || "")
+    } else {
+      setEditingPageTitle("")
+      setEditingPageContent("")
+    }
+  }, [selectedPage?.id]) // selectedPage.id で判定（参照が変わっても同じページなら更新しない）
+
+  // ページ更新（デバウンス付き自動保存）
+  const savePageContent = useCallback(async (pageId: number, title: string, content: string) => {
+    setSavingPage(true)
+    try {
+      await apiClient.put(`/api/note-pages/${pageId}`, {
+        title: title || null,
+        content: content || null,
+      })
+      // ノートブック一覧を再取得して反映
+      await fetchNotebooks()
+    } catch (err: any) {
+      console.error("Failed to save page:", err)
+    } finally {
+      setSavingPage(false)
+    }
+  }, [fetchNotebooks])
+
+  // タイトル変更時（フォーカスアウトで保存）
+  const handlePageTitleBlur = () => {
+    if (!selectedPage) return
+    if (editingPageTitle !== (selectedPage.title || "")) {
+      savePageContent(selectedPage.id, editingPageTitle, editingPageContent)
+    }
+  }
+
+  // コンテンツ変更時（デバウンス自動保存）
+  const handlePageContentChange = (newContent: string) => {
+    setEditingPageContent(newContent)
+    
+    // 既存のタイマーをクリア
+    if (pageContentTimeoutRef.current) {
+      clearTimeout(pageContentTimeoutRef.current)
+    }
+    
+    // 1秒後に自動保存
+    pageContentTimeoutRef.current = setTimeout(() => {
+      if (selectedPage) {
+        savePageContent(selectedPage.id, editingPageTitle, newContent)
+      }
+    }, 1000)
+  }
+
   // note_pageの直近アクセス履歴（最大5件）をlocalStorageに保存
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -2319,40 +2379,46 @@ function SubjectPage() {
                 {/* メインコンテンツエリア */}
                 <div className="flex-1 min-w-0">
                   {selectedPage ? (
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-semibold text-amber-900/80">{selectedPage.title || "無題"}</h3>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 text-xs"
-                          onClick={() => setIsRightSidebarOpen(!isRightSidebarOpen)}
-                        >
-                          {isRightSidebarOpen ? (
-                            <>
-                              <ChevronRight className="h-3 w-3 mr-1" />
-                              サイドバーを閉じる
-                            </>
-                          ) : (
-                            <>
-                              ノート一覧を開く
-                              <ChevronRight className="h-3 w-3 ml-1" />
-                            </>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <Input
+                          value={editingPageTitle}
+                          onChange={(e) => setEditingPageTitle(e.target.value)}
+                          onBlur={handlePageTitleBlur}
+                          placeholder="ページタイトル"
+                          className="flex-1 text-sm font-semibold text-amber-900/80 border-0 bg-transparent hover:bg-amber-50/50 focus:bg-amber-50/50 px-2 h-8"
+                        />
+                        <div className="flex items-center gap-2 shrink-0">
+                          {savingPage && (
+                            <span className="text-[10px] text-muted-foreground">保存中...</span>
                           )}
-                        </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs"
+                            onClick={() => setIsRightSidebarOpen(!isRightSidebarOpen)}
+                          >
+                            {isRightSidebarOpen ? (
+                              <>
+                                <ChevronRight className="h-3 w-3 mr-1" />
+                                サイドバーを閉じる
+                              </>
+                            ) : (
+                              <>
+                                ノート一覧を開く
+                                <ChevronRight className="h-3 w-3 ml-1" />
+                              </>
+                            )}
+                          </Button>
+                        </div>
                       </div>
-                      <div className="border border-amber-200/60 rounded-lg p-4 min-h-[400px]">
-                        {selectedPage.content ? (
-                          <div className="prose prose-sm max-w-none">
-                            <pre className="whitespace-pre-wrap text-xs text-slate-700 font-sans">
-                              {selectedPage.content}
-                            </pre>
-                          </div>
-                        ) : (
-                          <div className="text-xs text-muted-foreground text-center py-8">
-                            内容がありません
-                          </div>
-                        )}
+                      <div className="border border-amber-200/60 rounded-lg overflow-hidden">
+                        <Textarea
+                          value={editingPageContent}
+                          onChange={(e) => handlePageContentChange(e.target.value)}
+                          placeholder="ノートの内容を入力..."
+                          className="min-h-[400px] resize-none border-0 focus-visible:ring-0 text-sm text-slate-700 p-4"
+                        />
                       </div>
                     </div>
                   ) : (
