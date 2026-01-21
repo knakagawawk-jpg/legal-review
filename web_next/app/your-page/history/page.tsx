@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"
-import { ExternalLink, History, BookOpen, ChevronDown, Filter, Menu, Lightbulb, ListTodo, Heart, Calendar as CalendarIcon } from "lucide-react"
+import { ExternalLink, History, BookOpen, ChevronDown, Filter, Menu, Lightbulb, ListTodo, Heart, Calendar as CalendarIcon, Pencil, Check, X } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -1194,6 +1194,10 @@ function ChatHistorySection() {
   const [endDate, setEndDate] = useState<Date | undefined>(undefined)
   const [favoriteFilter, setFavoriteFilter] = useState<"fav-only" | "fav-except" | "all">("fav-only")
   
+  // タイトル編集
+  const [editingThreadId, setEditingThreadId] = useState<number | null>(null)
+  const [editingTitle, setEditingTitle] = useState<string>("")
+  
   // favorite更新用のタイマー
   const favoriteUpdateTimers = useRef<Record<number, NodeJS.Timeout>>({})
   
@@ -1213,6 +1217,19 @@ function ChatHistorySection() {
       }
     }
     loadThreads()
+  }, [])
+  
+  // タイトル更新
+  const updateTitle = useCallback(async (threadId: number, newTitle: string) => {
+    try {
+      await apiClient.put(`/api/threads/${threadId}`, { title: newTitle })
+      setThreads(prev => prev.map(thread => thread.id === threadId ? { ...thread, title: newTitle } : thread))
+    } catch (error) {
+      console.error("Failed to update title:", error)
+    } finally {
+      setEditingThreadId(null)
+      setEditingTitle("")
+    }
   }, [])
   
   // favorite更新（5秒バッファ付き）
@@ -1436,10 +1453,57 @@ function ChatHistorySection() {
                     link = `/short-answer/${thread.id}`
                   }
                   
+                  const isEditing = editingThreadId === thread.id
+                  
                   return (
                     <tr key={thread.id} className="hover:bg-amber-50/40">
                       <TableCell className="py-1.5 px-1 align-top">
-                        <span className="text-xs">{thread.title || "(タイトルなし)"}</span>
+                        {isEditing ? (
+                          <div className="flex items-center gap-1">
+                            <Input
+                              value={editingTitle}
+                              onChange={(e) => setEditingTitle(e.target.value)}
+                              className="h-6 text-xs py-0 px-1"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  updateTitle(thread.id, editingTitle)
+                                } else if (e.key === "Escape") {
+                                  setEditingThreadId(null)
+                                  setEditingTitle("")
+                                }
+                              }}
+                            />
+                            <button
+                              onClick={() => updateTitle(thread.id, editingTitle)}
+                              className="text-green-600 hover:text-green-800"
+                            >
+                              <Check className="h-3 w-3" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEditingThreadId(null)
+                                setEditingTitle("")
+                              }}
+                              className="text-gray-400 hover:text-gray-600"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1 group">
+                            <span className="text-xs">{thread.title || "(タイトルなし)"}</span>
+                            <button
+                              onClick={() => {
+                                setEditingThreadId(thread.id)
+                                setEditingTitle(thread.title || "")
+                              }}
+                              className="text-gray-300 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="py-1.5 px-1 align-top">
                         <span className="text-xs text-muted-foreground">{formatDate(thread.created_at)}</span>

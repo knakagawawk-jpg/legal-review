@@ -901,6 +901,54 @@ def free_chat(
         return f"申し訳ございませんが、エラーが発生しました: {str(e)}"
 
 
+def generate_chat_title(
+    first_message: str,
+    max_tokens: int = 50,
+) -> str:
+    """
+    チャットの最初のメッセージからタイトルを自動生成する
+    
+    Args:
+        first_message: ユーザーの最初のメッセージ
+        max_tokens: 最大トークン数（短いタイトル用）
+    
+    Returns:
+        生成されたタイトル（最大20文字程度）
+    """
+    if not ANTHROPIC_API_KEY:
+        # APIキーがない場合はメッセージの先頭を返す
+        return first_message[:20] + "..." if len(first_message) > 20 else first_message
+    
+    try:
+        client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        
+        system_prompt = """あなたはチャットのタイトル生成アシスタントです。
+ユーザーのメッセージから、そのチャットの内容を端的に表す短いタイトル（15文字以内）を生成してください。
+タイトルのみを出力し、他の説明は不要です。"""
+        
+        message = client.messages.create(
+            model=ANTHROPIC_MODEL,
+            max_tokens=max_tokens,
+            temperature=0.3,
+            system=system_prompt,
+            messages=[{
+                "role": "user",
+                "content": f"以下のメッセージに対して、15文字以内の短いタイトルを生成してください：\n\n{first_message}"
+            }]
+        )
+        
+        title = message.content[0].text.strip() if message.content else ""
+        # タイトルが長すぎる場合は切り詰める
+        if len(title) > 20:
+            title = title[:20]
+        return title if title else first_message[:20]
+        
+    except Exception as e:
+        print(f"タイトル生成エラー: {e}")
+        # エラーの場合はメッセージの先頭を返す
+        return first_message[:20] + "..." if len(first_message) > 20 else first_message
+
+
 def review_chat(
     system_prompt: str,
     messages: List[Dict[str, str]],

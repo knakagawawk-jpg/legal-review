@@ -55,7 +55,7 @@ from .schemas import (
     OfficialQuestionYearsResponse, OfficialQuestionActiveResponse
 )
 from pydantic import BaseModel
-from .llm_service import generate_review, chat_about_review, free_chat, generate_recent_review_problems
+from .llm_service import generate_review, chat_about_review, free_chat, generate_recent_review_problems, generate_chat_title
 from .auth import get_current_user, get_current_user_required, verify_google_token, get_or_create_user, create_access_token
 from config.settings import AUTH_ENABLED
 from .timer_api import register_timer_routes
@@ -2297,6 +2297,16 @@ async def create_message(
         from datetime import datetime, timezone
         thread.last_message_at = datetime.now(timezone.utc)
         
+        # 6. 初回メッセージかつタイトルがない場合、タイトルを自動生成
+        is_first_message = len(chat_history) == 0
+        if is_first_message and (not thread.title or thread.title.strip() == ""):
+            try:
+                auto_title = generate_chat_title(message_data.content)
+                thread.title = auto_title
+            except Exception as title_error:
+                # タイトル生成に失敗しても本体の処理は続行
+                logger.warning(f"タイトル自動生成に失敗: {title_error}")
+        
         db.commit()
         db.refresh(assistant_message)
         
@@ -2360,6 +2370,34 @@ async def update_thread(
     db.refresh(thread)
     
     return ThreadResponse.model_validate(thread)
+
+
+@app.delete("/v1/threads/{thread_id}")
+async def delete_thread(
+    thread_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """スレッドを削除（認証必須）"""
+    thread = db.query(Thread).filter(Thread.id == thread_id).first()
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    
+    if thread.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # review_chatの場合、関連するReviewのthread_idとhas_chatをリセット
+    if thread.type == "review_chat":
+        review = db.query(Review).filter(Review.thread_id == thread_id).first()
+        if review:
+            review.thread_id = None
+            review.has_chat = False
+    
+    # スレッドを削除（CASCADE でメッセージも削除される）
+    db.delete(thread)
+    db.commit()
+    
+    return {"message": "deleted"}
 
 
 # ============================================================================

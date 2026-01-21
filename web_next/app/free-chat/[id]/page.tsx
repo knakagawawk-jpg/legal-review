@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { ChatHeader } from "@/components/chat/chat-header"
 import { ChatMessages } from "@/components/chat/chat-messages"
 import { ChatInput } from "@/components/chat/chat-input"
@@ -14,6 +14,7 @@ import type { Message, Thread } from "@/types/api"
 
 export default function FreeChatThreadPage() {
   const params = useParams()
+  const router = useRouter()
   const { isOpen } = useSidebar()
   const threadId = params.id as string
   const [thread, setThread] = useState<Thread | null>(null)
@@ -61,13 +62,50 @@ export default function FreeChatThreadPage() {
       const messagesData = await apiClient.get<{ messages: Message[] }>(`/api/threads/${threadId}/messages`)
       setMessages(messagesData.messages || [])
 
-      // スレッド情報を更新（last_message_atが更新されている可能性があるため）
+      // スレッド情報を更新（タイトルが自動生成されている可能性があるため）
       const threadData = await apiClient.get<Thread>(`/api/threads/${threadId}`)
       setThread(threadData)
     } catch (err: any) {
       setError(err.error || err.message || "エラーが発生しました")
     } finally {
       setLoading(false)
+    }
+  }
+
+  // タイトル編集
+  const handleEditTitle = async (newTitle: string) => {
+    if (!threadId) return
+    try {
+      await apiClient.put(`/api/threads/${threadId}`, { title: newTitle })
+      setThread((prev) => prev ? { ...prev, title: newTitle } : null)
+    } catch (err: any) {
+      console.error("タイトル更新エラー:", err)
+      setError(err.error || err.message || "タイトルの更新に失敗しました")
+    }
+  }
+
+  // 履歴クリア
+  const handleClearHistory = async () => {
+    if (!threadId) return
+    try {
+      await apiClient.delete(`/api/threads/${threadId}/messages`)
+      setMessages([])
+    } catch (err: any) {
+      console.error("履歴クリアエラー:", err)
+      setError(err.error || err.message || "履歴のクリアに失敗しました")
+    }
+  }
+
+  // チャット削除
+  const handleDeleteChat = async () => {
+    if (!threadId) return
+    try {
+      await apiClient.delete(`/api/threads/${threadId}`)
+      // 削除後はフリーチャットのトップに戻る
+      router.push("/free-chat")
+    } catch (err: any) {
+      console.error("チャット削除エラー:", err)
+      setError(err.error || err.message || "チャットの削除に失敗しました")
     }
   }
 
@@ -101,7 +139,12 @@ export default function FreeChatThreadPage() {
         marginLeft: isOpen ? '208px' : '0',
       }}
     >
-      <ChatHeader title={thread?.title || "新しいチャット"} />
+      <ChatHeader 
+        title={thread?.title || "新しいチャット"} 
+        onEditTitle={handleEditTitle}
+        onClearHistory={handleClearHistory}
+        onDeleteChat={handleDeleteChat}
+      />
 
       <ChatMessages messages={messages} isLoading={loading} error={error} messagesEndRef={messagesEndRef} />
 
