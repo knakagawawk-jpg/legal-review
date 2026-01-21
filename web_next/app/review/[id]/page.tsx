@@ -23,6 +23,11 @@ import { SubTabButton } from "@/components/sub-tab-button"
 import { ScoreRing } from "@/components/score-ring"
 import { FeedbackCard } from "@/components/feedback-card"
 import { ChatMessage } from "@/components/chat/chat-message"
+import { ChatMessageList } from "@/components/chat/chat-message-list"
+import { ChatBar } from "@/components/chat/chat-bar"
+import { ChatInputBar } from "@/components/chat/chat-input-bar"
+import { ChatLoadingIndicator } from "@/components/chat/chat-loading-indicator"
+import { getChatMessageTheme } from "@/components/chat/chat-message-theme"
 import { cn } from "@/lib/utils"
 import type { ReviewResponse } from "@/types/api"
 import { useSidebar } from "@/components/sidebar"
@@ -241,48 +246,56 @@ export default function ReviewResultPage() {
   const gradingImpressionText = review.grading_impression_text || ""
   const purposeLabel = review.source_type === "custom" ? "参考文章" : "出題趣旨"
   const chatBadgeCount = Math.max(chatMessages.length - 1, 0)
+  const chatTheme = getChatMessageTheme("review")
 
   const ChatPanel = ({ containerRef }: { containerRef: RefObject<HTMLDivElement> }) => (
     <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-gradient-to-r from-lime-500/10 to-transparent">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="p-1.5 rounded-lg bg-lime-500/10 shrink-0">
-            <MessageCircle className="h-4 w-4 text-lime-600" />
-          </div>
-          <span className="text-sm font-semibold text-foreground truncate">チャット</span>
-          {chatBadgeCount > 0 && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-lime-500/15 text-lime-700 font-medium shrink-0">
-              {chatBadgeCount}
-            </span>
-          )}
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleClearChat}
-          className="h-7 text-muted-foreground hover:text-foreground rounded-full"
-        >
-          <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-          クリア
-        </Button>
-      </div>
-
-      <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3 custom-scrollbar min-h-0">
-        {chatMessages.map((message, index) => (
-          <ChatMessage key={index} {...message} />
-        ))}
-        {isLoading && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <div className="flex gap-1">
-              <span className="h-2 w-2 rounded-full bg-lime-600 animate-bounce" style={{ animationDelay: "0ms" }} />
-              <span className="h-2 w-2 rounded-full bg-lime-600 animate-bounce" style={{ animationDelay: "150ms" }} />
-              <span className="h-2 w-2 rounded-full bg-lime-600 animate-bounce" style={{ animationDelay: "300ms" }} />
+      <ChatBar
+        className="border-border bg-gradient-to-r from-lime-500/10 to-transparent"
+        leading={(
+          <>
+            <div className="p-1.5 rounded-lg bg-lime-500/10 shrink-0">
+              <MessageCircle className="h-4 w-4 text-lime-600" />
             </div>
-          </div>
+            <span className="text-sm font-semibold text-foreground truncate">チャット</span>
+            {chatBadgeCount > 0 && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-lime-500/15 text-lime-700 font-medium shrink-0">
+                {chatBadgeCount}
+              </span>
+            )}
+          </>
         )}
-      </div>
+        trailing={(
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleClearChat}
+            className="h-7 text-muted-foreground hover:text-foreground rounded-full"
+          >
+            <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+            クリア
+          </Button>
+        )}
+      />
 
-      <div className="px-4 pb-4 pt-2 shrink-0">
+      <ChatMessageList
+        messages={chatMessages}
+        isLoading={isLoading}
+        containerRef={containerRef}
+        renderMessage={(message, index) => <ChatMessage key={index} {...message} />}
+        loadingIndicator={(
+          <ChatLoadingIndicator
+            layout="inline"
+            className="text-sm text-muted-foreground"
+            dotsClassName="gap-1"
+            dotClassName={chatTheme.loadingDotClassName}
+          />
+        )}
+        containerClassName="px-4 py-3 custom-scrollbar min-h-0"
+        contentClassName="space-y-3"
+      />
+
+      <ChatInputBar className="border-t border-border/70 bg-card px-4 pb-4 pt-2" contentClassName="w-full">
         <div className="flex gap-3">
           <input
             type="text"
@@ -296,7 +309,7 @@ export default function ReviewResultPage() {
             <Send className="h-4 w-4" />
           </Button>
         </div>
-      </div>
+      </ChatInputBar>
     </div>
   )
 
