@@ -8,10 +8,12 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
 import { AlertCircle, Loader2, Search, Eye, Trash2 } from "lucide-react"
-import type { ReviewResponse, SubmissionHistory } from "@/types/api"
+import type { ReviewResponse, SubmissionHistory, LlmRequestListResponse } from "@/types/api"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { getSubjectName } from "@/lib/subjects"
@@ -49,9 +51,10 @@ export default function DevPage() {
 
         {/* タブ */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="verify">📊 講評結果検証</TabsTrigger>
             <TabsTrigger value="list">📋 過去の講評一覧</TabsTrigger>
+            <TabsTrigger value="llm">🧾 LLMログ</TabsTrigger>
           </TabsList>
 
           <TabsContent value="verify">
@@ -60,6 +63,10 @@ export default function DevPage() {
 
           <TabsContent value="list">
             <SubmissionList />
+          </TabsContent>
+
+          <TabsContent value="llm">
+            <LlmRequestTable />
           </TabsContent>
         </Tabs>
       </div>
@@ -706,6 +713,295 @@ function SubmissionList() {
               )}
             </div>
           )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function LlmRequestTable() {
+  const [filters, setFilters] = useState({
+    feature_type: "",
+    model: "",
+    request_id: "",
+    review_id: "",
+    thread_id: "",
+    session_id: "",
+    created_from: "",
+    created_to: "",
+    limit: "50",
+  })
+  const [query, setQuery] = useState(filters)
+  const [offset, setOffset] = useState(0)
+  const [data, setData] = useState<LlmRequestListResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const loadData = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const params = new URLSearchParams()
+      Object.entries(query).forEach(([key, value]) => {
+        if (value) params.append(key, value)
+      })
+      params.set("offset", String(offset))
+      if (!params.get("limit")) {
+        params.set("limit", "50")
+      }
+
+      const res = await fetch(`/api/llm-requests?${params.toString()}`)
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: "Unknown error" }))
+        throw new Error(errorData.error || "LLMログの取得に失敗しました")
+      }
+      const json: LlmRequestListResponse = await res.json()
+      setData(json)
+    } catch (err: any) {
+      setError(err.message || "エラーが発生しました")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [query, offset])
+
+  const handleSearch = () => {
+    setOffset(0)
+    setQuery(filters)
+  }
+
+  const handleReset = () => {
+    const initial = {
+      feature_type: "",
+      model: "",
+      request_id: "",
+      review_id: "",
+      thread_id: "",
+      session_id: "",
+      created_from: "",
+      created_to: "",
+      limit: "50",
+    }
+    setFilters(initial)
+    setQuery(initial)
+    setOffset(0)
+  }
+
+  const total = data?.total ?? 0
+  const items = data?.items ?? []
+  const canPrev = offset > 0
+  const canNext = offset + items.length < total
+
+  const formatTokens = (input?: number | null, output?: number | null) =>
+    `${input ?? "-"} / ${output ?? "-"}`
+
+  const formatCost = (cost?: number | null) => (cost != null ? `${cost.toFixed(2)}円` : "-")
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>🧾 LLMログ一覧</CardTitle>
+          <CardDescription>ユーザーのLLM呼び出しログを確認できます</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium">種別</label>
+              <Select
+                value={filters.feature_type}
+                onValueChange={(value) => setFilters({ ...filters, feature_type: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="すべて" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">すべて</SelectItem>
+                  <SelectItem value="review">review</SelectItem>
+                  <SelectItem value="review_chat">review_chat</SelectItem>
+                  <SelectItem value="free_chat">free_chat</SelectItem>
+                  <SelectItem value="recent_review">recent_review</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">モデル</label>
+              <Input
+                value={filters.model}
+                onChange={(e) => setFilters({ ...filters, model: e.target.value })}
+                placeholder="claude-haiku..."
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Request ID</label>
+              <Input
+                value={filters.request_id}
+                onChange={(e) => setFilters({ ...filters, request_id: e.target.value })}
+                placeholder="message id"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Review ID</label>
+              <Input
+                type="number"
+                value={filters.review_id}
+                onChange={(e) => setFilters({ ...filters, review_id: e.target.value })}
+                placeholder="review_id"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Thread ID</label>
+              <Input
+                type="number"
+                value={filters.thread_id}
+                onChange={(e) => setFilters({ ...filters, thread_id: e.target.value })}
+                placeholder="thread_id"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">Session ID</label>
+              <Input
+                type="number"
+                value={filters.session_id}
+                onChange={(e) => setFilters({ ...filters, session_id: e.target.value })}
+                placeholder="session_id"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">開始日時</label>
+              <Input
+                type="datetime-local"
+                value={filters.created_from}
+                onChange={(e) => setFilters({ ...filters, created_from: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">終了日時</label>
+              <Input
+                type="datetime-local"
+                value={filters.created_to}
+                onChange={(e) => setFilters({ ...filters, created_to: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium">件数</label>
+              <Select
+                value={filters.limit}
+                onValueChange={(value) => setFilters({ ...filters, limit: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                  <SelectItem value="200">200</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <Button onClick={handleSearch} disabled={loading}>
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "検索"}
+            </Button>
+            <Button variant="outline" onClick={handleReset} disabled={loading}>
+              リセット
+            </Button>
+            <Button variant="ghost" onClick={loadData} disabled={loading}>
+              再読み込み
+            </Button>
+            <div className="ml-auto text-sm text-muted-foreground self-center">
+              {total.toLocaleString()} 件
+            </div>
+          </div>
+
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="border rounded-lg overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>日時</TableHead>
+                  <TableHead>種別</TableHead>
+                  <TableHead>モデル</TableHead>
+                  <TableHead>tokens(in/out)</TableHead>
+                  <TableHead>コスト</TableHead>
+                  <TableHead>request_id</TableHead>
+                  <TableHead>review_id</TableHead>
+                  <TableHead>thread_id</TableHead>
+                  <TableHead>session_id</TableHead>
+                  <TableHead>latency_ms</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading && (
+                  <TableRow>
+                    <TableCell colSpan={10}>
+                      <Skeleton className="h-8 w-full" />
+                    </TableCell>
+                  </TableRow>
+                )}
+                {!loading && items.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={10} className="text-center text-muted-foreground">
+                      データがありません
+                    </TableCell>
+                  </TableRow>
+                )}
+                {!loading &&
+                  items.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell className="whitespace-nowrap">
+                        {row.created_at ? new Date(row.created_at).toLocaleString("ja-JP") : "-"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">{row.feature_type}</Badge>
+                      </TableCell>
+                      <TableCell className="max-w-[200px] truncate">{row.model || "-"}</TableCell>
+                      <TableCell>{formatTokens(row.input_tokens, row.output_tokens)}</TableCell>
+                      <TableCell>{formatCost(row.cost_yen)}</TableCell>
+                      <TableCell className="max-w-[200px] truncate">{row.request_id || "-"}</TableCell>
+                      <TableCell>{row.review_id ?? "-"}</TableCell>
+                      <TableCell>{row.thread_id ?? "-"}</TableCell>
+                      <TableCell>{row.session_id ?? "-"}</TableCell>
+                      <TableCell>{row.latency_ms ?? "-"}</TableCell>
+                    </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="flex justify-between items-center">
+            <div className="text-sm text-muted-foreground">
+              {total > 0 && `${offset + 1} - ${offset + items.length} / ${total}`}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setOffset(Math.max(0, offset - Number(query.limit || "50")))}
+                disabled={!canPrev || loading}
+              >
+                前へ
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setOffset(offset + Number(query.limit || "50"))}
+                disabled={!canNext || loading}
+              >
+                次へ
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>

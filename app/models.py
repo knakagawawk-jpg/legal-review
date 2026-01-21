@@ -306,6 +306,64 @@ class Message(Base):
     )
 
 
+class LlmRequest(Base):
+    """
+    LLM呼び出しログ（共通）
+
+    - 1回のLLMリクエスト = 1レコード
+    - feature_type + (review_id / thread_id / session_id) で紐付け
+    """
+    __tablename__ = "llm_requests"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    feature_type = Column(String(50), nullable=False, index=True)
+    review_id = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        ForeignKey("reviews.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    thread_id = Column(
+        Integer,
+        ForeignKey("threads.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    session_id = Column(
+        Integer,
+        ForeignKey("recent_review_problem_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    model = Column(String(100), nullable=True)
+    prompt_version = Column(String(50), nullable=True)
+    input_tokens = Column(Integer, nullable=True)
+    output_tokens = Column(Integer, nullable=True)
+    cost_yen = Column(Numeric(10, 2), nullable=True)
+    request_id = Column(String(255), nullable=True, index=True)
+    latency_ms = Column(Integer, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="llm_requests", foreign_keys=[user_id])
+    review = relationship("Review", foreign_keys=[review_id])
+    thread = relationship("Thread", foreign_keys=[thread_id])
+    session = relationship("RecentReviewProblemSession", foreign_keys=[session_id])
+
+    __table_args__ = (
+        Index("idx_llm_requests_user_created", "user_id", "created_at"),
+        Index("idx_llm_requests_feature_created", "feature_type", "created_at"),
+    )
+
+
 # ============================================================================
 # 既存のモデル（後方互換性のため保持）
 # ============================================================================
@@ -517,6 +575,7 @@ class User(Base):
     notebooks = relationship("Notebook", back_populates="user")
     reviews = relationship("Review", back_populates="user", order_by="desc(Review.created_at)")  # 作成した講評
     threads = relationship("Thread", back_populates="user", order_by="desc(Thread.last_message_at)")
+    llm_requests = relationship("LlmRequest", back_populates="user", order_by="desc(LlmRequest.created_at)")
     preference = relationship("UserPreference", back_populates="user", uselist=False, cascade="all, delete-orphan")
     dashboard = relationship("UserDashboard", back_populates="user", uselist=False, cascade="all, delete-orphan")
     dashboard_history = relationship("UserDashboardHistory", back_populates="user", order_by="desc(UserDashboardHistory.date)")

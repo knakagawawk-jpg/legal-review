@@ -27,23 +27,24 @@ def generate_review(
     answer_text: str,
     purpose_text: Optional[str] = None,
     grading_impression_text: Optional[str] = None,
-) -> tuple[str, Dict[str, Any], str]:
+) -> tuple[str, Dict[str, Any], str, Optional[int], Optional[int], Optional[str], Optional[int]]:
     """
     LLMを使って答案の講評を生成する（1段階処理：答案を直接評価）
     
     Returns:
-        tuple: (review_markdown, review_json, model_name)
+        tuple: (review_markdown, review_json, model_name, input_tokens, output_tokens, request_id, latency_ms)
     """
     # APIキーが設定されていない場合はダミーを返す
     if not ANTHROPIC_API_KEY:
-        return _generate_dummy_review(subject)
+        review_markdown, review_json, model_name = _generate_dummy_review(subject)
+        return review_markdown, review_json, model_name, None, None, None, None
     
     try:
         client = Anthropic(api_key=ANTHROPIC_API_KEY)
         
         # ===== 答案の評価（1段階処理） =====
         print("答案の評価を開始...")
-        evaluation_result = _evaluate_answer(
+        evaluation_result, usage = _evaluate_answer(
             client,
             subject,
             question_text,
@@ -60,7 +61,15 @@ def generate_review(
         # マークダウン形式の講評を生成
         review_markdown = _format_markdown(subject, review_json)
         
-        return review_markdown, review_json, ANTHROPIC_MODEL
+        return (
+            review_markdown,
+            review_json,
+            ANTHROPIC_MODEL,
+            usage.get("input_tokens"),
+            usage.get("output_tokens"),
+            usage.get("request_id"),
+            usage.get("latency_ms"),
+        )
         
     except Exception as e:
         # エラーが発生した場合は例外を再発生させる（FastAPIで処理）
@@ -79,15 +88,16 @@ def _evaluate_answer(
     answer_text: str,
     purpose_text: Optional[str] = None,
     grading_impression_text: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> tuple[Dict[str, Any], Dict[str, Any]]:
     """答案を直接評価（evaluation.txt使用）"""
+    import time
     try:
         # プロンプトテンプレートを読み込む
         template = _load_prompt_template("evaluation")
         
         if not template:
             # 評価プロンプトがない場合は空の評価結果を返す
-            return {
+            return ({
                 "overall_review": {
                     "score": 65,
                     "comment": "評価プロンプトが読み込めませんでした"
@@ -95,7 +105,7 @@ def _evaluate_answer(
                 "strengths": [],
                 "weaknesses": [],
                 "future_considerations": []
-            }
+            }, {"input_tokens": None, "output_tokens": None, "request_id": None, "latency_ms": None})
         
         # 科目別の留意事項を読み込む
         subject_guidelines = _load_subject_guidelines(subject)
@@ -111,6 +121,7 @@ def _evaluate_answer(
         system_prompt = "あなたは司法試験・予備試験の法律答案講評の品質を評価する専門家です。"
         
         # Claude APIにリクエスト
+        start_time = time.time()
         message = client.messages.create(
             model=ANTHROPIC_MODEL,
             max_tokens=16384,  # 長い評価に対応するためさらに増加（16Kトークン）
@@ -123,12 +134,19 @@ def _evaluate_answer(
                 }
             ]
         )
+        latency_ms = int((time.time() - start_time) * 1000)
         
         # レスポンスをパース
         if not message.content or len(message.content) == 0:
             raise Exception("LLMからのレスポンスが空です")
         
         # トークン使用量をログに記録
+        usage = {
+            "input_tokens": None,
+            "output_tokens": None,
+            "request_id": getattr(message, "id", None),
+            "latency_ms": latency_ms,
+        }
         if hasattr(message, 'usage') and message.usage:
             import logging
             logger = logging.getLogger(__name__)
@@ -137,6 +155,8 @@ def _evaluate_answer(
             total_tokens = input_tokens + output_tokens
             logger.info(f"評価トークン使用量: 入力={input_tokens}, 出力={output_tokens}, 合計={total_tokens}")
             print(f"評価トークン使用量: 入力={input_tokens}, 出力={output_tokens}, 合計={total_tokens}")
+            usage["input_tokens"] = input_tokens
+            usage["output_tokens"] = output_tokens
         
         content = message.content[0].text
         content = _extract_json_from_response(content)
@@ -145,7 +165,7 @@ def _evaluate_answer(
         content = _try_repair_json(content)
         
         try:
-            return json.loads(content)
+            return json.loads(content), usage
         except json.JSONDecodeError as e:
             # エラー位置の前後のテキストを取得
             error_pos = getattr(e, 'pos', None)
@@ -427,13 +447,14 @@ def generate_recent_review_problems(
     prompt: str,
     max_tokens: int = 4096,
     temperature: float = 0.4,
-) -> tuple[list[Dict[str, Any]], str, str, Optional[int], Optional[int]]:
+) -> tuple[list[Dict[str, Any]], str, str, Optional[int], Optional[int], Optional[str], Optional[int]]:
     """
     最近の復習問題を生成（JSON配列を返す）
 
     Returns:
-        (items, raw_output, model_name, input_tokens, output_tokens)
+        (items, raw_output, model_name, input_tokens, output_tokens, request_id, latency_ms)
     """
+    import time
     # APIキーが設定されていない場合はダミー
     if not ANTHROPIC_API_KEY:
         dummy = [
@@ -444,7 +465,7 @@ def generate_recent_review_problems(
                 "references": "まず権利の性質と規制態様を特定し、目的重要性と手段必要性・合理性の観点で審査密度を整理する。",
             }
         ]
-        return dummy, json.dumps(dummy, ensure_ascii=False), "dummy", None, None
+        return dummy, json.dumps(dummy, ensure_ascii=False), "dummy", None, None, None, None
 
     client = Anthropic(api_key=ANTHROPIC_API_KEY)
 
@@ -454,6 +475,7 @@ def generate_recent_review_problems(
         "出力は必ずJSONのみで、余計な文章を付けないでください。"
     )
 
+    start_time = time.time()
     message = client.messages.create(
         model=ANTHROPIC_MODEL,
         max_tokens=max_tokens,
@@ -469,12 +491,14 @@ def generate_recent_review_problems(
     )
 
     raw_output = message.content[0].text if message.content and len(message.content) > 0 else ""
+    latency_ms = int((time.time() - start_time) * 1000)
 
     input_tokens = None
     output_tokens = None
     if hasattr(message, "usage") and message.usage:
         input_tokens = getattr(message.usage, "input_tokens", None)
         output_tokens = getattr(message.usage, "output_tokens", None)
+    request_id = getattr(message, "id", None)
 
     content = _extract_json_from_response(raw_output)
     content = _try_repair_json(content)
@@ -510,7 +534,7 @@ def generate_recent_review_problems(
             }
         )
 
-    return items, raw_output, ANTHROPIC_MODEL, input_tokens, output_tokens
+    return items, raw_output, ANTHROPIC_MODEL, input_tokens, output_tokens, request_id, latency_ms
 
 
 # _build_final_review関数は削除（1段階処理では不要）
@@ -760,7 +784,7 @@ def chat_about_review(
     answer_text: str,
     review_markdown: str,
     chat_history: Optional[List[Dict[str, str]]] = None
-) -> str:
+) -> tuple[str, str, Optional[int], Optional[int], Optional[str], Optional[int]]:
     """
     講評に関する質問に答える
     
@@ -777,9 +801,17 @@ def chat_about_review(
     """
     # APIキーが設定されていない場合はダミーを返す
     if not ANTHROPIC_API_KEY:
-        return "申し訳ございませんが、現在LLM機能が利用できません。APIキーが設定されていないため、チャット機能を使用できません。"
+        return (
+            "申し訳ございませんが、現在LLM機能が利用できません。APIキーが設定されていないため、チャット機能を使用できません。",
+            "dummy",
+            None,
+            None,
+            None,
+            None,
+        )
     
     try:
+        import time
         client = Anthropic(api_key=ANTHROPIC_API_KEY)
         
         # システムプロンプト
@@ -823,6 +855,7 @@ def chat_about_review(
         })
         
         # Claude APIにリクエスト
+        start_time = time.time()
         message = client.messages.create(
             model=ANTHROPIC_MODEL,
             max_tokens=4096,
@@ -830,22 +863,35 @@ def chat_about_review(
             system=system_prompt,
             messages=messages
         )
+        latency_ms = int((time.time() - start_time) * 1000)
         
         # レスポンスを取得
         answer = message.content[0].text
-        
-        return answer
+        input_tokens = None
+        output_tokens = None
+        if hasattr(message, "usage") and message.usage:
+            input_tokens = getattr(message.usage, "input_tokens", None)
+            output_tokens = getattr(message.usage, "output_tokens", None)
+        request_id = getattr(message, "id", None)
+        return answer, ANTHROPIC_MODEL, input_tokens, output_tokens, request_id, latency_ms
         
     except Exception as e:
         # エラーが発生した場合
         print(f"チャット生成エラー: {e}")
-        return f"申し訳ございませんが、エラーが発生しました: {str(e)}"
+        return (
+            f"申し訳ございませんが、エラーが発生しました: {str(e)}",
+            ANTHROPIC_MODEL,
+            None,
+            None,
+            None,
+            None,
+        )
 
 
 def free_chat(
     question: str,
     chat_history: Optional[List[Dict[str, str]]] = None
-) -> str:
+) -> tuple[str, str, Optional[int], Optional[int], Optional[str], Optional[int]]:
     """
     フリーチャット（文脈に縛られない汎用的なチャット）
     
@@ -858,9 +904,17 @@ def free_chat(
     """
     # APIキーが設定されていない場合はダミーを返す
     if not ANTHROPIC_API_KEY:
-        return "申し訳ございませんが、現在LLM機能が利用できません。APIキーが設定されていないため、チャット機能を使用できません。"
+        return (
+            "申し訳ございませんが、現在LLM機能が利用できません。APIキーが設定されていないため、チャット機能を使用できません。",
+            "dummy",
+            None,
+            None,
+            None,
+            None,
+        )
     
     try:
+        import time
         client = Anthropic(api_key=ANTHROPIC_API_KEY)
         
         # システムプロンプト（汎用的なアシスタントとして動作）
@@ -882,6 +936,7 @@ def free_chat(
         })
         
         # Claude APIにリクエスト
+        start_time = time.time()
         message = client.messages.create(
             model=ANTHROPIC_MODEL,
             max_tokens=4096,
@@ -889,16 +944,29 @@ def free_chat(
             system=system_prompt,
             messages=messages
         )
+        latency_ms = int((time.time() - start_time) * 1000)
         
         # レスポンスを取得
         answer = message.content[0].text
-        
-        return answer
+        input_tokens = None
+        output_tokens = None
+        if hasattr(message, "usage") and message.usage:
+            input_tokens = getattr(message.usage, "input_tokens", None)
+            output_tokens = getattr(message.usage, "output_tokens", None)
+        request_id = getattr(message, "id", None)
+        return answer, ANTHROPIC_MODEL, input_tokens, output_tokens, request_id, latency_ms
         
     except Exception as e:
         # エラーが発生した場合
         print(f"フリーチャット生成エラー: {e}")
-        return f"申し訳ございませんが、エラーが発生しました: {str(e)}"
+        return (
+            f"申し訳ございませんが、エラーが発生しました: {str(e)}",
+            ANTHROPIC_MODEL,
+            None,
+            None,
+            None,
+            None,
+        )
 
 
 def generate_chat_title(
@@ -954,7 +1022,7 @@ def review_chat(
     messages: List[Dict[str, str]],
     max_tokens: int = 4096,
     temperature: float = 0.7,
-) -> tuple[str, str, Optional[int], Optional[int]]:
+) -> tuple[str, str, Optional[int], Optional[int], Optional[str], Optional[int]]:
     """
     講評チャット用のLLM呼び出し（threads/messages 保存前提）。
 
@@ -970,9 +1038,13 @@ def review_chat(
             "dummy",
             None,
             None,
+            None,
+            None,
         )
 
     client = Anthropic(api_key=ANTHROPIC_API_KEY)
+    import time
+    start_time = time.time()
     message = client.messages.create(
         model=ANTHROPIC_MODEL,
         max_tokens=max_tokens,
@@ -980,6 +1052,7 @@ def review_chat(
         system=system_prompt or "",
         messages=messages,
     )
+    latency_ms = int((time.time() - start_time) * 1000)
 
     answer = message.content[0].text if message.content and len(message.content) > 0 else ""
     input_tokens = None
@@ -987,4 +1060,5 @@ def review_chat(
     if hasattr(message, "usage") and message.usage:
         input_tokens = getattr(message.usage, "input_tokens", None)
         output_tokens = getattr(message.usage, "output_tokens", None)
-    return answer, ANTHROPIC_MODEL, input_tokens, output_tokens
+    request_id = getattr(message, "id", None)
+    return answer, ANTHROPIC_MODEL, input_tokens, output_tokens, request_id, latency_ms

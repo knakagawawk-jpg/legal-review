@@ -431,6 +431,32 @@ class ThreadMessageCreate(BaseModel):
     """スレッドにメッセージを送信する用スキーマ"""
     content: str
 
+
+# LLM共通ログ
+class LlmRequestResponse(BaseModel):
+    id: int
+    user_id: int
+    feature_type: str
+    review_id: Optional[int] = None
+    thread_id: Optional[int] = None
+    session_id: Optional[int] = None
+    model: Optional[str] = None
+    prompt_version: Optional[str] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    cost_yen: Optional[float] = None
+    request_id: Optional[str] = None
+    latency_ms: Optional[int] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class LlmRequestListResponse(BaseModel):
+    items: List[LlmRequestResponse]
+    total: int
+
 # ユーザー関連のスキーマ
 class UserUpdate(BaseModel):
     """ユーザー情報更新用スキーマ"""

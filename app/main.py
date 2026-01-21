@@ -20,7 +20,7 @@ from .models import (
     ShortAnswerProblem, ShortAnswerSession, ShortAnswerAnswer,
     User, UserSubscription, SubscriptionPlan,
     Notebook, NoteSection, NotePage,
-    Thread, Message,
+    Thread, Message, LlmRequest,
     UserPreference, UserDashboard, UserDashboardHistory, UserReviewHistory,
     DashboardItem, Subject, OfficialQuestion,
     RecentReviewProblemSession, RecentReviewProblem, SavedReviewProblem,
@@ -52,10 +52,12 @@ from .schemas import (
     TimerSessionResponse, TimerDailyStatsResponse, TimerStartResponse, TimerStopResponse,
     StudyTagCreate, StudyTagResponse,
     StudyItemCreate, StudyItemUpdate, StudyItemResponse, StudyItemReorderRequest,
-    OfficialQuestionYearsResponse, OfficialQuestionActiveResponse
+    OfficialQuestionYearsResponse, OfficialQuestionActiveResponse,
+    LlmRequestListResponse
 )
 from pydantic import BaseModel
 from .llm_service import generate_review, chat_about_review, free_chat, generate_recent_review_problems, generate_chat_title
+from .llm_usage import build_llm_request_row
 from .auth import get_current_user, get_current_user_required, verify_google_token, get_or_create_user, create_access_token
 from config.settings import AUTH_ENABLED
 from .timer_api import register_timer_routes
@@ -186,6 +188,15 @@ def _startup_migrate_reviews():
         logger.info("✓ Startup recent review problems migration completed")
     except Exception as e:
         logger.warning(f"Startup recent review problems migration skipped/failed: {str(e)}")
+
+    # LLM共通ログ用テーブルを作成
+    try:
+        from .migrate_llm_requests import migrate_llm_requests
+
+        migrate_llm_requests()
+        logger.info("✓ Startup llm_requests migration completed")
+    except Exception as e:
+        logger.warning(f"Startup llm_requests migration skipped/failed: {str(e)}")
 
 # グローバルエラーハンドラーを追加（HTTPExceptionは除外）
 @app.exception_handler(Exception)
@@ -952,7 +963,7 @@ async def create_review(
         # subject_idがNoneの場合は"不明"を使用
         subject_name = get_subject_name(subject_id) if subject_id is not None else "不明"
         try:
-            review_markdown, review_json, model_name = generate_review(
+            review_markdown, review_json, model_name, in_tok, out_tok, request_id, latency_ms = generate_review(
                 subject=subject_name,  # LLMには科目名を渡す
                 question_text=question_text,
                 answer_text=req.answer_text,
@@ -1023,6 +1034,24 @@ async def create_review(
         db.add(rev)
         db.commit()
         db.refresh(rev)
+
+        # LLM使用量を保存（共通ログ）
+        if in_tok is not None or out_tok is not None or request_id:
+            llm_row = LlmRequest(
+                **build_llm_request_row(
+                    user_id=current_user.id,
+                    feature_type="review",
+                    review_id=rev.id,
+                    model=model_name,
+                    prompt_version="evaluation_v1",
+                    input_tokens=in_tok,
+                    output_tokens=out_tok,
+                    request_id=request_id,
+                    latency_ms=latency_ms,
+                )
+            )
+            db.add(llm_row)
+            db.commit()
         
         # 5) UserReviewHistoryを作成
         # 講評結果から点数を抽出
@@ -1304,7 +1333,7 @@ async def chat_review(
         subject_name = get_subject_name(subject_id) if subject_id is not None else "不明"
         review_markdown = _format_markdown(subject_name, review_json)
 
-        answer = chat_about_review(
+        answer, model_name, in_tok, out_tok, request_id, latency_ms = chat_about_review(
             submission_id=req.review_id,  # 互換のため引数名はそのまま
             question=req.question,
             question_text=question_text,
@@ -1312,6 +1341,22 @@ async def chat_review(
             review_markdown=review_markdown,
             chat_history=req.chat_history
         )
+        if in_tok is not None or out_tok is not None or request_id:
+            llm_row = LlmRequest(
+                **build_llm_request_row(
+                    user_id=current_user.id,
+                    feature_type="review_chat",
+                    review_id=review.id,
+                    model=model_name,
+                    prompt_version="review_chat_v1",
+                    input_tokens=in_tok,
+                    output_tokens=out_tok,
+                    request_id=request_id,
+                    latency_ms=latency_ms,
+                )
+            )
+            db.add(llm_row)
+            db.commit()
         return ReviewChatResponse(answer=answer)
 
     # 旧: submission_id（互換。必要なら後で対応拡張）
@@ -1697,6 +1742,63 @@ async def get_my_review_history(
         result.append(UserReviewHistoryResponse(**history_dict))
     
     return result
+
+
+@app.get("/v1/llm-requests", response_model=LlmRequestListResponse)
+async def list_llm_requests(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    feature_type: Optional[str] = Query(None),
+    model: Optional[str] = Query(None),
+    request_id: Optional[str] = Query(None),
+    review_id: Optional[int] = Query(None),
+    thread_id: Optional[int] = Query(None),
+    session_id: Optional[int] = Query(None),
+    created_from: Optional[str] = Query(None, description="ISO datetime"),
+    created_to: Optional[str] = Query(None, description="ISO datetime"),
+):
+    query = db.query(LlmRequest).filter(LlmRequest.user_id == current_user.id)
+
+    if feature_type:
+        query = query.filter(LlmRequest.feature_type == feature_type)
+    if model:
+        model_like = f"%{model.lower()}%"
+        query = query.filter(func.lower(LlmRequest.model).like(model_like))
+    if request_id:
+        query = query.filter(LlmRequest.request_id == request_id)
+    if review_id is not None:
+        query = query.filter(LlmRequest.review_id == review_id)
+    if thread_id is not None:
+        query = query.filter(LlmRequest.thread_id == thread_id)
+    if session_id is not None:
+        query = query.filter(LlmRequest.session_id == session_id)
+
+    def _parse_dt(value: Optional[str]) -> Optional[datetime]:
+        if not value:
+            return None
+        try:
+            dt = datetime.fromisoformat(value)
+        except Exception:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+
+    dt_from = _parse_dt(created_from)
+    dt_to = _parse_dt(created_to)
+    if dt_from:
+        query = query.filter(LlmRequest.created_at >= dt_from)
+    if dt_to:
+        query = query.filter(LlmRequest.created_at <= dt_to)
+
+    total = query.count()
+    rows = query.order_by(LlmRequest.created_at.desc()).offset(offset).limit(limit).all()
+    return LlmRequestListResponse(
+        items=rows,
+        total=total,
+    )
 
 # ノート機能のエンドポイント
 @app.get("/v1/notebooks", response_model=List[NotebookResponse])
@@ -2224,6 +2326,8 @@ async def create_message(
         model_name = None
         input_tokens = None
         output_tokens = None
+        request_id = None
+        latency_ms = None
 
         if thread.type == "review_chat":
             # review_idは Review.thread_id から逆引きして復元（DBにはコンテキストを保存しない）
@@ -2259,7 +2363,7 @@ async def create_message(
             messages_for_llm.append({"role": "user", "content": user_prompt})
 
             from .llm_service import review_chat as llm_review_chat
-            assistant_content, model_name, input_tokens, output_tokens = llm_review_chat(
+            assistant_content, model_name, input_tokens, output_tokens, request_id, latency_ms = llm_review_chat(
                 system_prompt=system_prompt,
                 messages=messages_for_llm,
             )
@@ -2276,7 +2380,7 @@ async def create_message(
             if prompt_file.exists():
                 system_prompt = prompt_file.read_text(encoding="utf-8").strip()
             from .llm_service import free_chat as llm_free_chat
-            assistant_content = llm_free_chat(
+            assistant_content, model_name, input_tokens, output_tokens, request_id, latency_ms = llm_free_chat(
                 question=message_data.content,
                 chat_history=chat_history if chat_history else None
             )
@@ -2307,6 +2411,30 @@ async def create_message(
                 # タイトル生成に失敗しても本体の処理は続行
                 logger.warning(f"タイトル自動生成に失敗: {title_error}")
         
+        # LLM使用量を保存（共通ログ）
+        if input_tokens is not None or output_tokens is not None or request_id:
+            review_id = None
+            if thread.type == "review_chat":
+                review = db.query(Review).filter(Review.thread_id == thread_id).first()
+                if review:
+                    review_id = review.id
+            prompt_version = "review_chat_v1" if thread.type == "review_chat" else "free_chat_v1"
+            llm_row = LlmRequest(
+                **build_llm_request_row(
+                    user_id=current_user.id,
+                    feature_type="review_chat" if thread.type == "review_chat" else "free_chat",
+                    review_id=review_id,
+                    thread_id=thread_id,
+                    model=model_name,
+                    prompt_version=prompt_version,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    request_id=request_id,
+                    latency_ms=latency_ms,
+                )
+            )
+            db.add(llm_row)
+
         db.commit()
         db.refresh(assistant_message)
         
@@ -3324,10 +3452,26 @@ async def create_recent_review_problem_session(
     db.flush()
 
     try:
-        items, raw_output, model_name, in_tok, out_tok = generate_recent_review_problems(prompt_text)
+        items, raw_output, model_name, in_tok, out_tok, request_id, latency_ms = generate_recent_review_problems(prompt_text)
         session.llm_model = model_name
         session.prompt_version = "recent_review_problems_v1"
         session.llm_raw_output = _truncate_text(raw_output or "", limit=16000)
+
+        if in_tok is not None or out_tok is not None or request_id:
+            llm_row = LlmRequest(
+                **build_llm_request_row(
+                    user_id=current_user.id,
+                    feature_type="recent_review",
+                    session_id=session.id,
+                    model=model_name,
+                    prompt_version="recent_review_problems_v1",
+                    input_tokens=in_tok,
+                    output_tokens=out_tok,
+                    request_id=request_id,
+                    latency_ms=latency_ms,
+                )
+            )
+            db.add(llm_row)
 
         if not items:
             raise Exception("LLM returned empty items")

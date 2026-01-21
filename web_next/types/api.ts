@@ -249,3 +249,25 @@ export interface MessageListResponse {
   messages: Message[]
   total: number
 }
+
+export interface LlmRequest {
+  id: number
+  user_id: number
+  feature_type: string
+  review_id?: number | null
+  thread_id?: number | null
+  session_id?: number | null
+  model?: string | null
+  prompt_version?: string | null
+  input_tokens?: number | null
+  output_tokens?: number | null
+  cost_yen?: number | null
+  request_id?: string | null
+  latency_ms?: number | null
+  created_at: string
+}
+
+export interface LlmRequestListResponse {
+  items: LlmRequest[]
+  total: number
+}
