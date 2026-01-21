@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -23,7 +23,6 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { SidebarToggle } from "@/components/sidebar"
 import { useSidebar } from "@/components/sidebar"
-import { cn } from "@/lib/utils"
 import { Plus, FileText, Folder, ChevronRight, ChevronDown, MoreVertical, Edit, Trash2 } from "lucide-react"
 import type { Notebook, NoteSection, NotePage, NotebookDetail } from "@/types/api"
 import { withAuth } from "@/components/auth/with-auth"
@@ -41,7 +40,6 @@ function NotesPage() {
   const [loading, setLoading] = useState(true)
   const [expandedNotebooks, setExpandedNotebooks] = useState<Set<number>>(new Set())
   const [expandedSections, setExpandedSections] = useState<Set<number>>(new Set())
-  const createButtonRef = useRef<HTMLButtonElement>(null)
   
   // ダイアログ状態
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -78,103 +76,8 @@ function NotesPage() {
   })
   const [editingPageData, setEditingPageData] = useState<NotePage | null>(null)
 
-  useEffect(() => {
-    console.log("NotesPage component mounted")
-    // ノートブック一覧を取得
-    const fetchNotebooks = async () => {
-      try {
-        const data = await apiClient.get<Notebook[]>("/api/notebooks")
-        // 各ノートブックの詳細を取得
-        const notebooksWithDetails = await Promise.all(
-          data.map(async (notebook) => {
-            try {
-              const detail = await apiClient.get<NotebookDetail>(`/api/notebooks/${notebook.id}`)
-              return { ...notebook, sections: detail.sections }
-            } catch (err) {
-              console.error(`Failed to fetch notebook ${notebook.id} details:`, err)
-              return { ...notebook, sections: [] }
-            }
-          })
-        )
-        setNotebooks(notebooksWithDetails)
-      } catch (err) {
-        console.error("Failed to fetch notebooks:", err)
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchNotebooks()
-  }, [])
-
-  // デバッグ用: createDialogOpenの状態変化を監視
-  useEffect(() => {
-    console.log("createDialogOpen state changed:", createDialogOpen)
-  }, [createDialogOpen])
-
-  // 直接DOMにイベントリスナーを追加（デバッグ用）
-  useEffect(() => {
-    const button = createButtonRef.current
-    console.log("Button ref:", button)
-    if (!button) {
-      console.log("Button ref is null!")
-      // IDでも試す
-      const buttonById = document.getElementById('create-notebook-button')
-      console.log("Button by ID:", buttonById)
-      return
-    }
-
-    console.log("Adding event listener to button")
-    const handleClick = (e: MouseEvent) => {
-      console.log("Direct DOM event listener fired!", e)
-      e.preventDefault()
-      e.stopPropagation()
-      setCreateDialogOpen(true)
-    }
-
-    button.addEventListener('click', handleClick, true) // capture phase
-    button.addEventListener('mousedown', () => console.log("Direct mousedown"), true)
-    button.addEventListener('mouseup', () => console.log("Direct mouseup"), true)
-
-    return () => {
-      button.removeEventListener('click', handleClick, true)
-    }
-  }, [])
-
-  const handleCreateNotebook = async () => {
-    if (!newNotebook.title.trim()) {
-      alert("タイトルを入力してください")
-      return
-    }
-
-    setCreating(true)
-    try {
-      const created = await apiClient.post<Notebook>("/api/notebooks", {
-        subject_id: newNotebook.subject_id,
-        title: newNotebook.title.trim(),
-        description: newNotebook.description.trim() || null,
-      })
-      
-      // ノートブック一覧を更新
-      setNotebooks(prev => [created, ...prev])
-      
-      // フォームをリセット
-      setNewNotebook({
-        subject_id: 1,
-        title: "",
-        description: "",
-      })
-      
-      // ダイアログを閉じる
-      setCreateDialogOpen(false)
-    } catch (err: any) {
-      console.error("Failed to create notebook:", err)
-      alert(err?.error || "ノートブックの作成に失敗しました")
-    } finally {
-      setCreating(false)
-    }
-  }
-
-  const refreshNotebooks = async () => {
+  // ノートブック一覧を取得
+  const fetchNotebooks = async () => {
     try {
       const data = await apiClient.get<Notebook[]>("/api/notebooks")
       const notebooksWithDetails = await Promise.all(
@@ -183,35 +86,44 @@ function NotesPage() {
             const detail = await apiClient.get<NotebookDetail>(`/api/notebooks/${notebook.id}`)
             return { ...notebook, sections: detail.sections }
           } catch (err) {
-            console.error(`Failed to fetch notebook ${notebook.id} details:`, err)
             return { ...notebook, sections: [] }
           }
         })
       )
       setNotebooks(notebooksWithDetails)
     } catch (err) {
-      console.error("Failed to refresh notebooks:", err)
+      console.error("Failed to fetch notebooks:", err)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const toggleNotebook = (notebookId: number) => {
-    const newExpanded = new Set(expandedNotebooks)
-    if (newExpanded.has(notebookId)) {
-      newExpanded.delete(notebookId)
-    } else {
-      newExpanded.add(notebookId)
-    }
-    setExpandedNotebooks(newExpanded)
-  }
+  useEffect(() => {
+    fetchNotebooks()
+  }, [])
 
-  const toggleSection = (sectionId: number) => {
-    const newExpanded = new Set(expandedSections)
-    if (newExpanded.has(sectionId)) {
-      newExpanded.delete(sectionId)
-    } else {
-      newExpanded.add(sectionId)
+  // ノートブック作成
+  const handleCreateNotebook = async () => {
+    if (!newNotebook.title.trim()) {
+      alert("タイトルを入力してください")
+      return
     }
-    setExpandedSections(newExpanded)
+
+    setCreating(true)
+    try {
+      await apiClient.post<Notebook>("/api/notebooks", {
+        subject_id: newNotebook.subject_id,
+        title: newNotebook.title.trim(),
+        description: newNotebook.description.trim() || null,
+      })
+      await fetchNotebooks()
+      setNewNotebook({ subject_id: 1, title: "", description: "" })
+      setCreateDialogOpen(false)
+    } catch (err: any) {
+      alert(err?.error || "ノートブックの作成に失敗しました")
+    } finally {
+      setCreating(false)
+    }
   }
 
   // ノートブック編集
@@ -238,11 +150,10 @@ function NotesPage() {
         title: newNotebook.title.trim(),
         description: newNotebook.description.trim() || null,
       })
-      await refreshNotebooks()
+      await fetchNotebooks()
       setEditNotebookDialogOpen(false)
       setEditingNotebookData(null)
     } catch (err: any) {
-      console.error("Failed to update notebook:", err)
       alert(err?.error || "ノートブックの更新に失敗しました")
     } finally {
       setEditingNotebook(false)
@@ -255,9 +166,8 @@ function NotesPage() {
 
     try {
       await apiClient.delete(`/api/notebooks/${notebookId}`)
-      await refreshNotebooks()
+      await fetchNotebooks()
     } catch (err: any) {
-      console.error("Failed to delete notebook:", err)
       alert(err?.error || "ノートブックの削除に失敗しました")
     }
   }
@@ -281,11 +191,10 @@ function NotesPage() {
         title: newSection.title.trim(),
         display_order: 0,
       })
-      await refreshNotebooks()
+      await fetchNotebooks()
       setCreateSectionDialogOpen(false)
       setNewSection({ notebook_id: 0, title: "" })
     } catch (err: any) {
-      console.error("Failed to create section:", err)
       alert(err?.error || "セクションの作成に失敗しました")
     } finally {
       setCreatingSection(false)
@@ -310,11 +219,10 @@ function NotesPage() {
       await apiClient.put(`/api/note-sections/${editingSectionData.id}`, {
         title: newSection.title.trim(),
       })
-      await refreshNotebooks()
+      await fetchNotebooks()
       setEditSectionDialogOpen(false)
       setEditingSectionData(null)
     } catch (err: any) {
-      console.error("Failed to update section:", err)
       alert(err?.error || "セクションの更新に失敗しました")
     } finally {
       setEditingSection(false)
@@ -327,9 +235,8 @@ function NotesPage() {
 
     try {
       await apiClient.delete(`/api/note-sections/${sectionId}`)
-      await refreshNotebooks()
+      await fetchNotebooks()
     } catch (err: any) {
-      console.error("Failed to delete section:", err)
       alert(err?.error || "セクションの削除に失敗しました")
     }
   }
@@ -354,11 +261,10 @@ function NotesPage() {
         content: newPage.content?.trim() || null,
         display_order: 0,
       })
-      await refreshNotebooks()
+      await fetchNotebooks()
       setCreatePageDialogOpen(false)
       setNewPage({ section_id: 0, title: "", content: "" })
     } catch (err: any) {
-      console.error("Failed to create page:", err)
       alert(err?.error || "ページの作成に失敗しました")
     } finally {
       setCreatingPage(false)
@@ -385,11 +291,10 @@ function NotesPage() {
         title: newPage.title?.trim() || null,
         content: newPage.content?.trim() || null,
       })
-      await refreshNotebooks()
+      await fetchNotebooks()
       setEditPageDialogOpen(false)
       setEditingPageData(null)
     } catch (err: any) {
-      console.error("Failed to update page:", err)
       alert(err?.error || "ページの更新に失敗しました")
     } finally {
       setEditingPage(false)
@@ -402,11 +307,30 @@ function NotesPage() {
 
     try {
       await apiClient.delete(`/api/note-pages/${pageId}`)
-      await refreshNotebooks()
+      await fetchNotebooks()
     } catch (err: any) {
-      console.error("Failed to delete page:", err)
       alert(err?.error || "ページの削除に失敗しました")
     }
+  }
+
+  const toggleNotebook = (notebookId: number) => {
+    const newExpanded = new Set(expandedNotebooks)
+    if (newExpanded.has(notebookId)) {
+      newExpanded.delete(notebookId)
+    } else {
+      newExpanded.add(notebookId)
+    }
+    setExpandedNotebooks(newExpanded)
+  }
+
+  const toggleSection = (sectionId: number) => {
+    const newExpanded = new Set(expandedSections)
+    if (newExpanded.has(sectionId)) {
+      newExpanded.delete(sectionId)
+    } else {
+      newExpanded.add(sectionId)
+    }
+    setExpandedSections(newExpanded)
   }
 
   return (
@@ -423,37 +347,11 @@ function NotesPage() {
             <h1 className="text-4xl font-bold mb-2">📓 ノート</h1>
             <p className="text-muted-foreground text-lg">OneNote風のノート管理</p>
           </div>
-          <div className="flex items-center gap-4" onClick={(e) => {
-            console.log("Parent div clicked", e.target)
-          }}>
-            <button
-              ref={createButtonRef}
-              type="button"
-              onMouseDown={(e) => {
-                console.log("Button onMouseDown fired")
-                e.preventDefault()
-                e.stopPropagation()
-              }}
-              onMouseUp={(e) => {
-                console.log("Button onMouseUp fired")
-                e.preventDefault()
-                e.stopPropagation()
-              }}
-              onClick={(e) => {
-                console.log("Button onClick fired")
-                e.preventDefault()
-                e.stopPropagation()
-                setCreateDialogOpen(true)
-              }}
-              onPointerDown={(e) => {
-                console.log("Button onPointerDown fired")
-              }}
-              className="inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 cursor-pointer"
-              style={{ position: 'relative', zIndex: 10, pointerEvents: 'auto' }}
-            >
+          <div className="flex items-center gap-4">
+            <Button onClick={() => setCreateDialogOpen(true)}>
               <Plus className="h-4 w-4 mr-2" />
               新しいノートブック
-            </button>
+            </Button>
             <SidebarToggle />
           </div>
         </div>
@@ -469,65 +367,39 @@ function NotesPage() {
             ) : notebooks.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-muted-foreground mb-4">ノートブックがありません</p>
-                <button
-                  type="button"
-                  onMouseDown={(e) => {
-                    console.log("Empty state button onMouseDown fired")
-                    e.preventDefault()
-                    e.stopPropagation()
-                  }}
-                  onMouseUp={(e) => {
-                    console.log("Empty state button onMouseUp fired")
-                    e.preventDefault()
-                    e.stopPropagation()
-                  }}
-                  onClick={(e) => {
-                    console.log("Empty state button onClick fired")
-                    e.preventDefault()
-                    e.stopPropagation()
-                    setCreateDialogOpen(true)
-                  }}
-                  onPointerDown={(e) => {
-                    console.log("Empty state button onPointerDown fired")
-                  }}
-                  className="inline-flex items-center justify-center whitespace-nowrap rounded-lg text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 cursor-pointer"
-                  style={{ pointerEvents: 'auto' }}
-                >
+                <Button onClick={() => setCreateDialogOpen(true)}>
                   <Plus className="h-4 w-4 mr-2" />
                   最初のノートブックを作成
-                </button>
+                </Button>
               </div>
             ) : (
               <div className="space-y-2">
                 {notebooks.map((notebook) => (
                   <div key={notebook.id} className="border rounded-lg">
-                    <button
-                      onClick={() => toggleNotebook(notebook.id)}
-                      className="w-full flex items-center gap-2 p-4 hover:bg-muted/50 transition-colors text-left"
-                    >
-                      {expandedNotebooks.has(notebook.id) ? (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      )}
-                      <Folder className="h-5 w-5 text-primary" />
-                      <div className="flex-1">
-                        <h3 className="font-semibold">{notebook.title}</h3>
-                        {notebook.description && (
-                          <p className="text-sm text-muted-foreground">{notebook.description}</p>
+                    <div className="flex items-center gap-2 p-4">
+                      <button
+                        onClick={() => toggleNotebook(notebook.id)}
+                        className="flex-1 flex items-center gap-2 text-left hover:bg-muted/50 transition-colors rounded p-2 -m-2"
+                      >
+                        {expandedNotebooks.has(notebook.id) ? (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
                         )}
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {SUBJECT_MAP[notebook.subject_id]}
-                        </p>
-                      </div>
+                        <Folder className="h-5 w-5 text-primary" />
+                        <div className="flex-1">
+                          <h3 className="font-semibold">{notebook.title}</h3>
+                          {notebook.description && (
+                            <p className="text-sm text-muted-foreground">{notebook.description}</p>
+                          )}
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {SUBJECT_MAP[notebook.subject_id]}
+                          </p>
+                        </div>
+                      </button>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0"
-                            onClick={(e) => e.stopPropagation()}
-                          >
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
                             <MoreVertical className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -545,7 +417,7 @@ function NotesPage() {
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                    </button>
+                    </div>
                     {expandedNotebooks.has(notebook.id) && (
                       <div className="pl-8 pr-4 pb-4 space-y-1">
                         <div className="flex items-center justify-between mb-2">
@@ -675,13 +547,7 @@ function NotesPage() {
         </Card>
 
         {/* 新規作成ダイアログ */}
-        <Dialog 
-          open={createDialogOpen} 
-          onOpenChange={(open) => {
-            console.log("Dialog onOpenChange:", open)
-            setCreateDialogOpen(open)
-          }}
-        >
+        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>新しいノートブックを作成</DialogTitle>
@@ -914,16 +780,13 @@ function NotesPage() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="page-content">内容（Markdown形式）</Label>
-                <Textarea
-                  id="page-content"
-                  value={newPage.content}
-                  onChange={(e) =>
-                    setNewPage(prev => ({ ...prev, content: e.target.value }))
+                <Label htmlFor="page-content">内容</Label>
+                <RichTextEditor
+                  content={newPage.content || ""}
+                  onChange={(content) =>
+                    setNewPage(prev => ({ ...prev, content }))
                   }
-                  placeholder="ページの内容を入力（Markdown形式）"
-                  rows={10}
-                  className="font-mono text-sm"
+                  placeholder="ページの内容を入力"
                 />
               </div>
             </div>
