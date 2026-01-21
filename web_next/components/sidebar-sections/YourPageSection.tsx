@@ -94,7 +94,7 @@ function YourPageSectionInner() {
   const currentSelectedDate = searchParams.get("date") || getStudyDate()
 
   return (
-    <div className="space-y-1 pt-2 border-t border-blue-200/40">
+    <div className="space-y-1 pt-2 border-t border-orange-200/40">
       {/* サブメニュー - 改善されたスタイル */}
       <div className="space-y-px">
         {yourPageNav.map((item) => {
@@ -117,8 +117,8 @@ function YourPageSectionInner() {
                 className={cn(
                   "group flex w-full items-center gap-2.5 px-2 py-1.5 rounded-lg transition-all duration-200",
                   isActive
-                    ? "bg-gradient-to-r from-blue-50/90 to-cyan-50/60"
-                    : "hover:bg-blue-50/40"
+                    ? "bg-gradient-to-r from-orange-50/90 to-amber-50/60"
+                    : "hover:bg-orange-50/40"
                 )}
               >
                 {/* おしゃれなアイコンラッパー */}
@@ -126,15 +126,15 @@ function YourPageSectionInner() {
                   className={cn(
                     "relative flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-all duration-200",
                     isActive
-                      ? "bg-gradient-to-br from-blue-100 to-cyan-100 shadow-sm"
-                      : "bg-slate-100/80 group-hover:bg-blue-100/60"
+                      ? "bg-gradient-to-br from-orange-100 to-amber-100 shadow-sm"
+                      : "bg-slate-100/80 group-hover:bg-orange-100/60"
                   )}
                 >
                   {/* 背景のアクセント */}
                   <div
                     className={cn(
                       "absolute inset-0 rounded-md opacity-0 transition-opacity duration-200",
-                      "bg-gradient-to-br from-blue-200/50 to-cyan-200/30",
+                      "bg-gradient-to-br from-orange-200/50 to-rose-200/30",
                       isActive && "opacity-100"
                     )}
                   />
@@ -142,8 +142,8 @@ function YourPageSectionInner() {
                     className={cn(
                       "relative h-3 w-3 transition-all duration-200",
                       isActive
-                        ? "text-blue-600"
-                        : "text-slate-400 group-hover:text-blue-500 group-hover:scale-110"
+                        ? "text-orange-600"
+                        : "text-slate-400 group-hover:text-orange-500 group-hover:scale-110"
                     )}
                   />
                 </div>
@@ -151,7 +151,7 @@ function YourPageSectionInner() {
                   className={cn(
                     "text-[11px] truncate transition-colors",
                     isActive
-                      ? "text-blue-700 font-medium"
+                      ? "text-orange-700 font-medium"
                       : "text-slate-500 group-hover:text-slate-600"
                   )}
                 >
@@ -162,8 +162,8 @@ function YourPageSectionInner() {
                   className={cn(
                     "ml-auto h-1.5 w-1.5 rounded-full transition-all duration-200",
                     isActive
-                      ? "bg-gradient-to-r from-blue-400 to-cyan-400 opacity-100"
-                      : "bg-blue-300 opacity-0 group-hover:opacity-50"
+                      ? "bg-gradient-to-r from-orange-400 to-rose-400 opacity-100"
+                      : "bg-orange-300 opacity-0 group-hover:opacity-50"
                   )}
                 />
               </Link>
@@ -171,7 +171,7 @@ function YourPageSectionInner() {
               {/* Dashboard用の折りたたみエリア */}
               {isDashboard && isYourPageActive && (
                 <Collapsible open={isDateListOpen} onOpenChange={setIsDateListOpen} className="ml-4">
-                  <CollapsibleTrigger className="flex w-full items-center gap-1.5 px-2 py-1 text-[10px] text-slate-400 hover:text-blue-500 transition-colors">
+                  <CollapsibleTrigger className="flex w-full items-center gap-1.5 px-2 py-1 text-[10px] text-slate-400 hover:text-orange-500 transition-colors">
                     <ChevronDown className={cn("h-2.5 w-2.5 transition-transform", isDateListOpen && "rotate-180")} />
                     <span>過去5日分</span>
                   </CollapsibleTrigger>
@@ -186,8 +186,8 @@ function YourPageSectionInner() {
                             className={cn(
                               "w-full text-left px-2 py-0.5 text-[10px] rounded transition-all duration-150",
                               isSelected
-                                ? "bg-blue-100 text-blue-600 font-medium"
-                                : "text-slate-400 hover:bg-blue-50 hover:text-blue-500"
+                                ? "bg-orange-100 text-orange-600 font-medium"
+                                : "text-slate-400 hover:bg-orange-50 hover:text-orange-500"
                             )}
                           >
                             {option.label}
@@ -202,7 +202,7 @@ function YourPageSectionInner() {
               {/* Your Notes用の折りたたみエリア */}
               {isSubjectsNavItem && (
                 <Collapsible open={isRecentNotePagesOpen} onOpenChange={setIsRecentNotePagesOpen} className="ml-4">
-                  <CollapsibleTrigger className="flex w-full items-center gap-1.5 px-2 py-1 text-[10px] text-slate-400 hover:text-blue-500 transition-colors">
+                  <CollapsibleTrigger className="flex w-full items-center gap-1.5 px-2 py-1 text-[10px] text-slate-400 hover:text-orange-500 transition-colors">
                     <ChevronDown className={cn("h-2.5 w-2.5 transition-transform", isRecentNotePagesOpen && "rotate-180")} />
                     <StickyNote className="h-2.5 w-2.5" />
                     <span>直近閲覧</span>
@@ -227,8 +227,8 @@ function YourPageSectionInner() {
                               className={cn(
                                 "flex items-center gap-1.5 px-2 py-1 rounded text-[10px] transition-all duration-150 group/note",
                                 isSelected
-                                  ? "bg-blue-50 text-blue-600"
-                                  : "text-slate-400 hover:bg-blue-50/50 hover:text-slate-500"
+                                  ? "bg-orange-50 text-orange-600"
+                                  : "text-slate-400 hover:bg-orange-50/50 hover:text-slate-500"
                               )}
                               title={`${item.subject} / ${item.title || "無題"}`}
                             >
@@ -236,8 +236,8 @@ function YourPageSectionInner() {
                                 className={cn(
                                   "h-1 w-1 rounded-full shrink-0 transition-colors",
                                   isSelected
-                                    ? "bg-blue-400"
-                                    : "bg-slate-300 group-hover/note:bg-blue-300"
+                                    ? "bg-orange-400"
+                                    : "bg-slate-300 group-hover/note:bg-orange-300"
                                 )}
                               />
                               <span className="truncate">{item.title || "無題"}</span>
