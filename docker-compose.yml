@@ -27,8 +27,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 5
+      start_period: 90s
     # ports公開しない（内部ネットワークのみアクセス可能）
 
   # Next.js（フロントエンド）- 本番用
