@@ -955,6 +955,9 @@ class RecentReviewProblemSession(Base):
     prompt_version = Column(String(50), nullable=True)
     llm_raw_output = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
+    
+    # Candidateプール（同日再生成用）
+    candidate_pool_json = Column(Text, nullable=True)
 
     # success / failed
     status = Column(String(20), nullable=False, default="success", index=True)
@@ -1044,6 +1047,41 @@ class SavedReviewProblem(Base):
         UniqueConstraint("user_id", "source_problem_id", name="uq_saved_review_problem_user_source"),
         CheckConstraint("subject_id IS NULL OR (subject_id BETWEEN 1 AND 18)", name="ck_saved_review_problem_subject"),
         Index("idx_saved_review_problem_user_created", "user_id", "created_at"),
+    )
+
+
+class ContentUse(Base):
+    """
+    復習問題生成で使用したコンテンツの履歴
+    
+    - 過去にLLMへ投入したCandidate（コンテンツ）を記録し、再利用しない
+    - 「古くなったら自然に効かなくなる（TTL参照）」方式だが、DB節約のため14日レベル古くなったものは自動削除
+    """
+    __tablename__ = "content_uses"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    # Candidateのcontent_date（ソースの日付）
+    content_date = Column(String(10), nullable=False, index=True)
+    
+    # セッションID（nullable: 将来の拡張用）
+    session_id = Column(Integer, ForeignKey("recent_review_problem_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
+    
+    # 使用日時
+    used_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    
+    # Candidateの識別情報
+    source_type = Column(String(50), nullable=False, index=True)
+    source_id = Column(BigInteger().with_variant(Integer, "sqlite"), nullable=False, index=True)
+    sub_id = Column(Integer, nullable=True)
+    
+    __table_args__ = (
+        # 除外チェック用インデックス
+        Index("idx_content_uses_user_source", "user_id", "source_type", "source_id", "sub_id"),
+        # 自動削除用インデックス
+        Index("idx_content_uses_user_used", "user_id", "used_at"),
+        Index("idx_content_uses_date_used", "content_date", "used_at"),
     )
 
 

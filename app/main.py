@@ -8,6 +8,7 @@ from sqlalchemy import or_, cast, String, func
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
 import uuid
 from zoneinfo import ZoneInfo
 
@@ -23,7 +24,7 @@ from .models import (
     Thread, Message, LlmRequest,
     UserPreference, UserDashboard, UserDashboardHistory, UserReviewHistory,
     DashboardItem, Subject, OfficialQuestion,
-    RecentReviewProblemSession, RecentReviewProblem, SavedReviewProblem,
+    RecentReviewProblemSession, RecentReviewProblem, SavedReviewProblem, ContentUse,
     TimerSession, TimerDailyChunk, TimerDailyStats,
     StudyTag, StudyItem as StudyItemModel
 )
@@ -3134,6 +3135,22 @@ async def reorder_dashboard_item(
 RECENT_REVIEW_DAILY_LIMIT = 5
 
 
+# ============================================================================
+# Candidate定義と取得ロジック
+# ============================================================================
+
+@dataclass
+class Candidate:
+    """復習問題生成の候補コンテンツ"""
+    source_type: str
+    source_id: int
+    sub_id: Optional[int]
+    content_date: str  # YYYY-MM-DD（ソースの日付）
+    subject_id: Optional[int]
+    content: str
+    priority_score: float = 0.0
+
+
 def _get_current_study_date_4am() -> str:
     return get_study_date_4am(datetime.now(ZoneInfo("UTC")))
 
@@ -3226,6 +3243,590 @@ def _safe_review_eval_subset(review_json_obj: dict) -> dict:
         "future_considerations": future_considerations,
     }
     return subset
+
+
+# ============================================================================
+# Candidate取得関数
+# ============================================================================
+
+def _fetch_dashboard_item_candidates(
+    db: Session, user_id: int, study_date: str, limit: int = 50
+) -> list[Candidate]:
+    """DashboardItemからCandidateを取得"""
+    # 前日〜5日前（当日は含めない）
+    ymds = _get_recent_ymds(study_date, 5)[1:]  # 最初の要素（当日）を除外
+    
+    items = (
+        db.query(DashboardItem)
+        .filter(
+            DashboardItem.user_id == user_id,
+            DashboardItem.deleted_at.is_(None),
+            DashboardItem.dashboard_date.in_(ymds),
+            ~((DashboardItem.entry_type == 2) & (DashboardItem.status.in_([1, 4])))  # Taskかつ未了/後でを除外
+        )
+        .order_by(DashboardItem.dashboard_date.asc(), DashboardItem.position.asc())  # 古い順
+        .limit(limit)
+        .all()
+    )
+    
+    candidates = []
+    for item in items:
+        content = item.item
+        if item.memo:
+            content = f"{item.item}\n{item.memo}"
+        
+        candidates.append(Candidate(
+            source_type="dashboard_item",
+            source_id=item.id,
+            sub_id=None,
+            content_date=item.dashboard_date,
+            subject_id=_normalize_subject_id(item.subject),
+            content=content
+        ))
+    
+    return candidates
+
+
+def _fetch_review_candidates(
+    db: Session, user_id: int, study_date: str, limit: int = 3
+) -> list[Candidate]:
+    """ReviewからCandidateを取得"""
+    # 過去2週間（当日を含む）
+    fourteen_days_ago = datetime.now(ZoneInfo("UTC")) - timedelta(days=14)
+    
+    reviews = (
+        db.query(Review)
+        .filter(
+            Review.user_id == user_id,
+            Review.created_at >= fourteen_days_ago
+        )
+        .order_by(Review.created_at.asc())  # 古い順
+        .limit(limit)
+        .all()
+    )
+    
+    candidates = []
+    for review in reviews:
+        try:
+            review_json_obj = json.loads(review.kouhyo_kekka) if isinstance(review.kouhyo_kekka, str) else (review.kouhyo_kekka or {})
+        except Exception:
+            review_json_obj = {}
+        
+        hist = db.query(UserReviewHistory).filter(UserReviewHistory.review_id == review.id).first()
+        subject_id = _normalize_subject_id(hist.subject if hist else None)
+        eval_subset = _safe_review_eval_subset(review_json_obj)
+        
+        # 1答案につき最大5件
+        # review_weaknessの1,2、review_importantの1,2、review_futureの1を取得
+        selected_items = []
+        
+        # weaknesses
+        for w in eval_subset.get("weaknesses", [])[:2]:
+            if w.get("block_number") in [1, 2]:
+                selected_items.append(("review_weakness", w.get("block_number"), w.get("description", "")))
+        
+        # important_points
+        for ip in eval_subset.get("important_points", [])[:2]:
+            if ip.get("block_number") in [1, 2]:
+                selected_items.append(("review_important", ip.get("block_number"), ip.get("what_is_lacking", "")))
+        
+        # future_considerations
+        for fc in eval_subset.get("future_considerations", [])[:1]:
+            if fc.get("block_number") == 1:
+                content = fc.get("content", "") if isinstance(fc.get("content"), str) else ""
+                selected_items.append(("review_future", fc.get("block_number"), content))
+        
+        # 5件に足りない場合は順次追加
+        if len(selected_items) < 5:
+            # weaknessesから追加
+            for w in eval_subset.get("weaknesses", []):
+                if len(selected_items) >= 5:
+                    break
+                if (w.get("block_number"), w.get("description", "")) not in [(item[1], item[2]) for item in selected_items]:
+                    selected_items.append(("review_weakness", w.get("block_number"), w.get("description", "")))
+            
+            # important_pointsから追加
+            for ip in eval_subset.get("important_points", []):
+                if len(selected_items) >= 5:
+                    break
+                if (ip.get("block_number"), ip.get("what_is_lacking", "")) not in [(item[1], item[2]) for item in selected_items]:
+                    selected_items.append(("review_important", ip.get("block_number"), ip.get("what_is_lacking", "")))
+            
+            # future_considerationsから追加
+            for fc in eval_subset.get("future_considerations", []):
+                if len(selected_items) >= 5:
+                    break
+                content = fc.get("content", "") if isinstance(fc.get("content"), str) else ""
+                if (fc.get("block_number"), content) not in [(item[1], item[2]) for item in selected_items]:
+                    selected_items.append(("review_future", fc.get("block_number"), content))
+        
+        # Candidate生成
+        for source_type, block_number, content_text in selected_items[:5]:
+            candidates.append(Candidate(
+                source_type=source_type,
+                source_id=review.id,
+                sub_id=block_number,
+                content_date=review.created_at.date().isoformat() if review.created_at else study_date,
+                subject_id=subject_id,
+                content=content_text
+            ))
+    
+    return candidates
+
+
+def _fetch_review_thread_candidates(
+    db: Session, user_id: int, study_date: str, limit: int = 3
+) -> list[Candidate]:
+    """ReviewThreadからCandidateを取得"""
+    # 過去2週間（当日は含めない）
+    fourteen_days_ago = datetime.now(ZoneInfo("UTC")) - timedelta(days=14)
+    study_dt = datetime.strptime(study_date, "%Y-%m-%d").replace(tzinfo=ZoneInfo("UTC"))
+    today_4am = study_dt.replace(hour=4, minute=0, second=0, microsecond=0)
+    
+    threads = (
+        db.query(Thread)
+        .filter(
+            Thread.user_id == user_id,
+            Thread.type == "review_chat",
+            Thread.last_message_at >= fourteen_days_ago,
+            Thread.last_message_at < today_4am
+        )
+        .order_by(Thread.last_message_at.asc())  # 古い順
+        .limit(limit)
+        .all()
+    )
+    
+    candidates = []
+    for thread in threads:
+        # role='user'のメッセージを取得
+        messages = (
+            db.query(Message)
+            .filter(
+                Message.thread_id == thread.id,
+                Message.role == "user"
+            )
+            .order_by(Message.created_at.asc())
+            .all()
+        )
+        
+        if not messages:
+            continue
+        
+        # 3件以上: 最初/真ん中/最後、3件未満: 1件のみ
+        if len(messages) >= 3:
+            selected_messages = [
+                messages[0],
+                messages[len(messages) // 2],
+                messages[-1]
+            ]
+        else:
+            selected_messages = [messages[0]]
+        
+        # 各メッセージ200文字まで（先頭）、\nで連結
+        content_parts = []
+        for msg in selected_messages:
+            msg_content = msg.content[:200] if msg.content else ""
+            content_parts.append(msg_content)
+        
+        content = "\n".join(content_parts)
+        
+        candidates.append(Candidate(
+            source_type="review_thread",
+            source_id=thread.id,
+            sub_id=None,
+            content_date=thread.last_message_at.date().isoformat() if thread.last_message_at else study_date,
+            subject_id=None,
+            content=content
+        ))
+    
+    return candidates
+
+
+def _fetch_free_thread_candidates(
+    db: Session, user_id: int, study_date: str, limit: int = 3
+) -> list[Candidate]:
+    """FreeThreadからCandidateを取得"""
+    # 過去2週間（当日は含めない）
+    fourteen_days_ago = datetime.now(ZoneInfo("UTC")) - timedelta(days=14)
+    study_dt = datetime.strptime(study_date, "%Y-%m-%d").replace(tzinfo=ZoneInfo("UTC"))
+    today_4am = study_dt.replace(hour=4, minute=0, second=0, microsecond=0)
+    
+    threads = (
+        db.query(Thread)
+        .filter(
+            Thread.user_id == user_id,
+            Thread.type == "free_chat",
+            Thread.last_message_at >= fourteen_days_ago,
+            Thread.last_message_at < today_4am
+        )
+        .order_by(Thread.last_message_at.asc())  # 古い順
+        .limit(limit)
+        .all()
+    )
+    
+    candidates = []
+    for thread in threads:
+        # role='user'のメッセージを取得
+        messages = (
+            db.query(Message)
+            .filter(
+                Message.thread_id == thread.id,
+                Message.role == "user"
+            )
+            .order_by(Message.created_at.asc())
+            .all()
+        )
+        
+        if not messages:
+            continue
+        
+        # 3件以上: 最初/真ん中/最後、3件未満: 1件のみ
+        if len(messages) >= 3:
+            selected_messages = [
+                messages[0],
+                messages[len(messages) // 2],
+                messages[-1]
+            ]
+        else:
+            selected_messages = [messages[0]]
+        
+        # 各メッセージ200文字まで（先頭）、\nで連結
+        content_parts = []
+        for msg in selected_messages:
+            msg_content = msg.content[:200] if msg.content else ""
+            content_parts.append(msg_content)
+        
+        content = "\n".join(content_parts)
+        
+        candidates.append(Candidate(
+            source_type="free_thread",
+            source_id=thread.id,
+            sub_id=None,
+            content_date=thread.last_message_at.date().isoformat() if thread.last_message_at else study_date,
+            subject_id=None,
+            content=content
+        ))
+    
+    return candidates
+
+
+def _fetch_note_candidates(
+    db: Session, user_id: int, study_date: str, limit: int = 3
+) -> list[Candidate]:
+    """NoteからCandidateを取得"""
+    # 前日〜5日前の範囲（当日は含めない）
+    study_dt = datetime.strptime(study_date, "%Y-%m-%d").replace(tzinfo=ZoneInfo("UTC"))
+    today_4am = study_dt.replace(hour=4, minute=0, second=0, microsecond=0)
+    yesterday_4am = today_4am - timedelta(days=1)
+    five_days_ago_4am = today_4am - timedelta(days=5)
+    
+    note_pages = (
+        db.query(NotePage)
+        .join(NoteSection)
+        .join(Notebook)
+        .filter(
+            Notebook.user_id == user_id,
+            NotePage.updated_at >= five_days_ago_4am,
+            NotePage.updated_at < yesterday_4am
+        )
+        .order_by(NotePage.updated_at.asc())  # 古い順
+        .limit(limit)
+        .all()
+    )
+    
+    candidates = []
+    for note_page in note_pages:
+        content = note_page.content[:500] if note_page.content else ""
+        if not content:
+            continue
+        
+        # NotePage → NoteSection → Notebook経由でsubject_idを取得
+        subject_id = None
+        if note_page.section and note_page.section.notebook:
+            subject_id = _normalize_subject_id(note_page.section.notebook.subject_id)
+        
+        candidates.append(Candidate(
+            source_type="note",
+            source_id=note_page.id,
+            sub_id=None,
+            content_date=note_page.updated_at.date().isoformat() if note_page.updated_at else study_date,
+            subject_id=subject_id,
+            content=content
+        ))
+    
+    return candidates
+
+
+def _build_candidate_pool(db: Session, user_id: int, study_date: str) -> list[Candidate]:
+    """全ソースタイプからCandidateプールを構築"""
+    candidates = []
+    
+    # 各ソースタイプから取得
+    candidates.extend(_fetch_dashboard_item_candidates(db, user_id, study_date))
+    candidates.extend(_fetch_review_candidates(db, user_id, study_date))
+    candidates.extend(_fetch_review_thread_candidates(db, user_id, study_date))
+    candidates.extend(_fetch_free_thread_candidates(db, user_id, study_date))
+    candidates.extend(_fetch_note_candidates(db, user_id, study_date))
+    
+    return candidates
+
+
+# ============================================================================
+# 優先度スコア計算とフィルタリング
+# ============================================================================
+
+def _calculate_priority_score(candidate: Candidate, study_date: str) -> float:
+    """Candidateの優先度スコアを計算"""
+    base_score = 100.0
+    
+    # 日付をdatetimeオブジェクトに変換
+    study_dt = datetime.strptime(study_date, "%Y-%m-%d").date()
+    content_dt = datetime.strptime(candidate.content_date, "%Y-%m-%d").date()
+    
+    # 日付の古さ（古いほど高スコア）
+    date_diff = (study_dt - content_dt).days
+    if date_diff < 0:
+        date_score = 0.0  # 未来の日付は最低スコア
+    elif date_diff == 0:
+        # Reviewのみ当日を含む（他のソースタイプは当日を含めないためここには来ない）
+        date_score = 100.0  # 当日（Reviewのみ）
+    elif date_diff <= 1:
+        date_score = 90.0   # 1日前
+    elif date_diff <= 2:
+        date_score = 80.0   # 2日前
+    elif date_diff <= 3:
+        date_score = 70.0   # 3日前
+    elif date_diff <= 5:
+        date_score = 60.0   # 4-5日前
+    else:
+        date_score = 50.0   # それ以上（古いほど高スコア）
+    
+    # ソースタイプによる重み付け
+    type_weights = {
+        "dashboard_item": 1.0,
+        "review_weakness": 1.2,
+        "review_important": 1.1,
+        "review_future": 1.0,
+        "review_thread": 0.9,
+        "free_thread": 0.8,
+        "note": 0.9,
+    }
+    type_weight = type_weights.get(candidate.source_type, 1.0)
+    
+    priority_score = base_score * (date_score / 100.0) * type_weight
+    return priority_score
+
+
+def _sort_candidates_by_priority(candidates: list[Candidate]) -> list[Candidate]:
+    """優先度スコアの降順でソート（古い方が優先）"""
+    return sorted(candidates, key=lambda c: c.priority_score, reverse=True)
+
+
+def _apply_final_selection_filter(candidates: list[Candidate]) -> list[Candidate]:
+    """
+    優先度順にソート済みの候補から、以下の優先順位で選択：
+    1. dashboard_itemから2問（優先度順）
+    2. review系から1問（優先度順）
+    3. noteから1問（優先度順）
+    4. 合計5件に満たない場合は、全体の優先度順で補充
+    """
+    selected = []
+    
+    # 1. dashboard_itemから2問
+    dashboard_items = [c for c in candidates if c.source_type == "dashboard_item"]
+    selected.extend(dashboard_items[:2])
+    
+    # 2. review系から1問
+    review_items = [c for c in candidates if c.source_type in ["review_weakness", "review_important", "review_future"]]
+    if review_items and len(selected) < 5:
+        selected.append(review_items[0])
+    
+    # 3. noteから1問
+    note_items = [c for c in candidates if c.source_type == "note"]
+    if note_items and len(selected) < 5:
+        selected.append(note_items[0])
+    
+    # 4. 残りを優先度順で補充
+    remaining = [c for c in candidates if c not in selected]
+    selected.extend(remaining[:5 - len(selected)])
+    
+    return selected[:5]
+
+
+# ============================================================================
+# content_uses除外ロジックとフォールバック処理
+# ============================================================================
+
+def _cleanup_old_content_uses(db: Session, days: int = 14) -> None:
+    """14日以上古いcontent_usesを削除"""
+    cutoff = datetime.now(ZoneInfo("UTC")) - timedelta(days=days)
+    db.query(ContentUse).filter(ContentUse.used_at < cutoff).delete()
+    db.flush()
+
+
+def _get_used_candidate_keys(db: Session, user_id: int) -> set[tuple]:
+    """使用済みCandidateのキーセットを取得（自動削除も実行）"""
+    # 古いレコードを削除
+    _cleanup_old_content_uses(db, days=14)
+    
+    # 使用済みキーを取得
+    used = (
+        db.query(ContentUse.source_type, ContentUse.source_id, ContentUse.sub_id)
+        .filter(ContentUse.user_id == user_id)
+        .all()
+    )
+    return {(u.source_type, u.source_id, u.sub_id) for u in used}
+
+
+def _filter_unused_candidates(
+    candidates: list[Candidate], used_keys: set[tuple]
+) -> list[Candidate]:
+    """使用済みCandidateを除外"""
+    return [
+        c for c in candidates
+        if (c.source_type, c.source_id, c.sub_id) not in used_keys
+    ]
+
+
+def _ensure_sufficient_candidates(
+    db: Session, user_id: int, study_date: str,
+    candidates: list[Candidate], used_keys: set[tuple], min_count: int = 5
+) -> list[Candidate]:
+    """
+    候補が5件未満の場合のフォールバック処理
+    1. 取得制限の緩和（優先）
+    2. 重複許容モード（最後の手段）
+    """
+    if len(candidates) >= min_count:
+        return candidates
+    
+    # 1. 取得制限の緩和
+    expanded_candidates = []
+    
+    # Dashboard: 50→100件
+    expanded_candidates.extend(_fetch_dashboard_item_candidates(db, user_id, study_date, limit=100))
+    
+    # Review: 3→5件
+    expanded_candidates.extend(_fetch_review_candidates(db, user_id, study_date, limit=5))
+    
+    # Thread: 3→5スレッド
+    expanded_candidates.extend(_fetch_review_thread_candidates(db, user_id, study_date, limit=5))
+    expanded_candidates.extend(_fetch_free_thread_candidates(db, user_id, study_date, limit=5))
+    
+    # Note: 3→5件
+    expanded_candidates.extend(_fetch_note_candidates(db, user_id, study_date, limit=5))
+    
+    # 優先度計算と除外処理
+    for c in expanded_candidates:
+        c.priority_score = _calculate_priority_score(c, study_date)
+    
+    expanded_candidates = _sort_candidates_by_priority(expanded_candidates)
+    expanded_candidates = _filter_unused_candidates(expanded_candidates, used_keys)
+    
+    if len(expanded_candidates) >= min_count:
+        return expanded_candidates
+    
+    # 2. 重複許容モード（最後の手段）
+    # 14日除外を部分的に解除（3日のみ除外）
+    three_days_ago = datetime.now(ZoneInfo("UTC")) - timedelta(days=3)
+    relaxed_used = (
+        db.query(ContentUse.source_type, ContentUse.source_id, ContentUse.sub_id)
+        .filter(
+            ContentUse.user_id == user_id,
+            ContentUse.used_at >= three_days_ago
+        )
+        .all()
+    )
+    relaxed_used_keys = {(u.source_type, u.source_id, u.sub_id) for u in relaxed_used}
+    
+    relaxed_candidates = _filter_unused_candidates(expanded_candidates, relaxed_used_keys)
+    
+    return relaxed_candidates
+
+
+# ============================================================================
+# Candidateプールの保存と読み込み
+# ============================================================================
+
+def _save_candidate_pool(candidates: list[Candidate]) -> str:
+    """CandidateプールをJSON文字列に変換"""
+    # Candidateを辞書に変換（priority_scoreは除外、後で再計算）
+    candidate_dicts = [
+        {
+            "source_type": c.source_type,
+            "source_id": c.source_id,
+            "sub_id": c.sub_id,
+            "content_date": c.content_date,
+            "subject_id": c.subject_id,
+            "content": c.content,
+        }
+        for c in candidates
+    ]
+    return json.dumps(candidate_dicts, ensure_ascii=False)
+
+
+def _load_candidate_pool(pool_json: str) -> list[Candidate]:
+    """JSON文字列からCandidateプールを復元"""
+    try:
+        candidate_dicts = json.loads(pool_json)
+        candidates = [
+            Candidate(
+                source_type=d["source_type"],
+                source_id=d["source_id"],
+                sub_id=d.get("sub_id"),
+                content_date=d["content_date"],
+                subject_id=d.get("subject_id"),
+                content=d["content"],
+                priority_score=0.0  # 後で再計算
+            )
+            for d in candidate_dicts
+        ]
+        return candidates
+    except Exception as e:
+        logger.error(f"Failed to load candidate pool: {e}")
+        return []
+
+
+def _get_candidate_pool_from_session(
+    db: Session, user_id: int, study_date: str
+) -> Optional[list[Candidate]]:
+    """同日の最初のセッション（mode="generate"）からCandidateプールを取得"""
+    session = (
+        db.query(RecentReviewProblemSession)
+        .filter(
+            RecentReviewProblemSession.user_id == user_id,
+            RecentReviewProblemSession.study_date == study_date,
+            RecentReviewProblemSession.mode == "generate"
+        )
+        .order_by(RecentReviewProblemSession.created_at.asc())
+        .first()
+    )
+    
+    if session and session.candidate_pool_json:
+        return _load_candidate_pool(session.candidate_pool_json)
+    
+    return None
+
+
+# ============================================================================
+# content_usesへの登録
+# ============================================================================
+
+def _register_content_uses(
+    db: Session, user_id: int, session_id: int, candidates: list[Candidate]
+) -> None:
+    """選択されたCandidate（最大5件）をcontent_usesに登録"""
+    for candidate in candidates[:5]:
+        content_use = ContentUse(
+            user_id=user_id,
+            content_date=candidate.content_date,
+            session_id=session_id,
+            source_type=candidate.source_type,
+            source_id=candidate.source_id,
+            sub_id=candidate.sub_id
+        )
+        db.add(content_use)
+    db.flush()
 
 
 def _format_dashboard_items_for_llm(items: list[DashboardItem]) -> list[dict]:
