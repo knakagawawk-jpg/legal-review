@@ -3691,14 +3691,17 @@ def _filter_unused_candidates(
 def _ensure_sufficient_candidates(
     db: Session, user_id: int, study_date: str,
     candidates: list[Candidate], used_keys: set[tuple], min_count: int = 5
-) -> list[Candidate]:
+) -> tuple[list[Candidate], list[Candidate]]:
     """
     候補が5件未満の場合のフォールバック処理
     1. 取得制限の緩和（優先）
     2. 重複許容モード（最後の手段）
+    
+    Returns:
+        (selected_candidates, expanded_pool): 選択された候補と拡張されたプール全体
     """
     if len(candidates) >= min_count:
-        return candidates
+        return candidates, candidates
     
     # 1. 取得制限の緩和
     expanded_candidates = []
@@ -3721,10 +3724,10 @@ def _ensure_sufficient_candidates(
         c.priority_score = _calculate_priority_score(c, study_date)
     
     expanded_candidates = _sort_candidates_by_priority(expanded_candidates)
-    expanded_candidates = _filter_unused_candidates(expanded_candidates, used_keys)
+    expanded_candidates_filtered = _filter_unused_candidates(expanded_candidates, used_keys)
     
-    if len(expanded_candidates) >= min_count:
-        return expanded_candidates
+    if len(expanded_candidates_filtered) >= min_count:
+        return expanded_candidates_filtered, expanded_candidates
     
     # 2. 重複許容モード（最後の手段）
     # 14日除外を部分的に解除（3日のみ除外）
@@ -3741,7 +3744,7 @@ def _ensure_sufficient_candidates(
     
     relaxed_candidates = _filter_unused_candidates(expanded_candidates, relaxed_used_keys)
     
-    return relaxed_candidates
+    return relaxed_candidates, expanded_candidates
 
 
 # ============================================================================
@@ -3903,6 +3906,35 @@ def _format_review_chat_threads_for_llm(db: Session, reviews: list[Review]) -> l
     return out
 
 
+def _build_recent_review_prompt_from_candidates(
+    study_date: str, candidates: list[Candidate]
+) -> str:
+    """Candidateリストからプロンプトを生成"""
+    template = _load_prompt_text("recent_review_problems")
+    if not template:
+        raise HTTPException(status_code=500, detail="recent_review_problems prompt not found")
+    
+    # CandidateをJSON形式に変換
+    candidates_json = json.dumps(
+        [
+            {
+                "source_type": c.source_type,
+                "content_date": c.content_date,
+                "subject_id": c.subject_id,
+                "content": c.content,
+            }
+            for c in candidates
+        ],
+        ensure_ascii=False,
+        indent=2
+    )
+    
+    return (
+        template.replace("{STUDY_DATE}", study_date)
+        .replace("{CANDIDATES_JSON}", candidates_json)
+    )
+
+
 def _build_recent_review_prompt(
     *,
     study_date: str,
@@ -3912,6 +3944,7 @@ def _build_recent_review_prompt(
     free_chat_threads_json: str,
     previous_questions_json: str,
 ) -> str:
+    """旧形式（後方互換性のため残す）"""
     template = _load_prompt_text("recent_review_problems")
     if not template:
         raise HTTPException(status_code=500, detail="recent_review_problems prompt not found")
@@ -4036,87 +4069,44 @@ async def create_recent_review_problem_session(
 
     mode = "regenerate" if payload.source_session_id else "generate"
 
-    # previous questions（同日セッションすべて）
-    prev_questions: list[str] = []
-    prev_sessions = (
-        db.query(RecentReviewProblemSession.id)
-        .filter(
-            RecentReviewProblemSession.user_id == current_user.id,
-            RecentReviewProblemSession.study_date == sd,
-            RecentReviewProblemSession.status == "success",
+    # Candidateプール取得/読み込み
+    candidate_pool: Optional[list[Candidate]] = None
+    if mode == "regenerate":
+        # 再生成: 同日の最初のセッションから読み込み
+        candidate_pool = _get_candidate_pool_from_session(db, current_user.id, sd)
+    
+    if candidate_pool is None:
+        # 初回生成または読み込み失敗: 新規にCandidateプールを作成
+        candidate_pool = _build_candidate_pool(db, current_user.id, sd)
+    
+    if not candidate_pool:
+        raise HTTPException(status_code=400, detail="復習問題を生成するためのデータがありません")
+    
+    # 優先度計算
+    for candidate in candidate_pool:
+        candidate.priority_score = _calculate_priority_score(candidate, sd)
+    candidate_pool = _sort_candidates_by_priority(candidate_pool)
+    
+    # 除外処理
+    used_keys = _get_used_candidate_keys(db, current_user.id)
+    candidate_pool = _filter_unused_candidates(candidate_pool, used_keys)
+    
+    # 最終選択フィルター
+    selected_candidates = _apply_final_selection_filter(candidate_pool)
+    
+    # フォールバック: 5件未満の場合
+    expanded_pool = candidate_pool  # フォールバックが発生した場合の拡張プール
+    if len(selected_candidates) < 5:
+        selected_candidates, expanded_pool = _ensure_sufficient_candidates(
+            db, current_user.id, sd, selected_candidates, used_keys, min_count=5
         )
-        .all()
-    )
-    prev_session_ids = [r[0] for r in prev_sessions]
-    if prev_session_ids:
-        prev_probs = (
-            db.query(RecentReviewProblem.question_text)
-            .filter(RecentReviewProblem.session_id.in_(prev_session_ids))
-            .all()
-        )
-        prev_questions = [r[0] for r in prev_probs if r and r[0]]
-
-    # dashboard items（直近4日、最大20件）
-    ymds = _get_recent_ymds(sd, 4)
-    dash_items = (
-        db.query(DashboardItem)
-        .filter(
-            DashboardItem.user_id == current_user.id,
-            DashboardItem.deleted_at.is_(None),
-            DashboardItem.dashboard_date.in_(ymds),
-        )
-        .order_by(DashboardItem.dashboard_date.desc(), DashboardItem.position.asc())
-        .limit(20)
-        .all()
-    )
-
-    # reviews（直近1週間、最大2件）
-    one_week_ago_utc = datetime.now(ZoneInfo("UTC")) - timedelta(days=7)
-    reviews = (
-        db.query(Review)
-        .filter(
-            Review.user_id == current_user.id,
-            Review.created_at >= one_week_ago_utc,
-        )
-        .order_by(Review.created_at.desc())
-        .limit(2)
-        .all()
-    )
-    reviews_payload: list[dict] = []
-    for r in reviews:
-        try:
-            review_json_obj = json.loads(r.kouhyo_kekka) if isinstance(r.kouhyo_kekka, str) else (r.kouhyo_kekka or {})
-        except Exception:
-            review_json_obj = {}
-        hist = db.query(UserReviewHistory).filter(UserReviewHistory.review_id == r.id).first()
-        reviews_payload.append(
-            {
-                "review_id": r.id,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-                "subject_id": _normalize_subject_id(hist.subject if hist else None),
-                "question_title": (hist.question_title if hist else None),
-                "evaluation_subset": _safe_review_eval_subset(review_json_obj),
-            }
-        )
-
-    review_chat_threads_payload = _format_review_chat_threads_for_llm(db, reviews)
-    free_chat_threads_payload = _format_free_chat_threads_for_llm(db, current_user.id)
-
-    dashboard_items_json = json.dumps(_format_dashboard_items_for_llm(dash_items), ensure_ascii=False, indent=2)
-    reviews_json = json.dumps(reviews_payload, ensure_ascii=False, indent=2)
-    review_chat_threads_json = json.dumps(review_chat_threads_payload, ensure_ascii=False, indent=2)
-    free_chat_threads_json = json.dumps(free_chat_threads_payload, ensure_ascii=False, indent=2)
-    previous_questions_json = json.dumps(prev_questions, ensure_ascii=False, indent=2)
-
-    prompt_text = _build_recent_review_prompt(
-        study_date=sd,
-        dashboard_items_json=_truncate_text(dashboard_items_json, limit=12000),
-        reviews_json=_truncate_text(reviews_json, limit=12000),
-        review_chat_threads_json=_truncate_text(review_chat_threads_json, limit=12000),
-        free_chat_threads_json=_truncate_text(free_chat_threads_json, limit=12000),
-        previous_questions_json=_truncate_text(previous_questions_json, limit=8000),
-    )
-
+        # 再度最終選択フィルターを適用
+        selected_candidates = _apply_final_selection_filter(selected_candidates)
+    
+    if len(selected_candidates) < 1:
+        raise HTTPException(status_code=400, detail="十分な復習材料が見つかりませんでした")
+    
+    # セッション作成（status="failed"）
     session = RecentReviewProblemSession(
         user_id=current_user.id,
         study_date=sd,
@@ -4127,10 +4117,23 @@ async def create_recent_review_problem_session(
     db.add(session)
     db.flush()
 
+    # トランザクション開始
     try:
+        # content_uses登録
+        _register_content_uses(db, current_user.id, session.id, selected_candidates)
+        
+        # Candidateプール保存
+        # 初回生成時、またはフォールバックが発生した場合は拡張プールを保存
+        if mode == "generate":
+            # フォールバックが発生した場合は拡張プールを保存（次回の重複を防ぐ）
+            pool_to_save = expanded_pool if len(expanded_pool) > len(candidate_pool) else candidate_pool
+            session.candidate_pool_json = _save_candidate_pool(pool_to_save)
+        
+        # LLM呼び出し
+        prompt_text = _build_recent_review_prompt_from_candidates(sd, selected_candidates)
         items, raw_output, model_name, in_tok, out_tok, request_id, latency_ms = generate_recent_review_problems(prompt_text)
         session.llm_model = model_name
-        session.prompt_version = "recent_review_problems_v1"
+        session.prompt_version = "recent_review_problems_v2"
         session.llm_raw_output = _truncate_text(raw_output or "", limit=16000)
 
         if in_tok is not None or out_tok is not None or request_id:
@@ -4140,7 +4143,7 @@ async def create_recent_review_problem_session(
                     feature_type="recent_review",
                     session_id=session.id,
                     model=model_name,
-                    prompt_version="recent_review_problems_v1",
+                    prompt_version="recent_review_problems_v2",
                     input_tokens=in_tok,
                     output_tokens=out_tok,
                     request_id=request_id,
@@ -4201,6 +4204,8 @@ async def create_recent_review_problem_session(
             problems=p_resps,
         )
     except Exception as e:
+        # ロールバック（content_uses、Candidateプール保存も取り消し）
+        db.rollback()
         session.status = "failed"
         session.error_message = str(e)
         db.commit()
