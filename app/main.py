@@ -3994,73 +3994,73 @@ async def list_recent_review_problem_sessions(
     try:
         sd = (study_date or "").strip() or _get_current_study_date_4am()
 
-    sessions = (
-        db.query(RecentReviewProblemSession)
-        .filter(
-            RecentReviewProblemSession.user_id == current_user.id,
-            RecentReviewProblemSession.study_date == sd,
-        )
-        .order_by(RecentReviewProblemSession.created_at.desc())
-        .all()
-    )
-
-    # problems と saved をまとめて解決
-    all_problem_ids: list[int] = []
-    by_session: dict[int, list[RecentReviewProblem]] = {}
-    for s in sessions:
-        probs = (
-            db.query(RecentReviewProblem)
-            .filter(RecentReviewProblem.session_id == s.id)
-            .order_by(RecentReviewProblem.order_index.asc())
-            .all()
-        )
-        by_session[s.id] = probs
-        all_problem_ids.extend([p.id for p in probs])
-
-    saved_map: dict[int, int] = {}
-    if all_problem_ids:
-        saved_rows = (
-            db.query(SavedReviewProblem)
+        sessions = (
+            db.query(RecentReviewProblemSession)
             .filter(
-                SavedReviewProblem.user_id == current_user.id,
-                SavedReviewProblem.source_problem_id.in_(all_problem_ids),
+                RecentReviewProblemSession.user_id == current_user.id,
+                RecentReviewProblemSession.study_date == sd,
             )
+            .order_by(RecentReviewProblemSession.created_at.desc())
             .all()
         )
-        saved_map = {r.source_problem_id: r.id for r in saved_rows}
 
-    session_resps: list[RecentReviewProblemSessionResponse] = []
-    for s in sessions:
-        probs = by_session.get(s.id, [])
-        p_resps: list[RecentReviewProblemResponse] = []
-        for p in probs:
-            sid = saved_map.get(p.id)
-            p_resps.append(
-                RecentReviewProblemResponse(
-                    id=p.id,
-                    order_index=p.order_index,
-                    subject_id=p.subject_id,
-                    question_text=p.question_text,
-                    answer_example=p.answer_example,
-                    references=p.references,
-                    saved=bool(sid),
-                    saved_id=sid,
+        # problems と saved をまとめて解決
+        all_problem_ids: list[int] = []
+        by_session: dict[int, list[RecentReviewProblem]] = {}
+        for s in sessions:
+            probs = (
+                db.query(RecentReviewProblem)
+                .filter(RecentReviewProblem.session_id == s.id)
+                .order_by(RecentReviewProblem.order_index.asc())
+                .all()
+            )
+            by_session[s.id] = probs
+            all_problem_ids.extend([p.id for p in probs])
+
+        saved_map: dict[int, int] = {}
+        if all_problem_ids:
+            saved_rows = (
+                db.query(SavedReviewProblem)
+                .filter(
+                    SavedReviewProblem.user_id == current_user.id,
+                    SavedReviewProblem.source_problem_id.in_(all_problem_ids),
+                )
+                .all()
+            )
+            saved_map = {r.source_problem_id: r.id for r in saved_rows}
+
+        session_resps: list[RecentReviewProblemSessionResponse] = []
+        for s in sessions:
+            probs = by_session.get(s.id, [])
+            p_resps: list[RecentReviewProblemResponse] = []
+            for p in probs:
+                sid = saved_map.get(p.id)
+                p_resps.append(
+                    RecentReviewProblemResponse(
+                        id=p.id,
+                        order_index=p.order_index,
+                        subject_id=p.subject_id,
+                        question_text=p.question_text,
+                        answer_example=p.answer_example,
+                        references=p.references,
+                        saved=bool(sid),
+                        saved_id=sid,
+                    )
+                )
+            session_resps.append(
+                RecentReviewProblemSessionResponse(
+                    id=s.id,
+                    study_date=s.study_date,
+                    mode=s.mode,
+                    status=s.status,
+                    error_message=s.error_message,
+                    created_at=s.created_at,
+                    problems=p_resps,
                 )
             )
-        session_resps.append(
-            RecentReviewProblemSessionResponse(
-                id=s.id,
-                study_date=s.study_date,
-                mode=s.mode,
-                status=s.status,
-                error_message=s.error_message,
-                created_at=s.created_at,
-                problems=p_resps,
-            )
-        )
 
-    used = _count_recent_review_success_sessions(db, current_user.id, sd)
-    remaining = max(0, RECENT_REVIEW_DAILY_LIMIT - used)
+        used = _count_recent_review_success_sessions(db, current_user.id, sd)
+        remaining = max(0, RECENT_REVIEW_DAILY_LIMIT - used)
 
         return RecentReviewProblemSessionsResponse(
             study_date=sd,
