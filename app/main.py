@@ -154,6 +154,15 @@ def _startup_migrate_reviews():
     except Exception as e:
         logger.warning(f"Startup official_questions table migration skipped/failed: {str(e)}")
 
+    # content_usesテーブルとcandidate_pool_jsonカラムのマイグレーション
+    try:
+        from .migrate_content_uses import migrate_content_uses
+
+        migrate_content_uses()
+        logger.info("✓ Startup content_uses migration completed")
+    except Exception as e:
+        logger.warning(f"Startup content_uses migration skipped/failed: {str(e)}")
+
     # official_questions が空なら seed（問題番号を廃止し official_question_id ベースへ移行するため）
     try:
         from .seed_official_questions import seed_official_questions_if_empty
@@ -3794,19 +3803,25 @@ def _get_candidate_pool_from_session(
     db: Session, user_id: int, study_date: str
 ) -> Optional[list[Candidate]]:
     """同日の最初のセッション（mode="generate"）からCandidateプールを取得"""
-    session = (
-        db.query(RecentReviewProblemSession)
-        .filter(
-            RecentReviewProblemSession.user_id == user_id,
-            RecentReviewProblemSession.study_date == study_date,
-            RecentReviewProblemSession.mode == "generate"
+    try:
+        session = (
+            db.query(RecentReviewProblemSession)
+            .filter(
+                RecentReviewProblemSession.user_id == user_id,
+                RecentReviewProblemSession.study_date == study_date,
+                RecentReviewProblemSession.mode == "generate"
+            )
+            .order_by(RecentReviewProblemSession.created_at.asc())
+            .first()
         )
-        .order_by(RecentReviewProblemSession.created_at.asc())
-        .first()
-    )
-    
-    if session and session.candidate_pool_json:
-        return _load_candidate_pool(session.candidate_pool_json)
+        
+        if session:
+            # candidate_pool_jsonカラムが存在しない場合はNoneを返す
+            pool_json = getattr(session, 'candidate_pool_json', None)
+            if pool_json:
+                return _load_candidate_pool(pool_json)
+    except Exception as e:
+        logger.warning(f"Failed to get candidate pool from session: {str(e)}")
     
     return None
 
@@ -3976,7 +3991,8 @@ async def list_recent_review_problem_sessions(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    sd = (study_date or "").strip() or _get_current_study_date_4am()
+    try:
+        sd = (study_date or "").strip() or _get_current_study_date_4am()
 
     sessions = (
         db.query(RecentReviewProblemSession)
@@ -4046,14 +4062,20 @@ async def list_recent_review_problem_sessions(
     used = _count_recent_review_success_sessions(db, current_user.id, sd)
     remaining = max(0, RECENT_REVIEW_DAILY_LIMIT - used)
 
-    return RecentReviewProblemSessionsResponse(
-        study_date=sd,
-        used_count=used,
-        remaining_count=remaining,
-        daily_limit=RECENT_REVIEW_DAILY_LIMIT,
-        sessions=session_resps,
-        total=len(session_resps),
-    )
+        return RecentReviewProblemSessionsResponse(
+            study_date=sd,
+            used_count=used,
+            remaining_count=remaining,
+            daily_limit=RECENT_REVIEW_DAILY_LIMIT,
+            sessions=session_resps,
+            total=len(session_resps),
+        )
+    except Exception as e:
+        logger.error(f"Failed to list recent review problem sessions: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"予期しないエラーが発生しました: {str(e)}"
+        )
 
 
 @app.post("/v1/recent-review-problems/sessions", response_model=RecentReviewProblemSessionResponse)
@@ -4062,12 +4084,13 @@ async def create_recent_review_problem_session(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    sd = _get_current_study_date_4am()
-    used = _count_recent_review_success_sessions(db, current_user.id, sd)
-    if used >= RECENT_REVIEW_DAILY_LIMIT:
-        raise HTTPException(status_code=429, detail="本日の制限に達しました。")
+    try:
+        sd = _get_current_study_date_4am()
+        used = _count_recent_review_success_sessions(db, current_user.id, sd)
+        if used >= RECENT_REVIEW_DAILY_LIMIT:
+            raise HTTPException(status_code=429, detail="本日の制限に達しました。")
 
-    mode = "regenerate" if payload.source_session_id else "generate"
+        mode = "regenerate" if payload.source_session_id else "generate"
 
     # Candidateプール取得/読み込み
     candidate_pool: Optional[list[Candidate]] = None
@@ -4125,9 +4148,16 @@ async def create_recent_review_problem_session(
         # Candidateプール保存
         # 初回生成時、またはフォールバックが発生した場合は拡張プールを保存
         if mode == "generate":
-            # フォールバックが発生した場合は拡張プールを保存（次回の重複を防ぐ）
-            pool_to_save = expanded_pool if len(expanded_pool) > len(candidate_pool) else candidate_pool
-            session.candidate_pool_json = _save_candidate_pool(pool_to_save)
+            try:
+                # フォールバックが発生した場合は拡張プールを保存（次回の重複を防ぐ）
+                pool_to_save = expanded_pool if len(expanded_pool) > len(candidate_pool) else candidate_pool
+                # candidate_pool_jsonカラムが存在しない場合はスキップ
+                if hasattr(session, 'candidate_pool_json'):
+                    session.candidate_pool_json = _save_candidate_pool(pool_to_save)
+                else:
+                    logger.warning("candidate_pool_json column does not exist, skipping pool save")
+            except Exception as e:
+                logger.warning(f"Failed to save candidate pool: {str(e)}")
         
         # LLM呼び出し
         prompt_text = _build_recent_review_prompt_from_candidates(sd, selected_candidates)
@@ -4203,21 +4233,40 @@ async def create_recent_review_problem_session(
             created_at=session.created_at,
             problems=p_resps,
         )
+    except HTTPException:
+        # HTTPExceptionはそのまま再発生
+        raise
     except Exception as e:
         # ロールバック（content_uses、Candidateプール保存も取り消し）
-        db.rollback()
-        session.status = "failed"
-        session.error_message = str(e)
-        db.commit()
-        return RecentReviewProblemSessionResponse(
-            id=session.id,
-            study_date=session.study_date,
-            mode=session.mode,
-            status=session.status,
-            error_message=session.error_message,
-            created_at=session.created_at,
-            problems=[],
-        )
+        try:
+            db.rollback()
+            if 'session' in locals():
+                session.status = "failed"
+                session.error_message = str(e)
+                db.commit()
+        except Exception as rollback_error:
+            logger.error(f"Rollback failed: {str(rollback_error)}")
+        
+        # 詳細なエラーメッセージをログに記録
+        logger.error(f"Failed to create recent review problem session: {str(e)}", exc_info=True)
+        
+        # セッションが作成されていた場合は返す
+        if 'session' in locals():
+            return RecentReviewProblemSessionResponse(
+                id=session.id,
+                study_date=session.study_date,
+                mode=session.mode,
+                status="failed",
+                error_message=str(e),
+                created_at=session.created_at,
+                problems=[],
+            )
+        else:
+            # セッション作成前にエラーが発生した場合
+            raise HTTPException(
+                status_code=500,
+                detail=f"予期しないエラーが発生しました: {str(e)}"
+            )
 
 
 @app.post("/v1/recent-review-problems/problems/{problem_id}/save", response_model=SaveReviewProblemResponse)
