@@ -1,0 +1,52 @@
+{
+  "// アプリケーション設定": "このファイルはプロジェクトの設定を管理します",
+  "api": {
+    "baseUrl": "http://localhost:8000",
+    "backendInternalUrl": "http://backend:8000",
+    "reviewTimeoutMs": 240000
+  },
+  "auth": {
+    "enabled": false,
+    "googleClientId": "",
+    "googleClientSecret": "",
+    "secretKey": "change-this-secret-key-in-production-use-long-random-string",
+    "algorithm": "HS256",
+    "jwtAccessTokenExpireDays": 30,
+    "tokenCacheTtl": 300,
+    "tokenCacheMaxSize": 1000
+  },
+  "anthropic": {
+    "apiKey": "",
+    "model": "claude-haiku-4-5-20251001"
+  },
+  "database": {
+    "url": "sqlite:////data/dev.db"
+  },
+  "caddy": {
+    "domain": "juristutor-ai.com"
+  },
+  "yearFormat": {
+    "reiwa": "R",
+    "heisei": "H",
+    "reiwaStartYear": 2019,
+    "heiseiStartYear": 1989
+  },
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/__pycache__/**": true,
+    "**/.venv/**": true,
+    "**/web_next/node_modules/**": true,
+    "**/web_next/.next/**": true,
+    "**/web_next/dist/**": true,
+    "**/web_next/build/**": true
+  },
+  "search.exclude": {
+    "**/__pycache__/**": true,
+    "**/.venv/**": true,
+    "**/web_next/node_modules/**": true,
+    "**/web_next/.next/**": true,
+    "**/web_next/dist/**": true,
+    "**/web_next/build/**": true
+  }
+}

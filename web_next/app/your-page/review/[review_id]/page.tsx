@@ -670,14 +670,19 @@ export default function ReviewResultPage() {
                       今後意識すべきこと
                     </h3>
                     <ul className="space-y-3">
-                      {futureConsiderations.map((item: string, index: number) => (
-                        <li key={index} className="flex items-start gap-3 text-sm text-foreground/80">
-                          <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-bold shrink-0">
-                            {index + 1}
-                          </span>
-                          <span className="leading-relaxed">{item}</span>
-                        </li>
-                      ))}
+                      {futureConsiderations.map((item: any, index: number) => {
+                        // 後方互換性: stringまたはdict形式に対応
+                        const content = typeof item === 'string' ? item : item.content
+                        const blockNumber = typeof item === 'object' && 'block_number' in item ? item.block_number : index + 1
+                        return (
+                          <li key={index} className="flex items-start gap-3 text-sm text-foreground/80">
+                            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-bold shrink-0">
+                              {blockNumber}
+                            </span>
+                            <span className="leading-relaxed">{content}</span>
+                          </li>
+                        )
+                      })}
                     </ul>
                   </div>
                 )}

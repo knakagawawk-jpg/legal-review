@@ -3144,11 +3144,86 @@ def _get_recent_ymds(base_ymd: str, days: int) -> list[str]:
 
 
 def _safe_review_eval_subset(review_json_obj: dict) -> dict:
+    """
+    evaluationから必要な部分を抽出し、各要素にblock_numberを付与する
+    
+    - strengths: 各要素（dictまたはstring）にblock_numberを付与（重要度順に1,2,3...）
+    - weaknesses: 各要素（dictまたはstring）にblock_numberを付与（重要度順に1,2,3...）
+    - important_points: 各要素（dict）にblock_numberを付与（重要度順に1,2,3...）
+    - future_considerations: 各要素（string）をdictに変換してblock_numberを付与（重要度順に1,2,3...）
+    
+    注: 復習問題生成ではstrengthsは使用しないが、データの共通化のため処理を追加
+    """
     ev = (review_json_obj or {}).get("evaluation") or {}
+    
+    # strengthsにblock_numberを付与（復習問題生成では使用しないが、データ共通化のため処理）
+    strengths_raw = ev.get("strengths") or []
+    strengths: list[dict] = []
+    for idx, item in enumerate(strengths_raw, start=1):
+        if isinstance(item, dict):
+            # 既にblock_numberがある場合はそのまま、ない場合は付与
+            item_copy = item.copy()
+            if "block_number" not in item_copy:
+                item_copy["block_number"] = idx
+            strengths.append(item_copy)
+        elif isinstance(item, str):
+            # 文字列の場合はdictに変換
+            strengths.append({"content": item, "block_number": idx})
+        else:
+            # その他の型はスキップ
+            continue
+    
+    # weaknessesにblock_numberを付与
+    weaknesses_raw = ev.get("weaknesses") or []
+    weaknesses: list[dict] = []
+    for idx, item in enumerate(weaknesses_raw, start=1):
+        if isinstance(item, dict):
+            # 既にblock_numberがある場合はそのまま、ない場合は付与
+            item_copy = item.copy()
+            if "block_number" not in item_copy:
+                item_copy["block_number"] = idx
+            weaknesses.append(item_copy)
+        elif isinstance(item, str):
+            # 文字列の場合はdictに変換
+            weaknesses.append({"content": item, "block_number": idx})
+        else:
+            # その他の型はスキップ
+            continue
+    
+    # important_pointsにblock_numberを付与
+    important_points_raw = ev.get("important_points") or []
+    important_points: list[dict] = []
+    for idx, item in enumerate(important_points_raw, start=1):
+        if isinstance(item, dict):
+            # 既にblock_numberがある場合はそのまま、ない場合は付与
+            item_copy = item.copy()
+            if "block_number" not in item_copy:
+                item_copy["block_number"] = idx
+            important_points.append(item_copy)
+        else:
+            # dict以外はスキップ
+            continue
+    
+    # future_considerationsにblock_numberを付与（文字列をdictに変換）
+    future_considerations_raw = ev.get("future_considerations") or []
+    future_considerations: list[dict] = []
+    for idx, item in enumerate(future_considerations_raw, start=1):
+        if isinstance(item, str):
+            future_considerations.append({"content": item, "block_number": idx})
+        elif isinstance(item, dict):
+            # 既にdictの場合はblock_numberを確認
+            item_copy = item.copy()
+            if "block_number" not in item_copy:
+                item_copy["block_number"] = idx
+            future_considerations.append(item_copy)
+        else:
+            # その他の型はスキップ
+            continue
+    
     subset = {
-        "weaknesses": ev.get("weaknesses") or [],
-        "important_points": ev.get("important_points") or [],
-        "future_considerations": ev.get("future_considerations") or [],
+        "weaknesses": weaknesses,
+        "important_points": important_points,
+        "future_considerations": future_considerations,
     }
     return subset
 

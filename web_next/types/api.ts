@@ -24,23 +24,29 @@ export interface ReviewResponse {
         comment?: string
       }
       strengths?: Array<{
+        block_number?: number
         category: string
         description: string
         paragraph_numbers?: number[]
       }>
       weaknesses?: Array<{
+        block_number?: number
         category: string
         description: string
         paragraph_numbers?: number[]
         suggestion?: string
       }>
       important_points?: Array<{
+        block_number?: number
         paragraph_number: number
         what_is_good: string
         what_is_lacking: string
         why_important: string
       }>
-      future_considerations?: string[]
+      future_considerations?: Array<{
+        block_number?: number
+        content: string
+      }> | string[] // 後方互換性のためstring[]も許可
     }
     // 後方互換性のため、直接プロパティにもアクセス可能にする
     overall_review?: {
@@ -48,23 +54,29 @@ export interface ReviewResponse {
       comment?: string
     }
     strengths?: Array<{
+      block_number?: number
       category: string
       description: string
       paragraph_numbers?: number[]
     }>
     weaknesses?: Array<{
+      block_number?: number
       category: string
       description: string
       paragraph_numbers?: number[]
       suggestion?: string
     }>
     important_points?: Array<{
+      block_number?: number
       paragraph_number: number
       what_is_good: string
       what_is_lacking: string
       why_important: string
     }>
-    future_considerations?: string[]
+    future_considerations?: Array<{
+      block_number?: number
+      content: string
+    }> | string[] // 後方互換性のためstring[]も許可
     subject?: string
   }
   answer_text: string
@@ -152,11 +164,13 @@ export interface SubmissionHistory {
       comment?: string
     }
     strengths?: Array<{
+      block_number?: number
       category: string
       description: string
       paragraph_numbers?: number[]
     }>
     weaknesses?: Array<{
+      block_number?: number
       category: string
       description: string
       paragraph_numbers?: number[]
