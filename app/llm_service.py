@@ -8,18 +8,51 @@ from anthropic import Anthropic
 # 設定を読み込む（後方互換性のため環境変数も確認）
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 try:
-    from config.settings import ANTHROPIC_API_KEY, ANTHROPIC_MODEL
+    from config.llm_config import (
+        get_llm_config, get_llm_client, get_llm_model,
+        USE_CASE_REVIEW, USE_CASE_REVIEW_CHAT, USE_CASE_FREE_CHAT,
+        USE_CASE_REVISIT_PROBLEMS, USE_CASE_TITLE
+    )
 except ImportError:
-    # フォールバック: 環境変数から取得
-    # 注意: モデル名はユーザーが明示的に指定したものです。AIが勝手に変更しないでください。
-    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-    ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
+    # フォールバック: 旧方式（後方互換性）
+    try:
+        from config.settings import ANTHROPIC_API_KEY, ANTHROPIC_MODEL
+    except ImportError:
+        ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+        ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
+    
+    # フォールバック用の簡易関数
+    def get_llm_config():
+        class DummyConfig:
+            def is_available(self):
+                return bool(ANTHROPIC_API_KEY)
+            def get_client(self):
+                return Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
+            def get_model(self, use_case="default"):
+                return ANTHROPIC_MODEL
+        return DummyConfig()
+    
+    def get_llm_client():
+        if not ANTHROPIC_API_KEY:
+            return None
+        return Anthropic(api_key=ANTHROPIC_API_KEY)
+    
+    def get_llm_model(use_case="default"):
+        return ANTHROPIC_MODEL
+    
+    USE_CASE_REVIEW = "review"
+    USE_CASE_REVIEW_CHAT = "review_chat"
+    USE_CASE_FREE_CHAT = "free_chat"
+    USE_CASE_REVISIT_PROBLEMS = "revisit_problems"
+    USE_CASE_TITLE = "title"
 
 # プロンプトファイルのベースディレクトリ
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
-# グローバル変数として公開（デバッグ用）
-# 注意: ANTHROPIC_API_KEYはセキュリティ上の理由で公開しない
+# 後方互換性のため（既存コードで使用されている可能性がある）
+_llm_config = get_llm_config()
+ANTHROPIC_API_KEY = None  # セキュリティ上の理由で公開しない
+ANTHROPIC_MODEL = _llm_config.get_model()  # デフォルトモデル
 
 def generate_review(
     subject: str,
@@ -34,13 +67,17 @@ def generate_review(
     Returns:
         tuple: (review_markdown, review_json, model_name, input_tokens, output_tokens, request_id, latency_ms)
     """
+    # LLM設定を取得
+    llm_config = get_llm_config()
+    
     # APIキーが設定されていない場合はダミーを返す
-    if not ANTHROPIC_API_KEY:
+    if not llm_config.is_available():
         review_markdown, review_json, model_name = _generate_dummy_review(subject)
         return review_markdown, review_json, model_name, None, None, None, None
     
     try:
-        client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        client = llm_config.get_client()
+        model_name = llm_config.get_model(USE_CASE_REVIEW)
         
         # ===== 答案の評価（1段階処理） =====
         print("答案の評価を開始...")
@@ -51,6 +88,7 @@ def generate_review(
             answer_text,
             purpose_text,
             grading_impression_text,
+            model_name,
         )
         
         # ===== 講評JSONを構築（evaluationのみ保持） =====
@@ -64,7 +102,7 @@ def generate_review(
         return (
             review_markdown,
             review_json,
-            ANTHROPIC_MODEL,
+            model_name,
             usage.get("input_tokens"),
             usage.get("output_tokens"),
             usage.get("request_id"),
@@ -88,6 +126,7 @@ def _evaluate_answer(
     answer_text: str,
     purpose_text: Optional[str] = None,
     grading_impression_text: Optional[str] = None,
+    model_name: Optional[str] = None,
 ) -> tuple[Dict[str, Any], Dict[str, Any]]:
     """答案を直接評価（evaluation.txt使用）"""
     import time
@@ -120,10 +159,14 @@ def _evaluate_answer(
         # プロンプトの構築
         system_prompt = "あなたは司法試験・予備試験の法律答案講評の品質を評価する専門家です。"
         
+        # モデル名を取得（引数が指定されていない場合はデフォルト）
+        if model_name is None:
+            model_name = get_llm_model(USE_CASE_REVIEW)
+        
         # Claude APIにリクエスト
         start_time = time.time()
         message = client.messages.create(
-            model=ANTHROPIC_MODEL,
+            model=model_name,
             max_tokens=16384,  # 長い評価に対応するためさらに増加（16Kトークン）
             temperature=0.3,
             system=system_prompt,
@@ -455,8 +498,11 @@ def generate_recent_review_problems(
         (items, raw_output, model_name, input_tokens, output_tokens, request_id, latency_ms)
     """
     import time
+    # LLM設定を取得
+    llm_config = get_llm_config()
+    
     # APIキーが設定されていない場合はダミー
-    if not ANTHROPIC_API_KEY:
+    if not llm_config.is_available():
         dummy = [
             {
                 "subject_id": 1,
@@ -467,7 +513,8 @@ def generate_recent_review_problems(
         ]
         return dummy, json.dumps(dummy, ensure_ascii=False), "dummy", None, None, None, None
 
-    client = Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = llm_config.get_client()
+    model_name = llm_config.get_model(USE_CASE_REVISIT_PROBLEMS)
 
     system_prompt = (
         "あなたは司法試験・予備試験の学習支援者です。"
@@ -477,7 +524,7 @@ def generate_recent_review_problems(
 
     start_time = time.time()
     message = client.messages.create(
-        model=ANTHROPIC_MODEL,
+        model=model_name,
         max_tokens=max_tokens,
         temperature=temperature,
         system=system_prompt,
@@ -534,7 +581,7 @@ def generate_recent_review_problems(
             }
         )
 
-    return items, raw_output, ANTHROPIC_MODEL, input_tokens, output_tokens, request_id, latency_ms
+    return items, raw_output, model_name, input_tokens, output_tokens, request_id, latency_ms
 
 
 # _build_final_review関数は削除（1段階処理では不要）
@@ -799,8 +846,11 @@ def chat_about_review(
     Returns:
         LLMからの回答
     """
+    # LLM設定を取得
+    llm_config = get_llm_config()
+    
     # APIキーが設定されていない場合はダミーを返す
-    if not ANTHROPIC_API_KEY:
+    if not llm_config.is_available():
         return (
             "申し訳ございませんが、現在LLM機能が利用できません。APIキーが設定されていないため、チャット機能を使用できません。",
             "dummy",
@@ -812,7 +862,8 @@ def chat_about_review(
     
     try:
         import time
-        client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        client = llm_config.get_client()
+        model_name = llm_config.get_model(USE_CASE_REVIEW_CHAT)
         
         # システムプロンプト
         system_prompt = """あなたは法律答案の講評を行う専門家です。ユーザーからの質問に対して、以下の情報を参照しながら丁寧に回答してください：
@@ -857,7 +908,7 @@ def chat_about_review(
         # Claude APIにリクエスト
         start_time = time.time()
         message = client.messages.create(
-            model=ANTHROPIC_MODEL,
+            model=model_name,
             max_tokens=4096,
             temperature=0.7,
             system=system_prompt,
@@ -873,14 +924,15 @@ def chat_about_review(
             input_tokens = getattr(message.usage, "input_tokens", None)
             output_tokens = getattr(message.usage, "output_tokens", None)
         request_id = getattr(message, "id", None)
-        return answer, ANTHROPIC_MODEL, input_tokens, output_tokens, request_id, latency_ms
+        return answer, model_name, input_tokens, output_tokens, request_id, latency_ms
         
     except Exception as e:
         # エラーが発生した場合
         print(f"チャット生成エラー: {e}")
+        model_name = llm_config.get_model(USE_CASE_REVIEW_CHAT)
         return (
             f"申し訳ございませんが、エラーが発生しました: {str(e)}",
-            ANTHROPIC_MODEL,
+            model_name,
             None,
             None,
             None,
@@ -902,8 +954,11 @@ def free_chat(
     Returns:
         LLMからの回答
     """
+    # LLM設定を取得
+    llm_config = get_llm_config()
+    
     # APIキーが設定されていない場合はダミーを返す
-    if not ANTHROPIC_API_KEY:
+    if not llm_config.is_available():
         return (
             "申し訳ございませんが、現在LLM機能が利用できません。APIキーが設定されていないため、チャット機能を使用できません。",
             "dummy",
@@ -915,7 +970,8 @@ def free_chat(
     
     try:
         import time
-        client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        client = llm_config.get_client()
+        model_name = llm_config.get_model(USE_CASE_FREE_CHAT)
         
         # システムプロンプト（汎用的なアシスタントとして動作）
         system_prompt = """あなたは親切で知識豊富なアシスタントです。ユーザーからの質問に対して、正確で分かりやすい回答を提供してください。
@@ -938,7 +994,7 @@ def free_chat(
         # Claude APIにリクエスト
         start_time = time.time()
         message = client.messages.create(
-            model=ANTHROPIC_MODEL,
+            model=model_name,
             max_tokens=4096,
             temperature=0.7,
             system=system_prompt,
@@ -954,14 +1010,15 @@ def free_chat(
             input_tokens = getattr(message.usage, "input_tokens", None)
             output_tokens = getattr(message.usage, "output_tokens", None)
         request_id = getattr(message, "id", None)
-        return answer, ANTHROPIC_MODEL, input_tokens, output_tokens, request_id, latency_ms
+        return answer, model_name, input_tokens, output_tokens, request_id, latency_ms
         
     except Exception as e:
         # エラーが発生した場合
         print(f"フリーチャット生成エラー: {e}")
+        model_name = llm_config.get_model(USE_CASE_FREE_CHAT)
         return (
             f"申し訳ございませんが、エラーが発生しました: {str(e)}",
-            ANTHROPIC_MODEL,
+            model_name,
             None,
             None,
             None,
@@ -972,7 +1029,7 @@ def free_chat(
 def generate_chat_title(
     first_message: str,
     max_tokens: int = 50,
-) -> str:
+) -> tuple[str, str, Optional[int], Optional[int], Optional[str], Optional[int]]:
     """
     チャットの最初のメッセージからタイトルを自動生成する
     
@@ -981,21 +1038,28 @@ def generate_chat_title(
         max_tokens: 最大トークン数（短いタイトル用）
     
     Returns:
-        生成されたタイトル（最大20文字程度）
+        tuple: (title, model_name, input_tokens, output_tokens, request_id, latency_ms)
     """
-    if not ANTHROPIC_API_KEY:
+    import time
+    # LLM設定を取得
+    llm_config = get_llm_config()
+    
+    if not llm_config.is_available():
         # APIキーがない場合はメッセージの先頭を返す
-        return first_message[:20] + "..." if len(first_message) > 20 else first_message
+        title = first_message[:20] + "..." if len(first_message) > 20 else first_message
+        return title, "dummy", None, None, None, None
     
     try:
-        client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        client = llm_config.get_client()
+        model_name = llm_config.get_model(USE_CASE_TITLE)
         
         system_prompt = """あなたはチャットのタイトル生成アシスタントです。
 ユーザーのメッセージから、そのチャットの内容を端的に表す短いタイトル（15文字以内）を生成してください。
 タイトルのみを出力し、他の説明は不要です。"""
         
+        start_time = time.time()
         message = client.messages.create(
-            model=ANTHROPIC_MODEL,
+            model=model_name,
             max_tokens=max_tokens,
             temperature=0.3,
             system=system_prompt,
@@ -1004,17 +1068,30 @@ def generate_chat_title(
                 "content": f"以下のメッセージに対して、15文字以内の短いタイトルを生成してください：\n\n{first_message}"
             }]
         )
+        latency_ms = int((time.time() - start_time) * 1000)
         
         title = message.content[0].text.strip() if message.content else ""
         # タイトルが長すぎる場合は切り詰める
         if len(title) > 20:
             title = title[:20]
-        return title if title else first_message[:20]
+        title = title if title else first_message[:20]
+        
+        # トークン使用量を取得
+        input_tokens = None
+        output_tokens = None
+        if hasattr(message, "usage") and message.usage:
+            input_tokens = getattr(message.usage, "input_tokens", None)
+            output_tokens = getattr(message.usage, "output_tokens", None)
+        request_id = getattr(message, "id", None)
+        
+        return title, model_name, input_tokens, output_tokens, request_id, latency_ms
         
     except Exception as e:
         print(f"タイトル生成エラー: {e}")
         # エラーの場合はメッセージの先頭を返す
-        return first_message[:20] + "..." if len(first_message) > 20 else first_message
+        title = first_message[:20] + "..." if len(first_message) > 20 else first_message
+        model_name = llm_config.get_model(USE_CASE_TITLE)
+        return title, model_name, None, None, None, None
 
 
 def review_chat(
@@ -1030,9 +1107,12 @@ def review_chat(
     - system_prompt は system として渡す
 
     Returns:
-        (answer_text, model_name, input_tokens, output_tokens)
+        (answer_text, model_name, input_tokens, output_tokens, request_id, latency_ms)
     """
-    if not ANTHROPIC_API_KEY:
+    # LLM設定を取得
+    llm_config = get_llm_config()
+    
+    if not llm_config.is_available():
         return (
             "申し訳ございませんが、現在LLM機能が利用できません。APIキーが設定されていないため、チャット機能を使用できません。",
             "dummy",
@@ -1042,11 +1122,12 @@ def review_chat(
             None,
         )
 
-    client = Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = llm_config.get_client()
+    model_name = llm_config.get_model(USE_CASE_REVIEW_CHAT)
     import time
     start_time = time.time()
     message = client.messages.create(
-        model=ANTHROPIC_MODEL,
+        model=model_name,
         max_tokens=max_tokens,
         temperature=temperature,
         system=system_prompt or "",
@@ -1061,4 +1142,4 @@ def review_chat(
         input_tokens = getattr(message.usage, "input_tokens", None)
         output_tokens = getattr(message.usage, "output_tokens", None)
     request_id = getattr(message, "id", None)
-    return answer, ANTHROPIC_MODEL, input_tokens, output_tokens, request_id, latency_ms
+    return answer, model_name, input_tokens, output_tokens, request_id, latency_ms

@@ -342,11 +342,13 @@ def health():
 @app.get("/debug/llm-config")
 def debug_llm_config():
     """LLM設定のデバッグ情報を返す（開発用）"""
-    from app.llm_service import ANTHROPIC_API_KEY, ANTHROPIC_MODEL, PROMPTS_DIR
+    from config.llm_config import get_llm_config, USE_CASE_REVIEW, USE_CASE_REVIEW_CHAT, USE_CASE_FREE_CHAT, USE_CASE_REVISIT_PROBLEMS, USE_CASE_TITLE
+    from app.llm_service import PROMPTS_DIR
     from pathlib import Path
     
-    api_key_set = bool(ANTHROPIC_API_KEY)
-    api_key_preview = f"{ANTHROPIC_API_KEY[:10]}..." if ANTHROPIC_API_KEY else "未設定"
+    llm_config = get_llm_config()
+    api_key_set = llm_config.is_available()
+    api_key_preview = "設定済み" if api_key_set else "未設定"
     
     prompts_exist = {
         "input_processing": (PROMPTS_DIR / "main" / "input_processing.txt").exists(),
@@ -356,7 +358,14 @@ def debug_llm_config():
     return {
         "api_key_set": api_key_set,
         "api_key_preview": api_key_preview,
-        "model": ANTHROPIC_MODEL,
+        "models": {
+            "default": llm_config.get_model(),
+            "review": llm_config.get_model(USE_CASE_REVIEW),
+            "review_chat": llm_config.get_model(USE_CASE_REVIEW_CHAT),
+            "free_chat": llm_config.get_model(USE_CASE_FREE_CHAT),
+            "revisit_problems": llm_config.get_model(USE_CASE_REVISIT_PROBLEMS),
+            "title": llm_config.get_model(USE_CASE_TITLE),
+        },
         "prompts_dir": str(PROMPTS_DIR),
         "prompts_exist": prompts_exist,
     }
@@ -2413,10 +2422,32 @@ async def create_message(
         
         # 6. 初回メッセージかつタイトルがない場合、タイトルを自動生成
         is_first_message = len(chat_history) == 0
+        title_input_tokens = None
+        title_output_tokens = None
+        title_request_id = None
+        title_latency_ms = None
+        title_model_name = None
         if is_first_message and (not thread.title or thread.title.strip() == ""):
             try:
-                auto_title = generate_chat_title(message_data.content)
+                auto_title, title_model_name, title_input_tokens, title_output_tokens, title_request_id, title_latency_ms = generate_chat_title(message_data.content)
                 thread.title = auto_title
+                
+                # タイトル生成のLLM使用量を保存
+                if title_input_tokens is not None or title_output_tokens is not None or title_request_id:
+                    title_llm_row = LlmRequest(
+                        **build_llm_request_row(
+                            user_id=current_user.id,
+                            feature_type="chat_title",
+                            thread_id=thread_id,
+                            model=title_model_name,
+                            prompt_version="chat_title_v1",
+                            input_tokens=title_input_tokens,
+                            output_tokens=title_output_tokens,
+                            request_id=title_request_id,
+                            latency_ms=title_latency_ms,
+                        )
+                    )
+                    db.add(title_llm_row)
             except Exception as title_error:
                 # タイトル生成に失敗しても本体の処理は続行
                 logger.warning(f"タイトル自動生成に失敗: {title_error}")
