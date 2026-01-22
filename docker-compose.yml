@@ -28,7 +28,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 90s
+      start_period: 180s
     # ports公開しない（内部ネットワークのみアクセス可能）
 
   # Next.js（フロントエンド）- 本番用
