@@ -4092,56 +4092,54 @@ async def create_recent_review_problem_session(
 
         mode = "regenerate" if payload.source_session_id else "generate"
 
-    # Candidateプール取得/読み込み
-    candidate_pool: Optional[list[Candidate]] = None
-    if mode == "regenerate":
-        # 再生成: 同日の最初のセッションから読み込み
-        candidate_pool = _get_candidate_pool_from_session(db, current_user.id, sd)
-    
-    if candidate_pool is None:
-        # 初回生成または読み込み失敗: 新規にCandidateプールを作成
-        candidate_pool = _build_candidate_pool(db, current_user.id, sd)
-    
-    if not candidate_pool:
-        raise HTTPException(status_code=400, detail="復習問題を生成するためのデータがありません")
-    
-    # 優先度計算
-    for candidate in candidate_pool:
-        candidate.priority_score = _calculate_priority_score(candidate, sd)
-    candidate_pool = _sort_candidates_by_priority(candidate_pool)
-    
-    # 除外処理
-    used_keys = _get_used_candidate_keys(db, current_user.id)
-    candidate_pool = _filter_unused_candidates(candidate_pool, used_keys)
-    
-    # 最終選択フィルター
-    selected_candidates = _apply_final_selection_filter(candidate_pool)
-    
-    # フォールバック: 5件未満の場合
-    expanded_pool = candidate_pool  # フォールバックが発生した場合の拡張プール
-    if len(selected_candidates) < 5:
-        selected_candidates, expanded_pool = _ensure_sufficient_candidates(
-            db, current_user.id, sd, selected_candidates, used_keys, min_count=5
+        # Candidateプール取得/読み込み
+        candidate_pool: Optional[list[Candidate]] = None
+        if mode == "regenerate":
+            # 再生成: 同日の最初のセッションから読み込み
+            candidate_pool = _get_candidate_pool_from_session(db, current_user.id, sd)
+        
+        if candidate_pool is None:
+            # 初回生成または読み込み失敗: 新規にCandidateプールを作成
+            candidate_pool = _build_candidate_pool(db, current_user.id, sd)
+        
+        if not candidate_pool:
+            raise HTTPException(status_code=400, detail="復習問題を生成するためのデータがありません")
+        
+        # 優先度計算
+        for candidate in candidate_pool:
+            candidate.priority_score = _calculate_priority_score(candidate, sd)
+        candidate_pool = _sort_candidates_by_priority(candidate_pool)
+        
+        # 除外処理
+        used_keys = _get_used_candidate_keys(db, current_user.id)
+        candidate_pool = _filter_unused_candidates(candidate_pool, used_keys)
+        
+        # 最終選択フィルター
+        selected_candidates = _apply_final_selection_filter(candidate_pool)
+        
+        # フォールバック: 5件未満の場合
+        expanded_pool = candidate_pool  # フォールバックが発生した場合の拡張プール
+        if len(selected_candidates) < 5:
+            selected_candidates, expanded_pool = _ensure_sufficient_candidates(
+                db, current_user.id, sd, selected_candidates, used_keys, min_count=5
+            )
+            # 再度最終選択フィルターを適用
+            selected_candidates = _apply_final_selection_filter(selected_candidates)
+        
+        if len(selected_candidates) < 1:
+            raise HTTPException(status_code=400, detail="十分な復習材料が見つかりませんでした")
+        
+        # セッション作成（status="failed"）
+        session = RecentReviewProblemSession(
+            user_id=current_user.id,
+            study_date=sd,
+            mode=mode,
+            source_session_id=payload.source_session_id,
+            status="failed",  # まず失敗で作り、成功で上書き
         )
-        # 再度最終選択フィルターを適用
-        selected_candidates = _apply_final_selection_filter(selected_candidates)
-    
-    if len(selected_candidates) < 1:
-        raise HTTPException(status_code=400, detail="十分な復習材料が見つかりませんでした")
-    
-    # セッション作成（status="failed"）
-    session = RecentReviewProblemSession(
-        user_id=current_user.id,
-        study_date=sd,
-        mode=mode,
-        source_session_id=payload.source_session_id,
-        status="failed",  # まず失敗で作り、成功で上書き
-    )
-    db.add(session)
-    db.flush()
+        db.add(session)
+        db.flush()
 
-    # トランザクション開始
-    try:
         # content_uses登録
         _register_content_uses(db, current_user.id, session.id, selected_candidates)
         
