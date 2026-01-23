@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, memo } from "react"
 import { Send } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -13,7 +13,7 @@ interface ChatInputProps {
   isLoading: boolean
 }
 
-export function ChatInput({ onSend, isLoading }: ChatInputProps) {
+export const ChatInput = memo(function ChatInput({ onSend, isLoading }: ChatInputProps) {
   const [input, setInput] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -80,4 +80,4 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
       </div>
     </ChatInputBar>
   )
-}
+})

@@ -253,7 +253,6 @@ export default function ReviewResultPage() {
     isLoading: loading,
     chatBadgeCount: badgeCount,
     chatTheme: theme,
-    onSendMessage,
     onClearChat
   }: { 
     containerRef: RefObject<HTMLDivElement>
@@ -261,7 +260,6 @@ export default function ReviewResultPage() {
     isLoading: boolean
     chatBadgeCount: number
     chatTheme: ReturnType<typeof getChatMessageTheme>
-    onSendMessage: (content: string) => void
     onClearChat: () => void
   }) => {
     return (
@@ -310,10 +308,6 @@ export default function ReviewResultPage() {
           containerClassName="px-4 py-3 custom-scrollbar min-h-0"
           contentClassName="space-y-3"
         />
-
-        <div className="border-t border-border/70 bg-card">
-          <ChatInput onSend={onSendMessage} isLoading={loading} />
-        </div>
       </div>
     )
   }, (prevProps, nextProps) => {
@@ -331,6 +325,8 @@ export default function ReviewResultPage() {
     if (prevProps.isLoading !== nextProps.isLoading) return false
     // バッジ数が変更された場合は再レンダリングが必要
     if (prevProps.chatBadgeCount !== nextProps.chatBadgeCount) return false
+    // onClearChatの参照が変更されても再レンダリングしない
+    // （これはuseCallbackでメモ化されているため、実際の機能は変わらない）
     // その他の変更は無視
     return true
   })
@@ -489,15 +485,19 @@ export default function ReviewResultPage() {
             )}
 
             {leftTab === "chat" && (
-              <ChatPanel 
-                containerRef={chatContainerLeftRef}
-                chatMessages={chatMessages}
-                isLoading={isLoading}
-                chatBadgeCount={chatBadgeCount}
-                chatTheme={chatTheme}
-                onSendMessage={handleSendMessage}
-                onClearChat={handleClearChat}
-              />
+              <div className="flex flex-col h-full">
+                <ChatPanel 
+                  containerRef={chatContainerLeftRef}
+                  chatMessages={chatMessages}
+                  isLoading={isLoading}
+                  chatBadgeCount={chatBadgeCount}
+                  chatTheme={chatTheme}
+                  onClearChat={handleClearChat}
+                />
+                <div className="border-t border-border/70 bg-card">
+                  <ChatInput onSend={handleSendMessage} isLoading={isLoading} />
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -735,15 +735,19 @@ export default function ReviewResultPage() {
             )}
 
             {rightTab === "chat" && (
-              <ChatPanel 
-                containerRef={chatContainerRightRef}
-                chatMessages={chatMessages}
-                isLoading={isLoading}
-                chatBadgeCount={chatBadgeCount}
-                chatTheme={chatTheme}
-                onSendMessage={handleSendMessage}
-                onClearChat={handleClearChat}
-              />
+              <div className="flex flex-col h-full">
+                <ChatPanel 
+                  containerRef={chatContainerRightRef}
+                  chatMessages={chatMessages}
+                  isLoading={isLoading}
+                  chatBadgeCount={chatBadgeCount}
+                  chatTheme={chatTheme}
+                  onClearChat={handleClearChat}
+                />
+                <div className="border-t border-border/70 bg-card">
+                  <ChatInput onSend={handleSendMessage} isLoading={isLoading} />
+                </div>
+              </div>
             )}
           </div>
         </div>
