@@ -98,64 +98,7 @@ export default function ReviewResultPage() {
     })
   }, [chatMessages, isLoading])
 
-  if (loading) {
-    return (
-      <div
-        className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
-        style={{
-          marginLeft: isOpen ? '208px' : '0',
-        }}
-      >
-        <div className="container mx-auto px-5 py-12">
-          <div className="space-y-6">
-            <Skeleton className="h-12 w-64" />
-            <Skeleton className="h-64 w-full" />
-            <Skeleton className="h-64 w-full" />
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (error || !review) {
-    return (
-      <div
-        className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
-        style={{
-          marginLeft: isOpen ? '208px' : '0',
-        }}
-      >
-        <div className="container mx-auto px-5 py-12">
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>エラー</AlertTitle>
-            <AlertDescription>{error || "講評が見つかりませんでした"}</AlertDescription>
-          </Alert>
-          <Button onClick={() => router.push("/review")} className="mt-4">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            講評生成ページに戻る
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
-  const reviewJson = review.review_json || {}
-  const evaluation = reviewJson.evaluation || {}
-  const overallReview = evaluation.overall_review || {}
-  const score = overallReview.score
-  const strengths = evaluation.strengths || []
-  const weaknesses = evaluation.weaknesses || []
-  const importantPoints = evaluation.important_points || []
-  const futureConsiderations = evaluation.future_considerations || []
-
-  const handleCopy = async (text: string) => {
-    await navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  const loadChat = async (): Promise<number | null> => {
+  const loadChat = useCallback(async (): Promise<number | null> => {
     if (!reviewId) return null
     if (chatLoaded && threadId) return threadId
     try {
@@ -180,7 +123,7 @@ export default function ReviewResultPage() {
       // 読み込み失敗時はUIだけ維持（送信時に再トライ）
       return null
     }
-  }
+  }, [reviewId, chatLoaded, threadId])
 
   const handleSendMessage = useCallback(async () => {
     if (!inputValue.trim() || isLoading || !review) return
@@ -238,16 +181,6 @@ export default function ReviewResultPage() {
       })
   }, [threadId])
 
-  // 科目名を取得（review.subject または review_json から）
-  const subject = review.subject || reviewJson.subject || ""
-
-  const questionText = review.question_text || ""
-  const purposeText = review.purpose || ""
-  const gradingImpressionText = review.grading_impression_text || ""
-  const purposeLabel = review.source_type === "custom" ? "参考文章" : "出題趣旨"
-  const chatBadgeCount = Math.max(chatMessages.length - 1, 0)
-  const chatTheme = getChatMessageTheme("review")
-
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const wasFocused = document.activeElement === inputRef.current
     setInputValue(e.target.value)
@@ -258,6 +191,73 @@ export default function ReviewResultPage() {
       })
     }
   }, [])
+
+  if (loading) {
+    return (
+      <div
+        className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
+        style={{
+          marginLeft: isOpen ? '208px' : '0',
+        }}
+      >
+        <div className="container mx-auto px-5 py-12">
+          <div className="space-y-6">
+            <Skeleton className="h-12 w-64" />
+            <Skeleton className="h-64 w-full" />
+            <Skeleton className="h-64 w-full" />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error || !review) {
+    return (
+      <div
+        className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
+        style={{
+          marginLeft: isOpen ? '208px' : '0',
+        }}
+      >
+        <div className="container mx-auto px-5 py-12">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>エラー</AlertTitle>
+            <AlertDescription>{error || "講評が見つかりませんでした"}</AlertDescription>
+          </Alert>
+          <Button onClick={() => router.push("/review")} className="mt-4">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            講評生成ページに戻る
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  const reviewJson = review?.review_json || {}
+  const evaluation = reviewJson.evaluation || {}
+  const overallReview = evaluation.overall_review || {}
+  const score = overallReview.score
+  const strengths = evaluation.strengths || []
+  const weaknesses = evaluation.weaknesses || []
+  const importantPoints = evaluation.important_points || []
+  const futureConsiderations = evaluation.future_considerations || []
+
+  const handleCopy = async (text: string) => {
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  // 科目名を取得（review.subject または review_json から）
+  const subject = review?.subject || review?.review_json?.subject || ""
+
+  const questionText = review?.question_text || ""
+  const purposeText = review?.purpose || ""
+  const gradingImpressionText = review?.grading_impression_text || ""
+  const purposeLabel = review?.source_type === "custom" ? "参考文章" : "出題趣旨"
+  const chatBadgeCount = Math.max(chatMessages.length - 1, 0)
+  const chatTheme = getChatMessageTheme("review")
 
   const ChatPanel = memo(({ 
     containerRef,
