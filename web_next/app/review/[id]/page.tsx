@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback, memo, type RefObject } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo, memo, type RefObject } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -252,6 +252,16 @@ export default function ReviewResultPage() {
   const purposeLabel = review?.source_type === "custom" ? "参考文章" : "出題趣旨"
   const chatBadgeCount = Math.max(chatMessages.length - 1, 0)
   const chatTheme = getChatMessageTheme("review")
+
+  // ChatInputをメモ化して再マウントを防ぐ
+  const leftChatInput = useMemo(
+    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} />,
+    [handleSendMessage, isLoading]
+  )
+  const rightChatInput = useMemo(
+    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} />,
+    [handleSendMessage, isLoading]
+  )
 
   const ChatPanel = memo(({ 
     containerRef,
@@ -508,10 +518,10 @@ export default function ReviewResultPage() {
             <div 
               className={cn(
                 "border-t border-border/70 bg-card shrink-0",
-                leftTab === "chat" ? "block" : "hidden"
+                leftTab === "chat" ? "visible" : "invisible pointer-events-none"
               )}
             >
-              <ChatInput key="left-chat-input" onSend={handleSendMessage} isLoading={isLoading} />
+              {leftChatInput}
             </div>
           </div>
         </div>
@@ -766,10 +776,10 @@ export default function ReviewResultPage() {
             <div 
               className={cn(
                 "border-t border-border/70 bg-card shrink-0",
-                rightTab === "chat" ? "block" : "hidden"
+                rightTab === "chat" ? "visible" : "invisible pointer-events-none"
               )}
             >
-              <ChatInput key="right-chat-input" onSend={handleSendMessage} isLoading={isLoading} />
+              {rightChatInput}
             </div>
           </div>
         </div>
