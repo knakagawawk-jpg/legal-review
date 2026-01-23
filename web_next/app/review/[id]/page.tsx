@@ -185,6 +185,15 @@ export default function ReviewResultPage() {
       })
   }, [threadId])
 
+  // ChatInputをメモ化して再マウントを防ぐ（早期リターンの前に配置）
+  const leftChatInput = useMemo(
+    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} />,
+    [handleSendMessage, isLoading]
+  )
+  const rightChatInput = useMemo(
+    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} />,
+    [handleSendMessage, isLoading]
+  )
 
   if (loading) {
     return (
@@ -252,16 +261,6 @@ export default function ReviewResultPage() {
   const purposeLabel = review?.source_type === "custom" ? "参考文章" : "出題趣旨"
   const chatBadgeCount = Math.max(chatMessages.length - 1, 0)
   const chatTheme = getChatMessageTheme("review")
-
-  // ChatInputをメモ化して再マウントを防ぐ
-  const leftChatInput = useMemo(
-    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} />,
-    [handleSendMessage, isLoading]
-  )
-  const rightChatInput = useMemo(
-    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} />,
-    [handleSendMessage, isLoading]
-  )
 
   const ChatPanel = memo(({ 
     containerRef,
