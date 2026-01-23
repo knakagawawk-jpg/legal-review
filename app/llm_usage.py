@@ -237,17 +237,15 @@ def build_llm_request_row(
     latency_ms: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
-    LLMリクエスト行を構築（コスト情報を含む）
+    LLMリクエスト行を構築（データベース保存用）
+    
+    注意: この関数はデータベースに保存するためのデータを返します。
+    入力/出力コストの詳細はデータベースには保存せず、APIレスポンス時に計算します。
     
     Returns:
-        LLMリクエスト行の辞書（input_cost_yen, output_cost_yen, cost_yenを含む）
+        LLMリクエスト行の辞書（cost_yenのみを含む、input_cost_yen/output_cost_yenは含まない）
     """
     cost = calculate_cost_yen(model, input_tokens, output_tokens)
-    cost_split = calculate_cost_yen_split(model, input_tokens, output_tokens)
-    input_cost_yen = None
-    output_cost_yen = None
-    if cost_split:
-        input_cost_yen, output_cost_yen = cost_split
     return {
         "user_id": user_id,
         "feature_type": feature_type,
@@ -258,8 +256,6 @@ def build_llm_request_row(
         "prompt_version": prompt_version,
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
-        "input_cost_yen": input_cost_yen,
-        "output_cost_yen": output_cost_yen,
         "cost_yen": cost,
         "request_id": request_id,
         "latency_ms": latency_ms,
