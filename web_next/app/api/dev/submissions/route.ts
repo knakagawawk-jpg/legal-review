@@ -1,13 +1,24 @@
 import { NextRequest, NextResponse } from "next/server"
+import { cookies } from "next/headers"
 
 const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:8000"
 
 // 動的ルートとしてマーク（request.urlを使用するため）
 export const dynamic = 'force-dynamic'
 
-// GET /api/dev/submissions - 開発用：全投稿一覧を取得（認証不要）
+// GET /api/dev/submissions - 開発用：全投稿一覧を取得（認証必須）
 export async function GET(request: NextRequest) {
   try {
+    const cookieStore = await cookies()
+    const token = cookieStore.get("auth_token")?.value
+
+    if (!token) {
+      return NextResponse.json(
+        { error: "認証が必要です" },
+        { status: 401 }
+      )
+    }
+
     const { searchParams } = new URL(request.url)
     const limit = searchParams.get("limit") || "100"
     const offset = searchParams.get("offset") || "0"
@@ -21,6 +32,7 @@ export async function GET(request: NextRequest) {
     const response = await fetch(url, {
       method: "GET",
       headers: {
+        "Authorization": `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       cache: "no-store",

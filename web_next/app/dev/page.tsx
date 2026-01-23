@@ -17,6 +17,7 @@ import type { ReviewResponse, SubmissionHistory, LlmRequestListResponse } from "
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { getSubjectName } from "@/lib/subjects"
+import { withAuth } from "@/components/auth/with-auth"
 
 type DevReviewData = {
   review_id?: number
@@ -28,7 +29,7 @@ type DevReviewData = {
   review_json: any
 }
 
-export default function DevPage() {
+function DevPage() {
   const router = useRouter()
   const { isOpen } = useSidebar()
   const [activeTab, setActiveTab] = useState("verify")
@@ -1023,3 +1024,5 @@ function LlmRequestTable() {
     </div>
   )
 }
+
+export default withAuth(DevPage, { requireAuth: true })

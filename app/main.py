@@ -1645,14 +1645,15 @@ async def get_my_submissions(
     
     return result
 
-# 開発用エンドポイント（認証不要で全投稿取得）
+# 開発用エンドポイント（認証必須で全投稿取得）
 @app.get("/v1/dev/submissions", response_model=List[SubmissionHistoryResponse])
 def get_all_submissions_dev(
+    current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0)
 ):
-    """開発用：全投稿一覧を取得（認証不要）"""
+    """開発用：全投稿一覧を取得（認証必須）"""
     submissions = db.query(Submission).order_by(Submission.created_at.desc()).offset(offset).limit(limit).all()
     
     result = []

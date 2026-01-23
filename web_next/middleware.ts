@@ -13,6 +13,7 @@ const protectedPaths = [
   "/your-page/notes",
   "/your-page/past-questions",
   "/your-page/subjects",
+  "/dev",
 ]
 
 // 認証が不要なパス（認証ページなど）
@@ -21,7 +22,6 @@ const publicPaths = [
   "/review",
   "/free-chat",
   "/short-answer",
-  "/dev",
 ]
 
 export function middleware(request: NextRequest) {

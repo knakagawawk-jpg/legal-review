@@ -23,14 +23,14 @@ services:
       - law-review-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 180s
     # ports公開しない（内部ネットワークのみアクセス可能）
 
-  # Next.js（フロントエンド）- 本番用
+    # Next.js（フロントエンド）- 本番用
   web:
     build:
       context: .
@@ -53,16 +53,16 @@ services:
       - law-review-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
     profiles:
-      - production  # 本番環境用プロファイル
+      - production # 本番環境用プロファイル
     # ports公開しない（proxy経由のみアクセス可能）
 
-  # Next.js（フロントエンド）- 開発用（ホットリロード対応）
+    # Next.js（フロントエンド）- 開発用（ホットリロード対応）
   web-dev:
     build:
       context: .
@@ -73,12 +73,12 @@ services:
       - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
       - REVIEW_TIMEOUT_MS=${REVIEW_TIMEOUT_MS:-600000}
       - NODE_ENV=development
-      - WATCHPACK_POLLING=true  # ファイル変更検知のため
+      - WATCHPACK_POLLING=true # ファイル変更検知のため
     volumes:
       # ソースコードをマウント（ホットリロード対応）
       - ./web_next:/app
-      - /app/node_modules  # node_modulesはボリュームで上書きしない
-      - /app/.next  # .nextもボリュームで上書きしない
+      - /app/node_modules # node_modulesはボリュームで上書きしない
+      - /app/.next # .nextもボリュームで上書きしない
     depends_on:
       backend:
         condition: service_healthy
@@ -86,13 +86,13 @@ services:
       - law-review-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
     profiles:
-      - local  # ローカル開発用プロファイル
+      - local # ローカル開発用プロファイル
     # ports公開しない（proxy経由のみアクセス可能）
 
   proxy:
@@ -101,11 +101,11 @@ services:
     image: caddy:2-alpine
     container_name: law-review-proxy
     profiles:
-      - production  # 本番環境用プロファイル（ドメインでアクセス）
+      - production # 本番環境用プロファイル（ドメインでアクセス）
     ports:
       - "80:80"
       - "443:443"
-      - "443:443/udp"  # HTTP/3用
+      - "443:443/udp" # HTTP/3用
     volumes:
       # 本番環境用Caddyfileを使用（環境変数 CADDYFILE_PATH で切り替え可能、デフォルト: Caddyfile.production）
       - ${CADDYFILE_PATH:-./Caddyfile.production}:/etc/caddy/Caddyfile:ro
@@ -118,7 +118,7 @@ services:
       - law-review-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:2019/config/"]
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:2019/config/" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -128,9 +128,9 @@ services:
     image: caddy:2-alpine
     container_name: law-review-proxy-local
     profiles:
-      - local  # ローカル開発用プロファイル
+      - local # ローカル開発用プロファイル
     ports:
-      - "8080:80"  # ローカル開発用（権限不要、競合回避）
+      - "8080:80" # ローカル開発用（権限不要、競合回避）
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -142,7 +142,7 @@ services:
       - law-review-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "--timeout=5", "http://localhost/"]
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "--timeout=5", "http://localhost/" ]
       interval: 30s
       timeout: 15s
       retries: 3
