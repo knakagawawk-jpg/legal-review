@@ -54,7 +54,7 @@ from .schemas import (
     StudyTagCreate, StudyTagResponse,
     StudyItemCreate, StudyItemUpdate, StudyItemResponse, StudyItemReorderRequest,
     OfficialQuestionYearsResponse, OfficialQuestionActiveResponse,
-    LlmRequestListResponse
+    LlmRequestResponse, LlmRequestListResponse
 )
 from pydantic import BaseModel
 from .llm_service import generate_review, chat_about_review, free_chat, generate_recent_review_problems, generate_chat_title
@@ -1814,8 +1814,60 @@ async def list_llm_requests(
 
     total = query.count()
     rows = query.order_by(LlmRequest.created_at.desc()).offset(offset).limit(limit).all()
+    
+    # レスポンス時にコストを計算
+    from .llm_usage import calculate_cost_yen_split, calculate_cost_usd_split
+    items = []
+    for row in rows:
+        # 円換算のコストを計算
+        cost_split_yen = calculate_cost_yen_split(row.model, row.input_tokens, row.output_tokens)
+        # ドル換算のコストを計算
+        cost_split_usd = calculate_cost_usd_split(row.model, row.input_tokens, row.output_tokens)
+        
+        input_cost_usd = None
+        output_cost_usd = None
+        total_cost_usd = None
+        total_cost_yen = None
+        
+        if cost_split_usd:
+            input_cost_usd, output_cost_usd = cost_split_usd
+            # Decimalをfloatに変換
+            input_cost_usd = float(input_cost_usd) if input_cost_usd is not None else None
+            output_cost_usd = float(output_cost_usd) if output_cost_usd is not None else None
+            # 合計コスト（ドル）
+            if input_cost_usd is not None or output_cost_usd is not None:
+                total_cost_usd = (input_cost_usd or 0.0) + (output_cost_usd or 0.0)
+        
+        if cost_split_yen:
+            input_cost_yen, output_cost_yen = cost_split_yen
+            # 合計コスト（円）
+            if input_cost_yen is not None or output_cost_yen is not None:
+                total_cost_yen = float((input_cost_yen or Decimal("0")) + (output_cost_yen or Decimal("0")))
+        
+        # LlmRequestResponseオブジェクトを作成
+        item = LlmRequestResponse(
+            id=row.id,
+            user_id=row.user_id,
+            feature_type=row.feature_type,
+            review_id=row.review_id,
+            thread_id=row.thread_id,
+            session_id=row.session_id,
+            model=row.model,
+            prompt_version=row.prompt_version,
+            input_tokens=row.input_tokens,
+            output_tokens=row.output_tokens,
+            input_cost_usd=input_cost_usd,
+            output_cost_usd=output_cost_usd,
+            total_cost_usd=total_cost_usd,
+            total_cost_yen=total_cost_yen,
+            request_id=row.request_id,
+            latency_ms=row.latency_ms,
+            created_at=row.created_at,
+        )
+        items.append(item)
+    
     return LlmRequestListResponse(
-        items=rows,
+        items=items,
         total=total,
     )
 

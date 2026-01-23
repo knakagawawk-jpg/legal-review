@@ -56,7 +56,7 @@ export default function ReviewResultPage() {
     window.addEventListener('resize', checkScreenSize)
     return () => window.removeEventListener('resize', checkScreenSize)
   }, [])
-  
+
   const [copied, setCopied] = useState(false)
   const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([
     {
@@ -107,7 +107,7 @@ export default function ReviewResultPage() {
 
   if (loading) {
     return (
-      <div 
+      <div
         className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
         style={{
           marginLeft: isOpen ? '208px' : '0',
@@ -126,7 +126,7 @@ export default function ReviewResultPage() {
 
   if (error || !review) {
     return (
-      <div 
+      <div
         className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
         style={{
           marginLeft: isOpen ? '208px' : '0',
@@ -192,7 +192,7 @@ export default function ReviewResultPage() {
 
     const userMessage = inputValue.trim()
     setInputValue("")
-    
+
     const updatedMessages = [...chatMessages, { role: "user" as const, content: userMessage }]
     setChatMessages(updatedMessages)
     setIsLoading(true)
@@ -236,7 +236,7 @@ export default function ReviewResultPage() {
 
     apiClient
       .delete(`/api/threads/${threadId}/messages`)
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => {
         clearLocal()
       })
@@ -318,7 +318,7 @@ export default function ReviewResultPage() {
   )
 
   return (
-    <div 
+    <div
       className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
       style={{
         marginLeft: isOpen ? '208px' : '0',
@@ -349,13 +349,13 @@ export default function ReviewResultPage() {
         </div>
       </header>
 
-      <div 
+      <div
         className="flex flex-row flex-1 min-h-0 overflow-hidden w-full"
       >
         {/* Left Panel */}
         <div
           className="lg:min-h-0 border-b lg:border-b-0 lg:border-r border-border flex flex-col overflow-hidden shrink-0"
-          style={{ 
+          style={{
             width: `${leftWidth}%`,
             flexBasis: `${leftWidth}%`,
             flexGrow: 0,
@@ -483,9 +483,9 @@ export default function ReviewResultPage() {
         <PanelResizer onResize={setLeftWidth} currentWidth={leftWidth} />
 
         {/* Right Panel */}
-        <div 
-          className="flex flex-col min-h-0 overflow-hidden min-w-0 bg-background" 
-          style={{ 
+        <div
+          className="flex flex-col min-h-0 overflow-hidden min-w-0 bg-background"
+          style={{
             width: 'auto',
             flexBasis: 0,
             flexGrow: 1,

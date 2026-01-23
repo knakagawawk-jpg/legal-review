@@ -799,6 +799,16 @@ function LlmRequestTable() {
     `${input ?? "-"} / ${output ?? "-"}`
 
   const formatCost = (cost?: number | null) => (cost != null ? `${cost.toFixed(2)}円` : "-")
+  
+  const formatCostUsd = (cost?: number | null) => {
+    if (cost == null) return "-"
+    return `$${cost.toFixed(4)}`
+  }
+  
+  const formatCostYen = (cost?: number | null) => {
+    if (cost == null) return "-"
+    return `${cost.toFixed(2)}円`
+  }
 
   return (
     <div className="space-y-6">
@@ -935,7 +945,10 @@ function LlmRequestTable() {
                   <TableHead>種別</TableHead>
                   <TableHead>モデル</TableHead>
                   <TableHead>tokens(in/out)</TableHead>
-                  <TableHead>コスト</TableHead>
+                  <TableHead>入力コスト（$）</TableHead>
+                  <TableHead>出力コスト（$）</TableHead>
+                  <TableHead>合計コスト（$）</TableHead>
+                  <TableHead>合計コスト（円）</TableHead>
                   <TableHead>request_id</TableHead>
                   <TableHead>review_id</TableHead>
                   <TableHead>thread_id</TableHead>
@@ -946,14 +959,14 @@ function LlmRequestTable() {
               <TableBody>
                 {loading && (
                   <TableRow>
-                    <TableCell colSpan={10}>
+                    <TableCell colSpan={14}>
                       <Skeleton className="h-8 w-full" />
                     </TableCell>
                   </TableRow>
                 )}
                 {!loading && items.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center text-muted-foreground">
+                    <TableCell colSpan={14} className="text-center text-muted-foreground">
                       データがありません
                     </TableCell>
                   </TableRow>
@@ -969,7 +982,10 @@ function LlmRequestTable() {
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate">{row.model || "-"}</TableCell>
                       <TableCell>{formatTokens(row.input_tokens, row.output_tokens)}</TableCell>
-                      <TableCell>{formatCost(row.cost_yen)}</TableCell>
+                      <TableCell>{formatCostUsd(row.input_cost_usd)}</TableCell>
+                      <TableCell>{formatCostUsd(row.output_cost_usd)}</TableCell>
+                      <TableCell>{formatCostUsd(row.total_cost_usd)}</TableCell>
+                      <TableCell>{formatCostYen(row.total_cost_yen)}</TableCell>
                       <TableCell className="max-w-[200px] truncate">{row.request_id || "-"}</TableCell>
                       <TableCell>{row.review_id ?? "-"}</TableCell>
                       <TableCell>{row.thread_id ?? "-"}</TableCell>

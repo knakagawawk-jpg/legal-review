@@ -444,7 +444,10 @@ class LlmRequestResponse(BaseModel):
     prompt_version: Optional[str] = None
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
-    cost_yen: Optional[float] = None
+    input_cost_usd: Optional[float] = None  # 入力コスト（ドル）
+    output_cost_usd: Optional[float] = None  # 出力コスト（ドル）
+    total_cost_usd: Optional[float] = None  # 合計コスト（ドル）
+    total_cost_yen: Optional[float] = None  # 合計コスト（円）
     request_id: Optional[str] = None
     latency_ms: Optional[int] = None
     created_at: datetime

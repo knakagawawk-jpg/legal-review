@@ -275,7 +275,10 @@ export interface LlmRequest {
   prompt_version?: string | null
   input_tokens?: number | null
   output_tokens?: number | null
-  cost_yen?: number | null
+  input_cost_usd?: number | null  // 入力コスト（ドル）
+  output_cost_usd?: number | null  // 出力コスト（ドル）
+  total_cost_usd?: number | null  // 合計コスト（ドル）
+  total_cost_yen?: number | null  // 合計コスト（円）
   request_id?: string | null
   latency_ms?: number | null
   created_at: string
