@@ -1,7 +1,20 @@
 """LLM設定管理（API Keyとモデルの一元管理）"""
 import os
+from pathlib import Path
 from typing import Optional
 from anthropic import Anthropic
+
+# .envファイルの読み込み（python-dotenvがインストールされている場合）
+try:
+    from dotenv import load_dotenv
+    # プロジェクトルートの.envファイルを読み込む
+    env_path = Path(__file__).parent.parent / ".env"
+    if env_path.exists():
+        # NOTE: override=False で既存の環境変数を上書きしない
+        load_dotenv(env_path, override=False)
+except ImportError:
+    # python-dotenvがインストールされていない場合はスキップ
+    pass
 
 # 用途の定義
 USE_CASE_REVIEW = "review"  # 答案の講評生成
