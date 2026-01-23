@@ -66,8 +66,14 @@ export default function ReviewResultPage() {
   const [threadId, setThreadId] = useState<number | null>(null)
   const [chatLoaded, setChatLoaded] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const isLoadingRef = useRef(false)
   const chatContainerLeftRef = useRef<HTMLDivElement>(null)
   const chatContainerRightRef = useRef<HTMLDivElement>(null)
+
+  // isLoadingRefをisLoadingと同期
+  useEffect(() => {
+    isLoadingRef.current = isLoading
+  }, [isLoading])
 
   useEffect(() => {
     const fetchReview = async () => {
@@ -125,7 +131,7 @@ export default function ReviewResultPage() {
   }, [reviewId, chatLoaded, threadId])
 
   const handleSendMessage = useCallback(async (content: string) => {
-    if (!content.trim() || isLoading || !review) return
+    if (!content.trim() || isLoadingRef.current || !review) return
 
     const userMessage = content.trim()
 
@@ -155,7 +161,7 @@ export default function ReviewResultPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [isLoading, review, threadId, loadChat])
+  }, [review, threadId, loadChat])
 
   const handleClearChat = useCallback(() => {
     const clearLocal = () =>
@@ -429,76 +435,84 @@ export default function ReviewResultPage() {
             </div>
           </div>
 
-          <div
-            className={cn(
-              "flex-1 p-5 custom-scrollbar",
-              leftTab === "chat" ? "overflow-hidden" : "overflow-y-auto",
-            )}
-          >
-            {leftTab === "answer" && (
-              <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-gradient-to-r from-secondary/50 to-transparent">
-                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">提出答案</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleCopy(review.answer_text)}
-                    className="h-7 gap-1.5 text-muted-foreground hover:text-foreground rounded-full"
-                  >
-                    {copied ? (
-                      <>
-                        <Check className="h-3.5 w-3.5 text-success" />
-                        <span className="text-xs">コピー済</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-3.5 w-3.5" />
-                        <span className="text-xs">コピー</span>
-                      </>
-                    )}
-                  </Button>
+          <div className="flex-1 flex flex-col min-h-0">
+            <div
+              className={cn(
+                "flex-1 p-5 custom-scrollbar",
+                leftTab === "chat" ? "overflow-hidden" : "overflow-y-auto",
+              )}
+            >
+              {leftTab === "answer" && (
+                <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-gradient-to-r from-secondary/50 to-transparent">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">提出答案</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleCopy(review.answer_text)}
+                      className="h-7 gap-1.5 text-muted-foreground hover:text-foreground rounded-full"
+                    >
+                      {copied ? (
+                        <>
+                          <Check className="h-3.5 w-3.5 text-success" />
+                          <span className="text-xs">コピー済</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3.5 w-3.5" />
+                          <span className="text-xs">コピー</span>
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                  <div className="p-5">
+                    <pre className="text-sm font-mono whitespace-pre-wrap text-foreground/90 leading-7">
+                      {review.answer_text}
+                    </pre>
+                  </div>
                 </div>
-                <div className="p-5">
-                  <pre className="text-sm font-mono whitespace-pre-wrap text-foreground/90 leading-7">
-                    {review.answer_text}
-                  </pre>
+              )}
+
+              {leftTab === "question" && (
+                <div className="bg-secondary/40 rounded-2xl border border-border/50 p-5">
+                  <pre className="text-sm whitespace-pre-wrap text-muted-foreground leading-7">{review.question_text}</pre>
                 </div>
-              </div>
-            )}
+              )}
 
-            {leftTab === "question" && (
-              <div className="bg-secondary/40 rounded-2xl border border-border/50 p-5">
-                <pre className="text-sm whitespace-pre-wrap text-muted-foreground leading-7">{review.question_text}</pre>
-              </div>
-            )}
-
-            {leftTab === "purpose" && (
-              <div className="bg-secondary/40 rounded-2xl border border-border/50 p-5">
-                <pre className="text-sm whitespace-pre-wrap text-muted-foreground leading-7">{purposeText}</pre>
-              </div>
-            )}
-
-            {leftTab === "grading_impression" && (
-              <div className="bg-secondary/40 rounded-2xl border border-border/50 p-5">
-                <pre className="text-sm whitespace-pre-wrap text-muted-foreground leading-7">{gradingImpressionText}</pre>
-              </div>
-            )}
-
-            {leftTab === "chat" && (
-              <div className="flex flex-col h-full">
-                <ChatPanel 
-                  containerRef={chatContainerLeftRef}
-                  chatMessages={chatMessages}
-                  isLoading={isLoading}
-                  chatBadgeCount={chatBadgeCount}
-                  chatTheme={chatTheme}
-                  onClearChat={handleClearChat}
-                />
-                <div className="border-t border-border/70 bg-card">
-                  <ChatInput onSend={handleSendMessage} isLoading={isLoading} />
+              {leftTab === "purpose" && (
+                <div className="bg-secondary/40 rounded-2xl border border-border/50 p-5">
+                  <pre className="text-sm whitespace-pre-wrap text-muted-foreground leading-7">{purposeText}</pre>
                 </div>
-              </div>
-            )}
+              )}
+
+              {leftTab === "grading_impression" && (
+                <div className="bg-secondary/40 rounded-2xl border border-border/50 p-5">
+                  <pre className="text-sm whitespace-pre-wrap text-muted-foreground leading-7">{gradingImpressionText}</pre>
+                </div>
+              )}
+
+              {leftTab === "chat" && (
+                <div className="flex flex-col h-full">
+                  <ChatPanel 
+                    containerRef={chatContainerLeftRef}
+                    chatMessages={chatMessages}
+                    isLoading={isLoading}
+                    chatBadgeCount={chatBadgeCount}
+                    chatTheme={chatTheme}
+                    onClearChat={handleClearChat}
+                  />
+                </div>
+              )}
+            </div>
+            {/* ChatInputを常にレンダリングして、条件に応じて表示/非表示を切り替える */}
+            <div 
+              className={cn(
+                "border-t border-border/70 bg-card shrink-0",
+                leftTab === "chat" ? "block" : "hidden"
+              )}
+            >
+              <ChatInput key="left-chat-input" onSend={handleSendMessage} isLoading={isLoading} />
+            </div>
           </div>
         </div>
 
@@ -574,181 +588,189 @@ export default function ReviewResultPage() {
             </div>
           </div>
 
-          <div
-            className={cn(
-              "flex-1 p-5 custom-scrollbar",
-              rightTab === "chat" ? "overflow-hidden" : "overflow-y-auto",
-            )}
-          >
-            {rightTab === "review" && (
-              <div className="space-y-8 max-w-2xl">
-                {score !== undefined && (
-                  <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
-                    <div className="flex items-start gap-6">
-                      <ScoreRing score={score} />
-                      <div className="flex-1 pt-2">
-                        <h2 className="text-lg font-bold text-foreground mb-3">総合評価</h2>
-                        <p className="text-sm text-muted-foreground leading-relaxed">
-                          {overallReview.comment || "コメントがありません"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Strengths */}
-                {strengths.length > 0 && (
-                  <div>
-                    <h3 className="text-xs font-bold text-success uppercase tracking-wider mb-4 flex items-center gap-2">
-                      <div className="p-1.5 rounded-lg bg-success/10">
-                        <TrendingUp className="h-3.5 w-3.5" />
-                      </div>
-                      評価した点
-                    </h3>
-                    <div className="space-y-3">
-                      {strengths.map((strength, index) => (
-                        <FeedbackCard
-                          key={index}
-                          type="strength"
-                          category={strength.category}
-                          description={strength.description}
-                          paragraphs={strength.paragraph_numbers}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Weaknesses */}
-                {weaknesses.length > 0 && (
-                  <div>
-                    <h3 className="text-xs font-bold text-error uppercase tracking-wider mb-4 flex items-center gap-2">
-                      <div className="p-1.5 rounded-lg bg-error/10">
-                        <AlertCircle className="h-3.5 w-3.5" />
-                      </div>
-                      改善点
-                    </h3>
-                    <div className="space-y-3">
-                      {weaknesses.map((weakness, index) => (
-                        <FeedbackCard
-                          key={index}
-                          type="weakness"
-                          category={weakness.category}
-                          description={weakness.description}
-                          paragraphs={weakness.paragraph_numbers}
-                          suggestion={weakness.suggestion}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Important Points */}
-                {importantPoints.length > 0 && (
-                  <div>
-                    <h3 className="text-xs font-bold text-primary uppercase tracking-wider mb-4 flex items-center gap-2">
-                      <div className="p-1.5 rounded-lg bg-primary/10">
-                        <Lightbulb className="h-3.5 w-3.5" />
-                      </div>
-                      重要な段落
-                    </h3>
-                    <div className="space-y-3">
-                      {importantPoints.map((point, index) => (
-                        <div
-                          key={index}
-                          className="bg-card rounded-2xl border border-border p-5 hover:shadow-md transition-shadow"
-                        >
-                          <div className="flex items-center gap-2 mb-4">
-                            <span className="text-xs font-bold px-3 py-1 rounded-full bg-gradient-to-r from-primary/20 to-accent/20 text-primary">
-                              第{point.paragraph_number}段落
-                            </span>
-                          </div>
-                          <div className="space-y-4 text-sm">
-                            <div className="flex gap-3">
-                              <div className="w-1 rounded-full bg-success shrink-0" />
-                              <div>
-                                <span className="text-xs font-semibold text-success uppercase tracking-wider">
-                                  良い点
-                                </span>
-                                <p className="mt-1 text-muted-foreground">{point.what_is_good}</p>
-                              </div>
-                            </div>
-                            <div className="flex gap-3">
-                              <div className="w-1 rounded-full bg-error shrink-0" />
-                              <div>
-                                <span className="text-xs font-semibold text-error uppercase tracking-wider">不足点</span>
-                                <p className="mt-1 text-muted-foreground">{point.what_is_lacking}</p>
-                              </div>
-                            </div>
-                            <div className="pt-3 border-t border-border">
-                              <p className="text-xs text-foreground/70 italic leading-relaxed">{point.why_important}</p>
-                            </div>
-                          </div>
+          <div className="flex-1 flex flex-col min-h-0">
+            <div
+              className={cn(
+                "flex-1 p-5 custom-scrollbar",
+                rightTab === "chat" ? "overflow-hidden" : "overflow-y-auto",
+              )}
+            >
+              {rightTab === "review" && (
+                <div className="space-y-8 max-w-2xl">
+                  {score !== undefined && (
+                    <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
+                      <div className="flex items-start gap-6">
+                        <ScoreRing score={score} />
+                        <div className="flex-1 pt-2">
+                          <h2 className="text-lg font-bold text-foreground mb-3">総合評価</h2>
+                          <p className="text-sm text-muted-foreground leading-relaxed">
+                            {overallReview.comment || "コメントがありません"}
+                          </p>
                         </div>
-                      ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* Future Considerations */}
-                {futureConsiderations.length > 0 && (
-                  <div className="bg-gradient-to-br from-secondary/60 to-accent/20 rounded-2xl p-6 border border-border/50">
-                    <h3 className="text-xs font-bold text-foreground uppercase tracking-wider mb-4">
-                      今後意識すべきこと
-                    </h3>
-                    <ul className="space-y-3">
-                      {futureConsiderations.map((item, index) => {
-                        // 後方互換性: stringまたはdict形式に対応
-                        const content = typeof item === 'string' ? item : item.content
-                        const blockNumber = typeof item === 'object' && 'block_number' in item ? item.block_number : index + 1
-                        return (
-                          <li key={index} className="flex items-start gap-3 text-sm text-foreground/80">
-                            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-bold shrink-0">
-                              {blockNumber}
-                            </span>
-                            <span className="leading-relaxed">{content}</span>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
+                  {/* Strengths */}
+                  {strengths.length > 0 && (
+                    <div>
+                      <h3 className="text-xs font-bold text-success uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <div className="p-1.5 rounded-lg bg-success/10">
+                          <TrendingUp className="h-3.5 w-3.5" />
+                        </div>
+                        評価した点
+                      </h3>
+                      <div className="space-y-3">
+                        {strengths.map((strength, index) => (
+                          <FeedbackCard
+                            key={index}
+                            type="strength"
+                            category={strength.category}
+                            description={strength.description}
+                            paragraphs={strength.paragraph_numbers}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-            {rightTab === "question" && (
-              <div className="bg-secondary/40 rounded-2xl border border-border/50 p-5">
-                <pre className="text-sm whitespace-pre-wrap text-muted-foreground leading-7">{review.question_text}</pre>
-              </div>
-            )}
+                  {/* Weaknesses */}
+                  {weaknesses.length > 0 && (
+                    <div>
+                      <h3 className="text-xs font-bold text-error uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <div className="p-1.5 rounded-lg bg-error/10">
+                          <AlertCircle className="h-3.5 w-3.5" />
+                        </div>
+                        改善点
+                      </h3>
+                      <div className="space-y-3">
+                        {weaknesses.map((weakness, index) => (
+                          <FeedbackCard
+                            key={index}
+                            type="weakness"
+                            category={weakness.category}
+                            description={weakness.description}
+                            paragraphs={weakness.paragraph_numbers}
+                            suggestion={weakness.suggestion}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-            {rightTab === "purpose" && (
-              <div className="bg-secondary/40 rounded-2xl border border-border/50 p-5">
-                <pre className="text-sm whitespace-pre-wrap text-muted-foreground leading-7">{purposeText}</pre>
-              </div>
-            )}
+                  {/* Important Points */}
+                  {importantPoints.length > 0 && (
+                    <div>
+                      <h3 className="text-xs font-bold text-primary uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <div className="p-1.5 rounded-lg bg-primary/10">
+                          <Lightbulb className="h-3.5 w-3.5" />
+                        </div>
+                        重要な段落
+                      </h3>
+                      <div className="space-y-3">
+                        {importantPoints.map((point, index) => (
+                          <div
+                            key={index}
+                            className="bg-card rounded-2xl border border-border p-5 hover:shadow-md transition-shadow"
+                          >
+                            <div className="flex items-center gap-2 mb-4">
+                              <span className="text-xs font-bold px-3 py-1 rounded-full bg-gradient-to-r from-primary/20 to-accent/20 text-primary">
+                                第{point.paragraph_number}段落
+                              </span>
+                            </div>
+                            <div className="space-y-4 text-sm">
+                              <div className="flex gap-3">
+                                <div className="w-1 rounded-full bg-success shrink-0" />
+                                <div>
+                                  <span className="text-xs font-semibold text-success uppercase tracking-wider">
+                                    良い点
+                                  </span>
+                                  <p className="mt-1 text-muted-foreground">{point.what_is_good}</p>
+                                </div>
+                              </div>
+                              <div className="flex gap-3">
+                                <div className="w-1 rounded-full bg-error shrink-0" />
+                                <div>
+                                  <span className="text-xs font-semibold text-error uppercase tracking-wider">不足点</span>
+                                  <p className="mt-1 text-muted-foreground">{point.what_is_lacking}</p>
+                                </div>
+                              </div>
+                              <div className="pt-3 border-t border-border">
+                                <p className="text-xs text-foreground/70 italic leading-relaxed">{point.why_important}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-            {rightTab === "grading_impression" && (
-              <div className="bg-secondary/40 rounded-2xl border border-border/50 p-5">
-                <pre className="text-sm whitespace-pre-wrap text-muted-foreground leading-7">{gradingImpressionText}</pre>
-              </div>
-            )}
-
-            {rightTab === "chat" && (
-              <div className="flex flex-col h-full">
-                <ChatPanel 
-                  containerRef={chatContainerRightRef}
-                  chatMessages={chatMessages}
-                  isLoading={isLoading}
-                  chatBadgeCount={chatBadgeCount}
-                  chatTheme={chatTheme}
-                  onClearChat={handleClearChat}
-                />
-                <div className="border-t border-border/70 bg-card">
-                  <ChatInput onSend={handleSendMessage} isLoading={isLoading} />
+                  {/* Future Considerations */}
+                  {futureConsiderations.length > 0 && (
+                    <div className="bg-gradient-to-br from-secondary/60 to-accent/20 rounded-2xl p-6 border border-border/50">
+                      <h3 className="text-xs font-bold text-foreground uppercase tracking-wider mb-4">
+                        今後意識すべきこと
+                      </h3>
+                      <ul className="space-y-3">
+                        {futureConsiderations.map((item, index) => {
+                          // 後方互換性: stringまたはdict形式に対応
+                          const content = typeof item === 'string' ? item : item.content
+                          const blockNumber = typeof item === 'object' && 'block_number' in item ? item.block_number : index + 1
+                          return (
+                            <li key={index} className="flex items-start gap-3 text-sm text-foreground/80">
+                              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-bold shrink-0">
+                                {blockNumber}
+                              </span>
+                              <span className="leading-relaxed">{content}</span>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
+              )}
+
+              {rightTab === "question" && (
+                <div className="bg-secondary/40 rounded-2xl border border-border/50 p-5">
+                  <pre className="text-sm whitespace-pre-wrap text-muted-foreground leading-7">{review.question_text}</pre>
+                </div>
+              )}
+
+              {rightTab === "purpose" && (
+                <div className="bg-secondary/40 rounded-2xl border border-border/50 p-5">
+                  <pre className="text-sm whitespace-pre-wrap text-muted-foreground leading-7">{purposeText}</pre>
+                </div>
+              )}
+
+              {rightTab === "grading_impression" && (
+                <div className="bg-secondary/40 rounded-2xl border border-border/50 p-5">
+                  <pre className="text-sm whitespace-pre-wrap text-muted-foreground leading-7">{gradingImpressionText}</pre>
+                </div>
+              )}
+
+              {rightTab === "chat" && (
+                <div className="flex flex-col h-full">
+                  <ChatPanel 
+                    containerRef={chatContainerRightRef}
+                    chatMessages={chatMessages}
+                    isLoading={isLoading}
+                    chatBadgeCount={chatBadgeCount}
+                    chatTheme={chatTheme}
+                    onClearChat={handleClearChat}
+                  />
+                </div>
+              )}
+            </div>
+            {/* ChatInputを常にレンダリングして、条件に応じて表示/非表示を切り替える */}
+            <div 
+              className={cn(
+                "border-t border-border/70 bg-card shrink-0",
+                rightTab === "chat" ? "block" : "hidden"
+              )}
+            >
+              <ChatInput key="right-chat-input" onSend={handleSendMessage} isLoading={isLoading} />
+            </div>
           </div>
         </div>
       </div>

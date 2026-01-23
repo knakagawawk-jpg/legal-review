@@ -16,6 +16,12 @@ interface ChatInputProps {
 export const ChatInput = memo(function ChatInput({ onSend, isLoading }: ChatInputProps) {
   const [input, setInput] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const onSendRef = useRef(onSend)
+
+  // onSendの参照を最新に保つ
+  useEffect(() => {
+    onSendRef.current = onSend
+  }, [onSend])
 
   // Auto-resize textarea
   useEffect(() => {
@@ -27,7 +33,7 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading }: ChatInpu
 
   const handleSubmit = () => {
     if (input.trim() && !isLoading) {
-      onSend(input)
+      onSendRef.current(input)
       setInput("")
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto"
@@ -80,4 +86,8 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading }: ChatInpu
       </div>
     </ChatInputBar>
   )
+}, (prevProps, nextProps) => {
+  // isLoadingの変更のみを再レンダリングのトリガーとする
+  // onSendの参照が変わっても再レンダリングしない（refで最新の参照を保持するため）
+  return prevProps.isLoading === nextProps.isLoading
 })
