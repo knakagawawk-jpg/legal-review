@@ -54,13 +54,17 @@ class LLMConfig:
         # デフォルトモデル
         self.default_model = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
         
-        # 用途別モデル設定（環境変数が未設定の場合はデフォルトを使用）
+        # 用途別モデル設定（環境変数が未設定または空文字列の場合はデフォルトを使用）
+        def get_model_or_default(env_var_name: str) -> str:
+            value = os.getenv(env_var_name)
+            return value if value and value.strip() else self.default_model
+        
         self.models = {
-            USE_CASE_REVIEW: os.getenv("ANTHROPIC_MODEL_REVIEW", self.default_model),
-            USE_CASE_REVIEW_CHAT: os.getenv("ANTHROPIC_MODEL_REVIEW_CHAT", self.default_model),
-            USE_CASE_FREE_CHAT: os.getenv("ANTHROPIC_MODEL_FREE_CHAT", self.default_model),
-            USE_CASE_REVISIT_PROBLEMS: os.getenv("ANTHROPIC_MODEL_REVISIT_PROBLEMS", self.default_model),
-            USE_CASE_TITLE: os.getenv("ANTHROPIC_MODEL_TITLE", self.default_model),
+            USE_CASE_REVIEW: get_model_or_default("ANTHROPIC_MODEL_REVIEW"),
+            USE_CASE_REVIEW_CHAT: get_model_or_default("ANTHROPIC_MODEL_REVIEW_CHAT"),
+            USE_CASE_FREE_CHAT: get_model_or_default("ANTHROPIC_MODEL_FREE_CHAT"),
+            USE_CASE_REVISIT_PROBLEMS: get_model_or_default("ANTHROPIC_MODEL_REVISIT_PROBLEMS"),
+            USE_CASE_TITLE: get_model_or_default("ANTHROPIC_MODEL_TITLE"),
         }
         
         self._initialized = True
