@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, type RefObject } from "react"
+import { useState, useEffect, useRef, useCallback, memo, type RefObject } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -69,6 +69,7 @@ export default function ReviewResultPage() {
   const [isLoading, setIsLoading] = useState(false)
   const chatContainerLeftRef = useRef<HTMLDivElement>(null)
   const chatContainerRightRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const fetchReview = async () => {
@@ -181,15 +182,14 @@ export default function ReviewResultPage() {
     }
   }
 
-  const handleSendMessage = async () => {
+  const handleSendMessage = useCallback(async () => {
     if (!inputValue.trim() || isLoading || !review) return
 
     const userMessage = inputValue.trim()
     setInputValue("")
 
     // ユーザーメッセージを追加
-    const updatedMessages = [...chatMessages, { role: "user" as const, content: userMessage }]
-    setChatMessages(updatedMessages)
+    setChatMessages((prev) => [...prev, { role: "user" as const, content: userMessage }])
     setIsLoading(true)
 
     try {
@@ -214,9 +214,9 @@ export default function ReviewResultPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [inputValue, isLoading, review, threadId, loadChat])
 
-  const handleClearChat = () => {
+  const handleClearChat = useCallback(() => {
     const clearLocal = () =>
       setChatMessages([
         {
@@ -236,7 +236,7 @@ export default function ReviewResultPage() {
       .finally(() => {
         clearLocal()
       })
-  }
+  }, [threadId])
 
   // 科目名を取得（review.subject または review_json から）
   const subject = review.subject || reviewJson.subject || ""
@@ -248,70 +248,120 @@ export default function ReviewResultPage() {
   const chatBadgeCount = Math.max(chatMessages.length - 1, 0)
   const chatTheme = getChatMessageTheme("review")
 
-  const ChatPanel = ({ containerRef }: { containerRef: RefObject<HTMLDivElement> }) => (
-    <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden h-full flex flex-col">
-      <ChatBar
-        className="border-border bg-gradient-to-r from-lime-500/10 to-transparent"
-        leading={(
-          <>
-            <div className="p-1.5 rounded-lg bg-lime-500/10 shrink-0">
-              <MessageCircle className="h-4 w-4 text-lime-600" />
-            </div>
-            <span className="text-sm font-semibold text-foreground truncate">チャット</span>
-            {chatBadgeCount > 0 && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-lime-500/15 text-lime-700 font-medium shrink-0">
-                {chatBadgeCount}
-              </span>
-            )}
-          </>
-        )}
-        trailing={(
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleClearChat}
-            className="h-7 text-muted-foreground hover:text-foreground rounded-full"
-          >
-            <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-            クリア
-          </Button>
-        )}
-      />
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const wasFocused = document.activeElement === inputRef.current
+    setInputValue(e.target.value)
+    if (wasFocused && inputRef.current) {
+      // 次のフレームでフォーカスを復元
+      requestAnimationFrame(() => {
+        inputRef.current?.focus()
+      })
+    }
+  }, [])
 
-      <ChatMessageList
-        messages={chatMessages}
-        isLoading={isLoading}
-        containerRef={containerRef}
-        renderMessage={(message, index) => <ChatMessage key={index} {...message} />}
-        loadingIndicator={(
-          <ChatLoadingIndicator
-            layout="inline"
-            className="text-sm text-muted-foreground"
-            dotsClassName="gap-1"
-            dotClassName={chatTheme.loadingDotClassName}
-          />
-        )}
-        containerClassName="px-4 py-3 custom-scrollbar min-h-0"
-        contentClassName="space-y-3"
-      />
+  const ChatPanel = memo(({ 
+    containerRef,
+    chatMessages: msgs,
+    isLoading: loading,
+    chatBadgeCount: badgeCount,
+    chatTheme: theme,
+    inputValue: input,
+    onInputChange,
+    onSendMessage,
+    onClearChat,
+    inputRef: ref
+  }: { 
+    containerRef: RefObject<HTMLDivElement>
+    chatMessages: Array<{ role: "user" | "assistant"; content: string }>
+    isLoading: boolean
+    chatBadgeCount: number
+    chatTheme: ReturnType<typeof getChatMessageTheme>
+    inputValue: string
+    onInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void
+    onSendMessage: () => void
+    onClearChat: () => void
+    inputRef: React.RefObject<HTMLInputElement>
+  }) => {
+    return (
+      <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden h-full flex flex-col">
+        <ChatBar
+          className="border-border bg-gradient-to-r from-lime-500/10 to-transparent"
+          leading={(
+            <>
+              <div className="p-1.5 rounded-lg bg-lime-500/10 shrink-0">
+                <MessageCircle className="h-4 w-4 text-lime-600" />
+              </div>
+              <span className="text-sm font-semibold text-foreground truncate">チャット</span>
+              {badgeCount > 0 && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-lime-500/15 text-lime-700 font-medium shrink-0">
+                  {badgeCount}
+                </span>
+              )}
+            </>
+          )}
+          trailing={(
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClearChat}
+              className="h-7 text-muted-foreground hover:text-foreground rounded-full"
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+              クリア
+            </Button>
+          )}
+        />
 
-      <ChatInputBar className="border-t border-border/70 bg-card px-4 pb-4 pt-2" contentClassName="w-full">
-        <div className="flex gap-3">
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-            placeholder="質問を入力..."
-            className="flex-1 px-4 py-2.5 rounded-full border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-lime-500/20 focus:border-lime-600 transition-all placeholder:text-muted-foreground/60"
-          />
-          <Button onClick={handleSendMessage} disabled={!inputValue.trim() || isLoading} className="px-5 rounded-full">
-            <Send className="h-4 w-4" />
-          </Button>
-        </div>
-      </ChatInputBar>
-    </div>
-  )
+        <ChatMessageList
+          messages={msgs}
+          isLoading={loading}
+          containerRef={containerRef}
+          renderMessage={(message, index) => <ChatMessage key={index} {...message} />}
+          loadingIndicator={(
+            <ChatLoadingIndicator
+              layout="inline"
+              className="text-sm text-muted-foreground"
+              dotsClassName="gap-1"
+              dotClassName={theme.loadingDotClassName}
+            />
+          )}
+          containerClassName="px-4 py-3 custom-scrollbar min-h-0"
+          contentClassName="space-y-3"
+        />
+
+        <ChatInputBar className="border-t border-border/70 bg-card px-4 pb-4 pt-2" contentClassName="w-full">
+          <div className="flex gap-3">
+            <input
+              key="chat-input"
+              ref={ref}
+              type="text"
+              value={input}
+              onChange={onInputChange}
+              onKeyDown={(e) => e.key === "Enter" && onSendMessage()}
+              placeholder="質問を入力..."
+              className="flex-1 px-4 py-2.5 rounded-full border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-lime-500/20 focus:border-lime-600 transition-all placeholder:text-muted-foreground/60"
+            />
+            <Button onClick={onSendMessage} disabled={!input.trim() || loading} className="px-5 rounded-full">
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+        </ChatInputBar>
+      </div>
+    )
+  }, (prevProps, nextProps) => {
+    // 入力値が変更された場合は再レンダリングが必要
+    if (prevProps.inputValue !== nextProps.inputValue) return false
+    // メッセージが変更された場合は再レンダリングが必要
+    if (prevProps.chatMessages.length !== nextProps.chatMessages.length) return false
+    // ローディング状態が変更された場合は再レンダリングが必要
+    if (prevProps.isLoading !== nextProps.isLoading) return false
+    // バッジ数が変更された場合は再レンダリングが必要
+    if (prevProps.chatBadgeCount !== nextProps.chatBadgeCount) return false
+    // その他の変更は無視
+    return true
+  })
+  
+  ChatPanel.displayName = "ChatPanel"
 
   return (
     <div
@@ -700,7 +750,20 @@ export default function ReviewResultPage() {
               </div>
             )}
 
-            {rightTab === "chat" && <ChatPanel containerRef={chatContainerRightRef} />}
+            {rightTab === "chat" && (
+              <ChatPanel 
+                containerRef={chatContainerRightRef}
+                chatMessages={chatMessages}
+                isLoading={isLoading}
+                chatBadgeCount={chatBadgeCount}
+                chatTheme={chatTheme}
+                inputValue={inputValue}
+                onInputChange={handleInputChange}
+                onSendMessage={handleSendMessage}
+                onClearChat={handleClearChat}
+                inputRef={inputRef}
+              />
+            )}
           </div>
         </div>
       </div>
