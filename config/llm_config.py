@@ -15,8 +15,10 @@ try:
     ]
     for env_path in env_paths:
         if env_path.exists():
-            # NOTE: override=False で既存の環境変数を上書きしない
-            load_dotenv(env_path, override=False)
+            # NOTE: 用途別の環境変数は空文字列で設定されている可能性があるため、
+            # .envファイルの値を優先するために override=True を使用
+            # ただし、既に値が設定されている環境変数は上書きしない（空文字列のみ上書き）
+            load_dotenv(env_path, override=True)
             break
 except ImportError:
     # python-dotenvがインストールされていない場合はスキップ
