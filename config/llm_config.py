@@ -8,10 +8,16 @@ from anthropic import Anthropic
 try:
     from dotenv import load_dotenv
     # プロジェクトルートの.envファイルを読み込む
-    env_path = Path(__file__).parent.parent / ".env"
-    if env_path.exists():
-        # NOTE: override=False で既存の環境変数を上書きしない
-        load_dotenv(env_path, override=False)
+    # コンテナ内では /app/.env にマウントされている可能性があるため、両方を試す
+    env_paths = [
+        Path(__file__).parent.parent / ".env",  # ローカル開発環境
+        Path("/app/.env"),  # Dockerコンテナ内
+    ]
+    for env_path in env_paths:
+        if env_path.exists():
+            # NOTE: override=False で既存の環境変数を上書きしない
+            load_dotenv(env_path, override=False)
+            break
 except ImportError:
     # python-dotenvがインストールされていない場合はスキップ
     pass
