@@ -109,63 +109,6 @@ export default function ReviewResultPage() {
     })
   }, [chatMessages, isLoading])
 
-  if (loading) {
-    return (
-      <div
-        className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
-        style={{
-          marginLeft: isOpen ? '208px' : '0',
-        }}
-      >
-        <div className="container mx-auto px-5 py-12">
-          <div className="space-y-6">
-            <Skeleton className="h-12 w-64" />
-            <Skeleton className="h-64 w-full" />
-            <Skeleton className="h-64 w-full" />
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (error || !review) {
-    return (
-      <div
-        className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
-        style={{
-          marginLeft: isOpen ? '208px' : '0',
-        }}
-      >
-        <div className="container mx-auto px-5 py-12">
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>エラー</AlertTitle>
-            <AlertDescription>{error || "講評が見つかりませんでした"}</AlertDescription>
-          </Alert>
-          <Button onClick={() => router.push("/your-page/past-questions")} className="mt-4">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            過去問管理ページに戻る
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
-  const reviewJson = review.review_json || {}
-  const evaluation = reviewJson.evaluation || {}
-  const overallReview = evaluation.overall_review || {}
-  const score = overallReview.score
-  const strengths = evaluation.strengths || []
-  const weaknesses = evaluation.weaknesses || []
-  const importantPoints = evaluation.important_points || []
-  const futureConsiderations = evaluation.future_considerations || []
-
-  const handleCopy = async (text: string) => {
-    await navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
   const loadChat = useCallback(async (): Promise<number | null> => {
     if (!reviewId) return null
     if (chatLoaded && threadId) return threadId
@@ -254,6 +197,63 @@ export default function ReviewResultPage() {
     () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} />,
     [handleSendMessage, isLoading]
   )
+
+  if (loading) {
+    return (
+      <div
+        className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
+        style={{
+          marginLeft: isOpen ? '208px' : '0',
+        }}
+      >
+        <div className="container mx-auto px-5 py-12">
+          <div className="space-y-6">
+            <Skeleton className="h-12 w-64" />
+            <Skeleton className="h-64 w-full" />
+            <Skeleton className="h-64 w-full" />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (error || !review) {
+    return (
+      <div
+        className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
+        style={{
+          marginLeft: isOpen ? '208px' : '0',
+        }}
+      >
+        <div className="container mx-auto px-5 py-12">
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>エラー</AlertTitle>
+            <AlertDescription>{error || "講評が見つかりませんでした"}</AlertDescription>
+          </Alert>
+          <Button onClick={() => router.push("/your-page/past-questions")} className="mt-4">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            過去問管理ページに戻る
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  const reviewJson = review.review_json || {}
+  const evaluation = reviewJson.evaluation || {}
+  const overallReview = evaluation.overall_review || {}
+  const score = overallReview.score
+  const strengths = evaluation.strengths || []
+  const weaknesses = evaluation.weaknesses || []
+  const importantPoints = evaluation.important_points || []
+  const futureConsiderations = evaluation.future_considerations || []
+
+  const handleCopy = async (text: string) => {
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   // subject_idから科目名を取得（subject_nameが優先）
   const subjectName = review.subject_name || (review.subject ? getSubjectName(review.subject) : "")
