@@ -514,7 +514,20 @@ export default function ReviewResultPage() {
               </div>
             )}
 
-            {leftTab === "chat" && <ChatPanel containerRef={chatContainerLeftRef} />}
+            {leftTab === "chat" && (
+              <ChatPanel 
+                containerRef={chatContainerLeftRef}
+                chatMessages={chatMessages}
+                isLoading={isLoading}
+                chatBadgeCount={chatBadgeCount}
+                chatTheme={chatTheme}
+                inputValue={inputValue}
+                onInputChange={handleInputChange}
+                onSendMessage={handleSendMessage}
+                onClearChat={handleClearChat}
+                inputRef={inputRef}
+              />
+            )}
           </div>
         </div>
 
