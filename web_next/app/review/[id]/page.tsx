@@ -25,7 +25,7 @@ import { FeedbackCard } from "@/components/feedback-card"
 import { ChatMessage } from "@/components/chat/chat-message"
 import { ChatMessageList } from "@/components/chat/chat-message-list"
 import { ChatBar } from "@/components/chat/chat-bar"
-import { ChatInputBar } from "@/components/chat/chat-input-bar"
+import { ChatInput } from "@/components/chat/chat-input"
 import { ChatLoadingIndicator } from "@/components/chat/chat-loading-indicator"
 import { getChatMessageTheme } from "@/components/chat/chat-message-theme"
 import { cn } from "@/lib/utils"
@@ -65,11 +65,9 @@ export default function ReviewResultPage() {
   ])
   const [threadId, setThreadId] = useState<number | null>(null)
   const [chatLoaded, setChatLoaded] = useState(false)
-  const [inputValue, setInputValue] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const chatContainerLeftRef = useRef<HTMLDivElement>(null)
   const chatContainerRightRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const fetchReview = async () => {
@@ -98,6 +96,7 @@ export default function ReviewResultPage() {
     })
   }, [chatMessages, isLoading])
 
+
   const loadChat = useCallback(async (): Promise<number | null> => {
     if (!reviewId) return null
     if (chatLoaded && threadId) return threadId
@@ -125,11 +124,10 @@ export default function ReviewResultPage() {
     }
   }, [reviewId, chatLoaded, threadId])
 
-  const handleSendMessage = useCallback(async () => {
-    if (!inputValue.trim() || isLoading || !review) return
+  const handleSendMessage = useCallback(async (content: string) => {
+    if (!content.trim() || isLoading || !review) return
 
-    const userMessage = inputValue.trim()
-    setInputValue("")
+    const userMessage = content.trim()
 
     // ユーザーメッセージを追加
     setChatMessages((prev) => [...prev, { role: "user" as const, content: userMessage }])
@@ -157,7 +155,7 @@ export default function ReviewResultPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [inputValue, isLoading, review, threadId, loadChat])
+  }, [isLoading, review, threadId, loadChat])
 
   const handleClearChat = useCallback(() => {
     const clearLocal = () =>
@@ -181,16 +179,6 @@ export default function ReviewResultPage() {
       })
   }, [threadId])
 
-  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const wasFocused = document.activeElement === inputRef.current
-    setInputValue(e.target.value)
-    if (wasFocused && inputRef.current) {
-      // 次のフレームでフォーカスを復元
-      requestAnimationFrame(() => {
-        inputRef.current?.focus()
-      })
-    }
-  }, [])
 
   if (loading) {
     return (
@@ -265,22 +253,16 @@ export default function ReviewResultPage() {
     isLoading: loading,
     chatBadgeCount: badgeCount,
     chatTheme: theme,
-    inputValue: input,
-    onInputChange,
     onSendMessage,
-    onClearChat,
-    inputRef: ref
+    onClearChat
   }: { 
     containerRef: RefObject<HTMLDivElement>
     chatMessages: Array<{ role: "user" | "assistant"; content: string }>
     isLoading: boolean
     chatBadgeCount: number
     chatTheme: ReturnType<typeof getChatMessageTheme>
-    inputValue: string
-    onInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void
-    onSendMessage: () => void
+    onSendMessage: (content: string) => void
     onClearChat: () => void
-    inputRef: React.RefObject<HTMLInputElement>
   }) => {
     return (
       <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden h-full flex flex-col">
@@ -329,30 +311,22 @@ export default function ReviewResultPage() {
           contentClassName="space-y-3"
         />
 
-        <ChatInputBar className="border-t border-border/70 bg-card px-4 pb-4 pt-2" contentClassName="w-full">
-          <div className="flex gap-3">
-            <input
-              key="chat-input"
-              ref={ref}
-              type="text"
-              value={input}
-              onChange={onInputChange}
-              onKeyDown={(e) => e.key === "Enter" && onSendMessage()}
-              placeholder="質問を入力..."
-              className="flex-1 px-4 py-2.5 rounded-full border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-lime-500/20 focus:border-lime-600 transition-all placeholder:text-muted-foreground/60"
-            />
-            <Button onClick={onSendMessage} disabled={!input.trim() || loading} className="px-5 rounded-full">
-              <Send className="h-4 w-4" />
-            </Button>
-          </div>
-        </ChatInputBar>
+        <div className="border-t border-border/70 bg-card">
+          <ChatInput onSend={onSendMessage} isLoading={loading} />
+        </div>
       </div>
     )
   }, (prevProps, nextProps) => {
-    // 入力値が変更された場合は再レンダリングが必要
-    if (prevProps.inputValue !== nextProps.inputValue) return false
     // メッセージが変更された場合は再レンダリングが必要
     if (prevProps.chatMessages.length !== nextProps.chatMessages.length) return false
+    // メッセージの内容が変更された場合も再レンダリングが必要
+    if (prevProps.chatMessages.length > 0 && nextProps.chatMessages.length > 0) {
+      const lastPrev = prevProps.chatMessages[prevProps.chatMessages.length - 1]
+      const lastNext = nextProps.chatMessages[nextProps.chatMessages.length - 1]
+      if (lastPrev.content !== lastNext.content || lastPrev.role !== lastNext.role) {
+        return false
+      }
+    }
     // ローディング状態が変更された場合は再レンダリングが必要
     if (prevProps.isLoading !== nextProps.isLoading) return false
     // バッジ数が変更された場合は再レンダリングが必要
@@ -521,11 +495,8 @@ export default function ReviewResultPage() {
                 isLoading={isLoading}
                 chatBadgeCount={chatBadgeCount}
                 chatTheme={chatTheme}
-                inputValue={inputValue}
-                onInputChange={handleInputChange}
                 onSendMessage={handleSendMessage}
                 onClearChat={handleClearChat}
-                inputRef={inputRef}
               />
             )}
           </div>
@@ -770,11 +741,8 @@ export default function ReviewResultPage() {
                 isLoading={isLoading}
                 chatBadgeCount={chatBadgeCount}
                 chatTheme={chatTheme}
-                inputValue={inputValue}
-                onInputChange={handleInputChange}
                 onSendMessage={handleSendMessage}
                 onClearChat={handleClearChat}
-                inputRef={inputRef}
               />
             )}
           </div>
