@@ -100,11 +100,11 @@ services:
       - .env
     environment:
       # Caddyfileで使用する環境変数を明示的に渡す
-      # 注意: BASIC_AUTH_PASS_HASHは.envファイルから直接読み込む（$を含む値のため）
       - CADDY_DOMAIN=${CADDY_DOMAIN:-localhost}
       - BASIC_AUTH_USER=${BASIC_AUTH_USER:-}
-      # .envファイルの$を含む値を正しく渡すため、env_fileから読み込まれる値を使用
-      # docker-compose.ymlの変数展開を避けるため、ここでは設定しない
+      # BASIC_AUTH_PASS_HASHは.envファイルから読み込まれる（env_fileで自動的に設定される）
+      # ただし、明示的に設定する場合は以下を使用（$を含む値のため、シングルクォートで囲む）
+      # - BASIC_AUTH_PASS_HASH=${BASIC_AUTH_PASS_HASH}
     image: caddy:2-alpine
     container_name: law-review-proxy
     profiles:
