@@ -102,11 +102,9 @@ services:
       # Caddyfileで使用する環境変数を明示的に渡す
       - CADDY_DOMAIN=${CADDY_DOMAIN:-localhost}
       - BASIC_AUTH_USER=${BASIC_AUTH_USER:-}
-      # BASIC_AUTH_PASS_HASHはbcryptハッシュを含むため、$記号をエスケープする必要がある
-      # docker-compose.yml内では$$で$に変換される
-      # 注意: 本番環境では、このハッシュ値をサーバー上で直接設定してください
+      # BASIC_AUTH_PASS_HASHはenv_fileから読み込まれる
+      # 注意: .envファイルでは$$でエスケープする必要がある（$$2a$$14$$...）
       # ハッシュ生成: docker run --rm caddy:2-alpine caddy hash-password --plaintext your-password
-      - BASIC_AUTH_PASS_HASH=$${BASIC_AUTH_PASS_HASH}
     image: caddy:2-alpine
     container_name: law-review-proxy
     profiles:
