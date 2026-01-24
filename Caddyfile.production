@@ -19,7 +19,8 @@
     # BASIC_AUTH_USER=your_username
     # BASIC_AUTH_PASS_HASH=$2a$10$... (bcrypt hash)
     # Generate hash with: docker run --rm caddy:2-alpine caddy hash-password --plaintext your-password
-    # Note: Environment variables are passed from docker-compose.yml (env_file: .env)
+    # Note: Environment variables are passed from docker-compose.yml
+    # IMPORTANT: Both BASIC_AUTH_USER and BASIC_AUTH_PASS_HASH must be set, or basic_auth will fail
     basic_auth {
         {$BASIC_AUTH_USER} {$BASIC_AUTH_PASS_HASH}
     }
