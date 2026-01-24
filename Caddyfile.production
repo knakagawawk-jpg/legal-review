@@ -3,6 +3,21 @@
 # - Basic auth uses BASIC_AUTH_USER / BASIC_AUTH_PASS_HASH (bcrypt hash)
 
 {$CADDY_DOMAIN:localhost} {
+    # Basic auth (bcrypt hash) - 最初に認証を処理
+    # Generate hash with: docker run --rm caddy:2-alpine caddy hash-password --plaintext your-password
+    # Note: .envファイルでは$$でエスケープする必要がある（$$2a$$14$$...）
+    basic_auth {
+        {$BASIC_AUTH_USER} {$BASIC_AUTH_PASS_HASH}
+    }
+
+    # セキュリティヘッダー
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
     # リバースプロキシのタイムアウトを10分に設定（講評生成処理に時間がかかるため）
     # 注意: この設定はユーザーが明示的に指定したものです。AIが勝手に変更しないでください。
     reverse_proxy web:3000 {
@@ -12,25 +27,5 @@
             read_timeout 600s  # 10分（レスポンスボディの読み込みタイムアウト）
             write_timeout 600s  # 10分（リクエストボディの書き込みタイムアウト）
         }
-    }
-
-    # Basic auth (bcrypt hash) - Enabled if BASIC_AUTH_USER and BASIC_AUTH_PASS_HASH are set
-    # Set environment variables in .env file:
-    # BASIC_AUTH_USER=your_username
-    # BASIC_AUTH_PASS_HASH=$2a$10$... (bcrypt hash)
-    # Generate hash with: docker run --rm caddy:2-alpine caddy hash-password --plaintext your-password
-    # Note: Environment variables are passed from docker-compose.yml
-    # IMPORTANT: Both BASIC_AUTH_USER and BASIC_AUTH_PASS_HASH must be set, or basic_auth will fail
-    # Note: $を含む値は環境変数展開で問題が発生する可能性があるため、
-    # .envファイルでは$$でエスケープする必要がある（$$2a$$14$$...）
-    basic_auth {
-        {$BASIC_AUTH_USER} {$BASIC_AUTH_PASS_HASH}
-    }
-
-    header {
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "DENY"
-        X-XSS-Protection "1; mode=block"
-        Referrer-Policy "strict-origin-when-cross-origin"
     }
 }
