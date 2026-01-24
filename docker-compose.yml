@@ -103,8 +103,8 @@ services:
       - CADDY_DOMAIN=${CADDY_DOMAIN:-localhost}
       - BASIC_AUTH_USER=${BASIC_AUTH_USER:-}
       # BASIC_AUTH_PASS_HASHは.envファイルから読み込まれる（env_fileで自動的に設定される）
-      # ただし、明示的に設定する場合は以下を使用（$を含む値のため、シングルクォートで囲む）
-      # - BASIC_AUTH_PASS_HASH=${BASIC_AUTH_PASS_HASH}
+      # 注意: $を含む値はenv_fileで読み込まれる際に変数展開される可能性があるため、
+      # .envファイルでは$$でエスケープする必要がある（$$2a$$14$$...）
     image: caddy:2-alpine
     container_name: law-review-proxy
     profiles:

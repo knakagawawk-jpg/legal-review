@@ -21,6 +21,8 @@
     # Generate hash with: docker run --rm caddy:2-alpine caddy hash-password --plaintext your-password
     # Note: Environment variables are passed from docker-compose.yml
     # IMPORTANT: Both BASIC_AUTH_USER and BASIC_AUTH_PASS_HASH must be set, or basic_auth will fail
+    # Note: $を含む値は環境変数展開で問題が発生する可能性があるため、
+    # .envファイルでは$$でエスケープする必要がある（$$2a$$14$$...）
     basic_auth {
         {$BASIC_AUTH_USER} {$BASIC_AUTH_PASS_HASH}
     }
