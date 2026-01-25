@@ -20,10 +20,6 @@ COPY config/ ./config/
 COPY prompts/ ./prompts/
 COPY utils/ ./utils/
 
-# インポートスクリプトとマイグレーションスクリプトをコピー
-COPY scripts/import_json_to_db.py ./
-COPY scripts/migrate_to_new_problem_structure.py ./
-
 # エントリーポイントスクリプトをコピーして実行可能にする
 # app/entrypoint.shは既にCOPY app/でコピーされているので、/app/app/entrypoint.shから/app/entrypoint.shにコピー
 # 行末コードをLFに変換してからコピー
