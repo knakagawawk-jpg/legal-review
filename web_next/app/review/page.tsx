@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -12,7 +12,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { CheckCircle2, AlertCircle, Loader2, Copy, Check, ChevronDown, ChevronRight, BookOpen, PenLine, Sparkles, Scale, FileText, X } from "lucide-react"
+import { CheckCircle2, AlertCircle, Loader2, Copy, Check, ChevronDown, ChevronRight, BookOpen, PenLine, Sparkles, Scale, FileText, X, Square } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { ReviewRequest, ReviewResponse, ProblemMetadata, ProblemMetadataWithDetails } from "@/types/api"
 import { formatYearToEra, formatYearToShortEra } from "@/lib/utils"
@@ -31,6 +31,7 @@ export default function ReviewPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [generationPhase, setGenerationPhase] = useState<string>("")
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   // Step 1: 問題選択 + 答案入力
   const [examType, setExamType] = useState<string>("")
@@ -249,6 +250,15 @@ export default function ReviewPage() {
       return
     }
 
+    // 既存のリクエストがあれば中断
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+
+    // 新しいAbortControllerを作成
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
+
     setLoading(true)
     setError(null)
     setGenerationPhase("解析中...")
@@ -284,7 +294,14 @@ export default function ReviewPage() {
 
       setGenerationPhase("評価中...")
 
-      const data = await apiClient.post<ReviewResponse>("/api/review", requestBody)
+      const data = await apiClient.post<ReviewResponse>("/api/review", requestBody, {
+        signal: abortController.signal
+      })
+
+      // 中断された場合は処理を停止
+      if (abortController.signal.aborted) {
+        return
+      }
 
       setGenerationPhase("生成完了")
 
@@ -298,12 +315,29 @@ export default function ReviewPage() {
         throw new Error("講評の生成に成功しましたが、review_id/submission_idが取得できませんでした")
       }
     } catch (err: any) {
+      // AbortErrorの場合はエラーを表示しない
+      if (err.name === 'AbortError' || abortController.signal.aborted) {
+        setGenerationPhase("")
+        return
+      }
       console.error("Review generation error:", err)
       const errorMessage = err?.error || err?.message || "講評の生成に失敗しました"
       setError(errorMessage)
       setGenerationPhase("")
     } finally {
+      if (!abortController.signal.aborted) {
+        setLoading(false)
+        abortControllerRef.current = null
+      }
+    }
+  }
+
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
       setLoading(false)
+      setGenerationPhase("")
     }
   }
 
@@ -752,7 +786,17 @@ export default function ReviewPage() {
               </div>
 
               {/* フッター（講評開始ボタン） */}
-              <div className="shrink-0 flex items-center justify-end border-t border-slate-100 px-2.5 py-1.5">
+              <div className="shrink-0 flex items-center justify-end gap-2 border-t border-slate-100 px-2.5 py-1.5">
+                {loading && (
+                  <Button
+                    size="sm"
+                    onClick={handleStop}
+                    className="h-7 gap-1 rounded-full px-3 text-xs shadow transition-all bg-red-500 hover:bg-red-600 text-white"
+                  >
+                    <Square className="h-3 w-3 fill-white" />
+                    停止
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   disabled={!canProceedToStep2() || loading}
@@ -834,20 +878,31 @@ export default function ReviewPage() {
                 <Button variant="outline" onClick={() => setStep(1)} disabled={loading}>
                   戻る
                 </Button>
-                <Button
-                  onClick={handleGenerate}
-                  disabled={!canGenerate()}
-                  className="min-w-[120px]"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      生成中...
-                    </>
-                  ) : (
-                    "講評を生成"
+                <div className="flex gap-2">
+                  {loading && (
+                    <Button
+                      onClick={handleStop}
+                      className="min-w-[100px] bg-red-500 hover:bg-red-600 text-white"
+                    >
+                      <Square className="w-4 h-4 mr-2 fill-white" />
+                      停止
+                    </Button>
                   )}
-                </Button>
+                  <Button
+                    onClick={handleGenerate}
+                    disabled={!canGenerate()}
+                    className="min-w-[120px]"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        生成中...
+                      </>
+                    ) : (
+                      "講評を生成"
+                    )}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

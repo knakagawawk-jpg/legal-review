@@ -69,6 +69,7 @@ export default function ReviewResultPage() {
   const isLoadingRef = useRef(false)
   const chatContainerLeftRef = useRef<HTMLDivElement>(null)
   const chatContainerRightRef = useRef<HTMLDivElement>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   // isLoadingRefをisLoadingと同期
   useEffect(() => {
@@ -137,6 +138,15 @@ export default function ReviewResultPage() {
   const handleSendMessage = useCallback(async (content: string) => {
     if (!content.trim() || isLoadingRef.current || !review) return
 
+    // 既存のリクエストがあれば中断
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+
+    // 新しいAbortControllerを作成
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
+
     const userMessage = content.trim()
 
     // ユーザーメッセージを追加
@@ -149,10 +159,22 @@ export default function ReviewResultPage() {
         throw new Error("スレッドの作成に失敗しました")
       }
 
-      const assistant = await apiClient.post<any>(`/api/threads/${tid}/messages`, { content: userMessage })
+      const assistant = await apiClient.post<any>(`/api/threads/${tid}/messages`, { content: userMessage }, {
+        signal: abortController.signal
+      })
+
+      // 中断された場合は処理を停止
+      if (abortController.signal.aborted) {
+        return
+      }
+
       const assistantText = String(assistant?.content || "")
       setChatMessages((prev) => [...prev, { role: "assistant", content: assistantText || "（空の応答）" }])
     } catch (error: any) {
+      // AbortErrorの場合はエラーを表示しない
+      if (error.name === 'AbortError' || abortController.signal.aborted) {
+        return
+      }
       console.error("Chat error:", error)
       setChatMessages((prev) => [
         ...prev,
@@ -162,9 +184,20 @@ export default function ReviewResultPage() {
         },
       ])
     } finally {
-      setIsLoading(false)
+      if (!abortController.signal.aborted) {
+        setIsLoading(false)
+        abortControllerRef.current = null
+      }
     }
   }, [review, threadId, loadChat])
+
+  const handleStop = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+      setIsLoading(false)
+    }
+  }, [])
 
   const handleClearChat = useCallback(() => {
     const clearLocal = () =>
@@ -190,12 +223,12 @@ export default function ReviewResultPage() {
 
   // ChatInputをメモ化して再マウントを防ぐ（早期リターンの前に配置）
   const leftChatInput = useMemo(
-    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} />,
-    [handleSendMessage, isLoading]
+    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} onStop={handleStop} />,
+    [handleSendMessage, isLoading, handleStop]
   )
   const rightChatInput = useMemo(
-    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} />,
-    [handleSendMessage, isLoading]
+    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} onStop={handleStop} />,
+    [handleSendMessage, isLoading, handleStop]
   )
 
   if (loading) {

@@ -52,12 +52,10 @@ logs/
 Thumbs.db
 
 # Project specific
-data/pdfs/**/*.pdf
-!data/pdfs/.gitkeep
+# data/ フォルダはgit管理対象（ただしデータベースファイルは除外）
 
 # Docker環境用
-data/dev.db
-data/*.db
+*.db
 backups/
 .env
 .env.local

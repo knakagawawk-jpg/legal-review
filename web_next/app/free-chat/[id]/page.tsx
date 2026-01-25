@@ -23,6 +23,7 @@ export default function FreeChatThreadPage() {
   const [loadingMessages, setLoadingMessages] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null!)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   // スレッド情報とメッセージを取得
   useEffect(() => {
@@ -50,24 +51,65 @@ export default function FreeChatThreadPage() {
   const handleSend = async (content: string) => {
     if (!content.trim() || loading || !threadId) return
 
+    // 既存のリクエストがあれば中断
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+
+    // 新しいAbortControllerを作成
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
+
     setLoading(true)
     setError(null)
 
     try {
       await apiClient.post(`/api/threads/${threadId}/messages`, {
         content: content.trim()
+      }, {
+        signal: abortController.signal
       })
 
+      // 中断された場合は処理を停止
+      if (abortController.signal.aborted) {
+        return
+      }
+
       // メッセージ一覧を再取得
-      const messagesData = await apiClient.get<{ messages: Message[] }>(`/api/threads/${threadId}/messages`)
-      setMessages(messagesData.messages || [])
+      const messagesData = await apiClient.get<{ messages: Message[] }>(`/api/threads/${threadId}/messages`, {
+        signal: abortController.signal
+      })
+      
+      if (!abortController.signal.aborted) {
+        setMessages(messagesData.messages || [])
+      }
 
       // スレッド情報を更新（タイトルが自動生成されている可能性があるため）
-      const threadData = await apiClient.get<Thread>(`/api/threads/${threadId}`)
-      setThread(threadData)
+      const threadData = await apiClient.get<Thread>(`/api/threads/${threadId}`, {
+        signal: abortController.signal
+      })
+      
+      if (!abortController.signal.aborted) {
+        setThread(threadData)
+      }
     } catch (err: any) {
+      // AbortErrorの場合はエラーを表示しない
+      if (err.name === 'AbortError' || abortController.signal.aborted) {
+        return
+      }
       setError(err.error || err.message || "エラーが発生しました")
     } finally {
+      if (!abortController.signal.aborted) {
+        setLoading(false)
+        abortControllerRef.current = null
+      }
+    }
+  }
+
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
       setLoading(false)
     }
   }
@@ -148,7 +190,7 @@ export default function FreeChatThreadPage() {
 
       <ChatMessages messages={messages} isLoading={loading} error={error} messagesEndRef={messagesEndRef} />
 
-      <ChatInput onSend={handleSend} isLoading={loading} />
+      <ChatInput onSend={handleSend} isLoading={loading} onStop={handleStop} />
     </div>
   )
 }
