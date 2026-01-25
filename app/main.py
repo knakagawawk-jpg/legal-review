@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 from .db import SessionLocal, engine, Base
 from .models import (
     Submission, Review, Problem,
-    ProblemMetadata, ProblemDetails,
     ShortAnswerProblem, ShortAnswerSession, ShortAnswerAnswer,
     User, UserSubscription, SubscriptionPlan,
     Notebook, NoteSection, NotePage,
@@ -35,8 +34,6 @@ from .schemas import (
     FreeChatRequest, FreeChatResponse,
     ProblemCreate, ProblemUpdate, ProblemResponse, ProblemListResponse, ProblemBulkCreateResponse,
     ProblemYearsResponse, ProblemSubjectsResponse,
-    ProblemMetadataResponse, ProblemDetailsResponse, ProblemMetadataWithDetailsResponse,
-    ProblemMetadataListResponse, ProblemMetadataCreate, ProblemDetailsCreate,
     ShortAnswerProblemCreate, ShortAnswerProblemResponse, ShortAnswerProblemListResponse,
     ShortAnswerSessionCreate, ShortAnswerSessionResponse,
     ShortAnswerAnswerCreate, ShortAnswerAnswerResponse,
@@ -319,8 +316,8 @@ def _get_review_chat_context_by_review_id(
         if official_q:
             question_text = official_q.text or ""
             purpose_text = official_q.syutudaisyusi or ""
-            if official_q.shiken_type == "shihou" and official_q.grading_impression:
-                grading_impression_text = official_q.grading_impression.grading_impression_text or ""
+            if official_q.shiken_type == "shihou":
+                grading_impression_text = official_q.grading_impression_text or ""
     else:
         # custom: UserReviewHistory.reference_text を「参考文章」として使う
         history = db.query(UserReviewHistory).filter(UserReviewHistory.review_id == review_id).first()
@@ -382,15 +379,6 @@ def list_official_question_years(
     # UIは基本activeを選ぶので active の年度のみ返す
     q = q.filter(OfficialQuestion.status == "active").order_by(OfficialQuestion.nendo.desc())
     years = [r[0] for r in q.all()]
-
-    # フォールバック: official_questions がまだ未投入の場合でも年度が出るようにする
-    if not years:
-        q2 = db.query(ProblemMetadata.year).distinct()
-        if shiken_type:
-            exam_type = "司法試験" if shiken_type == "shihou" else "予備試験"
-            q2 = q2.filter(ProblemMetadata.exam_type == exam_type)
-        q2 = q2.order_by(ProblemMetadata.year.desc())
-        years = [r[0] for r in q2.all()]
     return OfficialQuestionYearsResponse(years=years)
 
 
@@ -407,51 +395,11 @@ def get_active_official_question(
         OfficialQuestion.subject_id == subject_id,
         OfficialQuestion.status == "active",
     ).first()
+    
     if not oq:
-        # フォールバック: official_questions が未投入/不足の場合は problem_metadata/problem_details から1件生成
-        exam_type = "司法試験" if shiken_type == "shihou" else "予備試験"
-        meta = db.query(ProblemMetadata).filter(
-            ProblemMetadata.exam_type == exam_type,
-            ProblemMetadata.year == nendo,
-            ProblemMetadata.subject == subject_id,
-        ).first()
-        if meta:
-            detail = db.query(ProblemDetails).filter(
-                ProblemDetails.problem_metadata_id == meta.id
-            ).order_by(ProblemDetails.question_number).first()
-            if detail:
-                try:
-                    oq = OfficialQuestion(
-                        shiken_type=shiken_type,
-                        nendo=nendo,
-                        subject_id=subject_id,
-                        version=1,
-                        status="active",
-                        text=detail.question_text,
-                        syutudaisyusi=detail.purpose,
-                    )
-                    db.add(oq)
-                    db.flush()  # oq.id を確定
+        raise HTTPException(status_code=404, detail="Active official question not found")
 
-                    # 司法試験のみ採点実感を保存
-                    if shiken_type == "shihou" and detail.scoring_notes:
-                        db.add(
-                            ShihouGradingImpression(
-                                question_id=oq.id,
-                                grading_impression_text=detail.scoring_notes,
-                            )
-                        )
-                    db.commit()
-                    db.refresh(oq)
-                except Exception:
-                    db.rollback()
-
-        if not oq:
-            raise HTTPException(status_code=404, detail="Active official question not found")
-
-    grading_text = None
-    if oq.shiken_type == "shihou" and oq.grading_impression:
-        grading_text = oq.grading_impression.grading_impression_text
+    grading_text = oq.grading_impression_text if oq.shiken_type == "shihou" else None
 
     return OfficialQuestionActiveResponse(
         id=oq.id,
@@ -599,26 +547,6 @@ def list_problems(
         total=len(problems)
     )
 
-@app.get("/v1/problems/years", response_model=ProblemYearsResponse)
-def get_problem_years(db: Session = Depends(get_db)):
-    """利用可能な年度の一覧を取得（軽量版・改善版構造を使用）"""
-    try:
-        # 新しい構造（ProblemMetadata）から取得を試みる
-        years_from_metadata = db.query(ProblemMetadata.year).distinct().all()
-        years_list = sorted(set(y[0] for y in years_from_metadata), reverse=True)
-        
-        # 新しい構造にデータがない場合は、既存構造（Problem）から取得（後方互換性）
-        if not years_list:
-            years_from_old = db.query(Problem.year).distinct().all()
-            years_list = sorted(set(y[0] for y in years_from_old), reverse=True)
-        
-        return ProblemYearsResponse(years=years_list)
-    except Exception as e:
-        logger.error(f"年度データ取得エラー: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"年度データの取得に失敗しました: {str(e)}")
-
 @app.get("/v1/problems/subjects", response_model=ProblemSubjectsResponse)
 def get_problem_subjects(db: Session = Depends(get_db)):
     """利用可能な科目の一覧を取得（科目名のリストを返す）"""
@@ -632,147 +560,6 @@ def get_problem_subjects(db: Session = Depends(get_db)):
         import traceback
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"科目データの取得に失敗しました: {str(e)}")
-
-# 新しい問題管理構造のエンドポイント（改善版）
-# 注意: より具体的なパスを、パスパラメータを含むパスより前に定義する必要がある
-@app.get("/v1/problems/metadata", response_model=ProblemMetadataListResponse)
-def list_problem_metadata(
-    exam_type: Optional[str] = Query(None, description="試験種別（司法試験/予備試験）"),
-    year: Optional[int] = Query(None, description="年度"),
-    subject: Optional[int] = Query(None, description="科目ID（1-18）"),
-    subject_name: Optional[str] = Query(None, description="科目名（subjectが指定されていない場合に使用）"),
-    db: Session = Depends(get_db)
-):
-    """問題メタデータの一覧を取得（改善版）"""
-    try:
-        query = db.query(ProblemMetadata)
-        
-        if exam_type:
-            query = query.filter(ProblemMetadata.exam_type == exam_type)
-        if year:
-            query = query.filter(ProblemMetadata.year == year)
-        if subject:
-            # subjectは「科目ID（int）」で受けるが、DBが旧データだと科目名（文字列）混入があり得る。
-            # その場合も検索できるように、subject列を文字列化＆空白除去した値とも比較する。
-            subject_name = get_subject_name(subject)
-            subject_str = str(subject)
-            subject_col_str = cast(ProblemMetadata.subject, String)
-            subject_col_norm = func.replace(func.replace(subject_col_str, " ", ""), "　", "")
-            subject_name_norm = "".join(str(subject_name).split())
-
-            query = query.filter(
-                or_(
-                    ProblemMetadata.subject == subject,  # 正常系（INTEGER）
-                    subject_col_str == subject_str,  # "1" 等の数値文字列
-                    subject_col_norm == subject_str,  # " 1 " 等
-                    subject_col_norm == subject_name_norm,  # "憲 法" 等の空白混入
-                )
-            )
-        elif subject_name:
-            # 科目名からIDに変換
-            subject_id = get_subject_id(subject_name)
-            if subject_id:
-                query = query.filter(ProblemMetadata.subject == subject_id)
-            else:
-                raise HTTPException(status_code=400, detail=f"無効な科目名: {subject_name}")
-        
-        metadata_list = query.order_by(ProblemMetadata.year.desc(), ProblemMetadata.subject).all()
-        
-        # レスポンスにsubject_nameを追加
-        response_list = []
-        for m in metadata_list:
-            normalized_subject = _normalize_subject_id(m.subject)
-            # subjectがNULL/不正値の行は、既存問題選択UIでは扱えないため一覧から除外する
-            if normalized_subject is None:
-                logger.warning(
-                    f"Skipping problem_metadata id={getattr(m, 'id', None)} due to invalid subject: {m.subject!r}"
-                )
-                continue
-            response_dict = {
-                "id": m.id,
-                "exam_type": m.exam_type,
-                "year": m.year,
-                "subject": normalized_subject,
-                "subject_name": get_subject_name(normalized_subject),
-                "created_at": m.created_at,
-                "updated_at": m.updated_at,
-            }
-            response_list.append(ProblemMetadataResponse(**response_dict))
-        
-        return ProblemMetadataListResponse(
-            metadata_list=response_list,
-            total=len(response_list)
-        )
-    except Exception as e:
-        logger.error(f"メタデータ取得エラー: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"メタデータの取得に失敗しました: {str(e)}")
-
-@app.get("/v1/problems/metadata/{metadata_id}", response_model=ProblemMetadataWithDetailsResponse)
-def get_problem_metadata_with_details(metadata_id: int, db: Session = Depends(get_db)):
-    """問題メタデータと詳細情報を取得（改善版）"""
-    try:
-        metadata = db.query(ProblemMetadata).filter(ProblemMetadata.id == metadata_id).first()
-        if not metadata:
-            raise HTTPException(status_code=404, detail="Problem metadata not found")
-        
-        # 関連する詳細情報を取得（設問ごとにソート）
-        details = db.query(ProblemDetails).filter(
-            ProblemDetails.problem_metadata_id == metadata_id
-        ).order_by(ProblemDetails.question_number).all()
-        
-        # レスポンスにsubject_nameを追加
-        normalized_subject = _normalize_subject_id(metadata.subject)
-        if normalized_subject is None:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Invalid subject stored for problem_metadata id={metadata.id}: {metadata.subject!r}"
-            )
-        metadata_dict = {
-            "id": metadata.id,
-            "exam_type": metadata.exam_type,
-            "year": metadata.year,
-            "subject": normalized_subject,
-            "subject_name": get_subject_name(normalized_subject),
-            "created_at": metadata.created_at,
-            "updated_at": metadata.updated_at,
-        }
-        
-        return ProblemMetadataWithDetailsResponse(
-            metadata=ProblemMetadataResponse(**metadata_dict),
-            details=[ProblemDetailsResponse.model_validate(d) for d in details]
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"メタデータ詳細取得エラー: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"メタデータ詳細の取得に失敗しました: {str(e)}")
-
-@app.get("/v1/problems/metadata/{metadata_id}/details", response_model=List[ProblemDetailsResponse])
-def get_problem_details(metadata_id: int, db: Session = Depends(get_db)):
-    """問題詳細情報の一覧を取得（改善版）"""
-    try:
-        # メタデータの存在確認
-        metadata = db.query(ProblemMetadata).filter(ProblemMetadata.id == metadata_id).first()
-        if not metadata:
-            raise HTTPException(status_code=404, detail="Problem metadata not found")
-        
-        # 詳細情報を取得（設問ごとにソート）
-        details = db.query(ProblemDetails).filter(
-            ProblemDetails.problem_metadata_id == metadata_id
-        ).order_by(ProblemDetails.question_number).all()
-        
-        return [ProblemDetailsResponse.model_validate(d) for d in details]
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"詳細情報取得エラー: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"詳細情報の取得に失敗しました: {str(e)}")
 
 @app.get("/v1/problems/{problem_id}", response_model=ProblemResponse)
 def get_problem(problem_id: int, db: Session = Depends(get_db)):
@@ -879,8 +666,6 @@ async def create_review(
         subject_id = req.subject  # 科目ID（1-18）
         purpose_text = None
         grading_impression_text = None
-        problem_metadata_id = None
-        problem_details_id = None
         problem_id = None  # 既存構造用（後方互換性）
         official_question_id_req = None
         
@@ -902,48 +687,10 @@ async def create_review(
             subject_id = official_q.subject_id
 
             # 司法試験の場合のみ採点実感を参照（存在する場合）
-            if official_q.shiken_type == "shihou" and official_q.grading_impression:
-                grading_impression_text = official_q.grading_impression.grading_impression_text
+            if official_q.shiken_type == "shihou":
+                grading_impression_text = official_q.grading_impression_text
 
-            problem_metadata_id = None
-            problem_details_id = None
             problem_id = None
-
-        # 新しい構造（ProblemMetadata/ProblemDetails）を使用する場合（後方互換）
-        elif req.problem_metadata_id:
-            metadata = db.query(ProblemMetadata).filter(ProblemMetadata.id == req.problem_metadata_id).first()
-            if not metadata:
-                raise HTTPException(status_code=404, detail="Problem metadata not found")
-            
-            subject_id = _normalize_subject_id(metadata.subject)  # メタデータから科目IDを取得（旧データ対策）
-            if subject_id is None:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Invalid subject stored for problem_metadata id={metadata.id}: {metadata.subject!r}"
-                )
-            problem_metadata_id = metadata.id
-            
-            # 特定の設問が指定されている場合
-            if req.problem_details_id:
-                detail = db.query(ProblemDetails).filter(
-                    ProblemDetails.id == req.problem_details_id,
-                    ProblemDetails.problem_metadata_id == metadata.id
-                ).first()
-                if not detail:
-                    raise HTTPException(status_code=404, detail="Problem details not found")
-                question_text = detail.question_text
-                purpose_text = detail.purpose
-                problem_details_id = detail.id
-            else:
-                # 設問が指定されていない場合は、最初の設問（設問1）を使用
-                detail = db.query(ProblemDetails).filter(
-                    ProblemDetails.problem_metadata_id == metadata.id
-                ).order_by(ProblemDetails.question_number).first()
-                if detail:
-                    question_text = detail.question_text
-                    purpose_text = detail.purpose
-                    problem_details_id = detail.id
-                # 設問がない場合は、question_textが手動入力されたものとみなす
         
         # 既存構造を使用する場合（後方互換性）
         elif req.problem_id:
@@ -968,8 +715,6 @@ async def create_review(
         sub = Submission(
             user_id=current_user.id if current_user else None,
             problem_id=problem_id,  # 既存構造用（後方互換性）
-            problem_metadata_id=problem_metadata_id,  # 新しい構造用
-            problem_details_id=problem_details_id,  # 新しい構造用（設問指定）
             subject=subject_id,  # 科目ID（1-18）
             question_text=question_text,
             answer_text=req.answer_text,
@@ -1219,8 +964,8 @@ async def get_review_by_id(
                 subject_id = official_q.subject_id  # 科目ID（1-18）
                 subject_name = get_subject_name(subject_id)
             # 司法試験のみ採点実感を返す（存在する場合）
-            if official_q.shiken_type == "shihou" and official_q.grading_impression:
-                grading_impression_text = official_q.grading_impression.grading_impression_text
+            if official_q.shiken_type == "shihou":
+                grading_impression_text = official_q.grading_impression_text
     
     # 新規問題の場合：UserReviewHistoryからタイトルと参照文章を取得
     history = db.query(UserReviewHistory).filter(UserReviewHistory.review_id == review_id).first()

@@ -2,8 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 データベース初期化スクリプト
-- JSONファイルを再帰的に探索してProblemテーブルにインポート
-- ProblemテーブルからProblemMetadata/ProblemDetailsにマイグレーション
+- JSONファイルを再帰的に探索してOfficialQuestionテーブルにインポート
 """
 
 import json
@@ -23,7 +22,7 @@ BASE_DIR = Path("/app") if Path("/app").exists() else Path(__file__).parent.pare
 sys.path.insert(0, str(BASE_DIR))
 
 from app.db import SessionLocal, engine, Base
-from app.models import Problem, ProblemMetadata, ProblemDetails, Submission, Review, User
+from app.models import OfficialQuestion, Submission, Review, User
 from config.subjects import get_subject_id
 from sqlalchemy import text
 
@@ -77,8 +76,8 @@ def import_all_json_files():
         # 既存データを一度に取得（パフォーマンス改善）
         # 初期化時のみなので全件取得でも問題ない
         existing_problems = {
-            (p.exam_type, p.year, p.subject)
-            for p in db.query(Problem).all()
+            (oq.shiken_type, oq.nendo, oq.subject_id)
+            for oq in db.query(OfficialQuestion).filter(OfficialQuestion.status == "active").all()
         }
         
         problems_to_add = []
@@ -103,11 +102,15 @@ def import_all_json_files():
                     error_count += 1
                     continue
                 
-                # 試験種別を正規化
+                # 試験種別を正規化（"予備" -> "yobi", "司法" -> "shihou"）
                 if exam_type == "予備":
-                    exam_type = "予備試験"
+                    shiken_type = "yobi"
                 elif exam_type == "司法":
-                    exam_type = "司法試験"
+                    shiken_type = "shihou"
+                else:
+                    logger.error(f"Invalid exam_type in {json_file.name}: {exam_type}")
+                    error_count += 1
+                    continue
                 
                 # 科目をID（1-18）に変換して保持
                 subject_id = get_subject_id(subject_str) if not subject_str.isdigit() else int(subject_str)
@@ -116,22 +119,32 @@ def import_all_json_files():
                     error_count += 1
                     continue
 
-                # 既存の問題をチェック
-                key = (exam_type, year, subject_id)
+                # 短答式問題はスキップ（別のスクリプトで処理）
+                if "短答" in subject_str or "短答" in json_file.name:
+                    skipped_count += 1
+                    continue
+
+                # 既存の問題をチェック（activeなOfficialQuestion）
+                key = (shiken_type, year, subject_id)
                 if key in existing_problems:
                     skipped_count += 1
                     continue
                 
-                # 問題を作成（バッチコミット用）
-                problem = Problem(
-                    exam_type=exam_type,
-                    year=year,
-                    subject=subject_id,
-                    question_text=text,
-                    purpose=purpose if purpose else None,
-                    pdf_path=source_pdf
+                # 採点実感を取得
+                scoring_notes = data.get("scoring_notes", "")
+                
+                # OfficialQuestionを作成（バッチコミット用）
+                oq = OfficialQuestion(
+                    shiken_type=shiken_type,
+                    nendo=year,
+                    subject_id=subject_id,
+                    version=1,
+                    status="active",
+                    text=text,
+                    syutudaisyusi=purpose if purpose else None,
+                    grading_impression_text=scoring_notes if (shiken_type == "shihou" and scoring_notes) else None,
                 )
-                problems_to_add.append(problem)
+                problems_to_add.append(oq)
                 existing_problems.add(key)  # 重複を防ぐ
                 
                 # バッチサイズに達したらコミット
@@ -148,11 +161,11 @@ def import_all_json_files():
         
         # 残りをコミット
         if problems_to_add:
-            for p in problems_to_add:
-                db.add(p)
+            for oq in problems_to_add:
+                db.add(oq)
             db.commit()
             imported_count += len(problems_to_add)
-            logger.info(f"Imported final batch: {len(problems_to_add)} problems")
+            logger.info(f"Imported final batch: {len(problems_to_add)} official questions")
         
         logger.info("-" * 60)
         logger.info(f"Import complete: imported={imported_count}, skipped={skipped_count}, errors={error_count}")
@@ -165,10 +178,10 @@ def import_all_json_files():
         db.close()
 
 def check_needs_import():
-    """ProblemMetadataテーブルが空かチェック"""
+    """OfficialQuestionテーブルが空かチェック"""
     db = SessionLocal()
     try:
-        count = db.query(ProblemMetadata).count()
+        count = db.query(OfficialQuestion).filter(OfficialQuestion.status == "active").count()
         return count == 0
     except Exception as e:
         logger.error(f"Error checking database: {str(e)}")
@@ -176,49 +189,6 @@ def check_needs_import():
         return True
     finally:
         db.close()
-
-def run_migration():
-    """マイグレーションスクリプトを実行"""
-    try:
-        import subprocess
-        # Dockerfileでは scripts/migrate_to_new_problem_structure.py を /app 直下に COPY している。
-        # ローカルでは scripts/ 配下を参照する。
-        candidates = [
-            BASE_DIR / "migrate_to_new_problem_structure.py",
-            BASE_DIR / "scripts" / "migrate_to_new_problem_structure.py",
-        ]
-        migration_path = next((p for p in candidates if p.exists()), None)
-        if migration_path is None:
-            raise FileNotFoundError("migrate_to_new_problem_structure.py not found")
-        result = subprocess.run(
-            [sys.executable, str(migration_path)],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True
-        )
-        
-        if result.stdout:
-            logger.info("Migration output:")
-            logger.info(result.stdout)
-        
-        if result.stderr:
-            logger.warning("Migration warnings:")
-            logger.warning(result.stderr)
-        
-        if result.returncode != 0:
-            logger.error(f"Migration script exited with code {result.returncode}")
-            if result.stderr:
-                logger.error(result.stderr)
-            raise RuntimeError(f"Migration failed with exit code {result.returncode}")
-        
-        logger.info("Migration completed successfully")
-        
-    except FileNotFoundError:
-        logger.error("Migration script not found in expected locations")
-        raise
-    except Exception as e:
-        logger.error(f"Error running migration: {str(e)}", exc_info=True)
-        raise
 
 def create_dashboard_items_trigger():
     """dashboard_itemsテーブルのupdated_at自動更新トリガーを作成"""
@@ -255,14 +225,10 @@ if __name__ == "__main__":
         # Dashboard items triggerを作成
         create_dashboard_items_trigger()
         
-        # ProblemMetadataテーブルが空かチェック
+        # OfficialQuestionテーブルが空かチェック
         if check_needs_import():
             logger.info("Database is empty. Starting import...")
             import_all_json_files()
-            
-            # マイグレーション（Problem → ProblemMetadata/ProblemDetails）
-            logger.info("Running migration (Problem → ProblemMetadata/ProblemDetails)...")
-            run_migration()
         else:
             logger.info("Database already has data. Skipping import.")
             

@@ -3,8 +3,6 @@
 export interface ReviewRequest {
   official_question_id?: number | null
   problem_id?: number | null
-  problem_metadata_id?: number | null
-  problem_details_id?: number | null
   subject?: number | null  // 科目ID（1-18）、既存問題の場合は不要
   subject_name?: string | null  // 科目名（subjectが指定されていない場合に使用）
   question_text?: string | null
@@ -88,26 +86,6 @@ export interface ReviewResponse {
   source_type?: "official" | "custom" | null
   reference_text?: string | null
   grading_impression_text?: string | null
-}
-
-export interface ProblemMetadata {
-  id: number
-  exam_type: string
-  year: number
-  subject: number  // 科目ID（1-18）
-  subject_name: string  // 科目名（表示用）
-}
-
-export interface ProblemDetails {
-  id: number
-  question_number: number
-  question_text: string
-  purpose?: string | null
-}
-
-export interface ProblemMetadataWithDetails {
-  metadata: ProblemMetadata
-  details: ProblemDetails[]
 }
 
 // 短答式問題関連の型定義

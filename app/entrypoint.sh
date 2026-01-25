@@ -39,6 +39,12 @@ if ! python3 /app/app/migrate_reviews_tables.py; then
     echo "WARNING: Reviews migration failed, but continuing..."
 fi
 
+# 旧ProblemMetadata/ProblemDetailsシステムの削除
+echo "Running old problem tables removal migration..."
+if ! python3 /app/app/migrate_remove_old_problem_tables.py; then
+    echo "WARNING: Old problem tables removal migration failed, but continuing..."
+fi
+
 # データベース初期化スクリプトを実行
 echo "Running database initialization..."
 if ! python3 /app/app/init_db.py; then
@@ -46,11 +52,7 @@ if ! python3 /app/app/init_db.py; then
     exit 1
 fi
 
-# 公式問題（official_questions）を problem_metadata/problem_details から生成（必要な場合のみ）
-echo "Seeding official questions (if empty)..."
-if ! python3 /app/app/seed_official_questions.py; then
-    echo "WARNING: Official questions seed failed, but continuing..."
-fi
+# 公式問題（official_questions）はJSONから直接インポートされる（init_db.pyで処理）
 
 echo ""
 echo "=== Initialization complete ==="

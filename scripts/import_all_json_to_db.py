@@ -14,11 +14,11 @@ import argparse
 from pathlib import Path
 
 # プロジェクトルートをパスに追加
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(__file__).parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from app.db import SessionLocal
-from app.models import ProblemMetadata, ProblemDetails
+from app.models import OfficialQuestion
 from config.subjects import get_subject_id, get_subject_name
 
 def year_to_int(year_str: str) -> int:
@@ -54,6 +54,7 @@ def import_json_file(json_file: Path, db, dry_run: bool = False):
         text = data.get("text", "")
         source_pdf = data.get("source_pdf", "")
         purpose = data.get("purpose", "")
+        scoring_notes = data.get("scoring_notes", "")  # 採点実感（司法試験の場合）
         
         # 年度を整数に変換
         try:
@@ -61,11 +62,13 @@ def import_json_file(json_file: Path, db, dry_run: bool = False):
         except ValueError as e:
             return {"status": "error", "message": str(e)}
         
-        # 試験種別を正規化（"予備" -> "予備試験"）
+        # 試験種別を正規化（"予備" -> "yobi", "司法" -> "shihou"）
         if exam_type == "予備":
-            exam_type = "予備試験"
+            shiken_type = "yobi"
         elif exam_type == "司法":
-            exam_type = "司法試験"
+            shiken_type = "shihou"
+        else:
+            return {"status": "error", "message": f"試験種別が不正です: {exam_type}"}
         
         # 短答式問題はスキップ（別のテーブルで管理）
         if "短答" in str(subject_raw) or "短答" in json_file.name:
@@ -86,53 +89,49 @@ def import_json_file(json_file: Path, db, dry_run: bool = False):
             return {"status": "error", "message": f"科目の形式が不正です: subject={subject_raw!r}, subject_name={data.get('subject_name')!r} ({json_file})"}
         
         if dry_run:
-            # 既存チェックのみ
-            existing_metadata = db.query(ProblemMetadata).filter(
-                ProblemMetadata.exam_type == exam_type,
-                ProblemMetadata.year == year,
-                ProblemMetadata.subject == subject_id
+            # 既存チェックのみ（activeなOfficialQuestionをチェック）
+            existing_oq = db.query(OfficialQuestion).filter(
+                OfficialQuestion.shiken_type == shiken_type,
+                OfficialQuestion.nendo == year,
+                OfficialQuestion.subject_id == subject_id,
+                OfficialQuestion.status == "active"
             ).first()
             
-            if existing_metadata:
+            if existing_oq:
                 return {"status": "exists", "message": "既に登録済み"}
             else:
                 return {"status": "new", "message": "新規登録予定"}
         
-        # 既存のメタデータをチェック
-        existing_metadata = db.query(ProblemMetadata).filter(
-            ProblemMetadata.exam_type == exam_type,
-            ProblemMetadata.year == year,
-            ProblemMetadata.subject == subject_id
+        # 既存のOfficialQuestionをチェック（activeなもの）
+        existing_oq = db.query(OfficialQuestion).filter(
+            OfficialQuestion.shiken_type == shiken_type,
+            OfficialQuestion.nendo == year,
+            OfficialQuestion.subject_id == subject_id,
+            OfficialQuestion.status == "active"
         ).first()
         
-        if existing_metadata:
+        if existing_oq:
             return {"status": "skipped", "message": "既に登録済み"}
         
-        # 新しい構造でメタデータを作成
-        metadata = ProblemMetadata(
-            exam_type=exam_type,
-            year=year,
-            subject=subject_id
+        # OfficialQuestionを作成
+        oq = OfficialQuestion(
+            shiken_type=shiken_type,
+            nendo=year,
+            subject_id=subject_id,
+            version=1,
+            status="active",
+            text=text,
+            syutudaisyusi=purpose if purpose else None,
+            grading_impression_text=scoring_notes if (shiken_type == "shihou" and scoring_notes) else None,
         )
-        db.add(metadata)
-        db.flush()  # IDを取得するためにflush
-        
-        # 詳細情報を作成（設問1として全体の問題文を保存）
-        detail = ProblemDetails(
-            problem_metadata_id=metadata.id,
-            question_number=1,  # 設問1として扱う
-            question_text=text,
-            purpose=purpose if purpose else None,
-            pdf_path=source_pdf,
-        )
-        db.add(detail)
+        db.add(oq)
         db.commit()
         
+        exam_type_display = "司法試験" if shiken_type == "shihou" else "予備試験"
         return {
             "status": "imported",
-            "message": f"{exam_type} {year}年 {get_subject_name(subject_id)}",
-            "metadata_id": metadata.id,
-            "detail_id": detail.id
+            "message": f"{exam_type_display} {year}年 {get_subject_name(subject_id)}",
+            "official_question_id": oq.id
         }
         
     except Exception as e:
@@ -199,7 +198,7 @@ def main():
             if status == "imported":
                 print(f"✓ 登録: {relative_path}")
                 print(f"  {message}")
-                print(f"  メタデータID: {result.get('metadata_id')}, 詳細ID: {result.get('detail_id')}")
+                print(f"  OfficialQuestion ID: {result.get('official_question_id')}")
                 imported_count += 1
             elif status == "skipped":
                 print(f"- スキップ: {relative_path} ({message})")
