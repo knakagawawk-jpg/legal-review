@@ -37,6 +37,8 @@ env/
 .env
 .env.local
 .env.*.local
+.env.beta
+.env.dev
 
 # Database
 *.db

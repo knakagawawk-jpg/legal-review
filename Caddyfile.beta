@@ -1,0 +1,33 @@
+# βテスト環境用Caddyfile（単独起動時用）
+# - Domain is configured via CADDY_DOMAIN_BETA (default: beta.localhost)
+# - Basic auth uses BASIC_AUTH_USER_BETA / BASIC_AUTH_PASS_HASH_BETA (bcrypt hash)
+
+{$CADDY_DOMAIN_BETA:beta.localhost} {
+    # Basic auth (bcrypt hash) - ページリクエストのみに適用（APIは除外）
+    # Generate hash with: docker run --rm caddy:2-alpine caddy hash-password --plaintext your-password
+    # Note: .envファイルでは$$でエスケープする必要がある（$$2a$$14$$...）
+    @not_api {
+        not path /api/* /_next/*
+    }
+    basicauth @not_api {
+        {$BASIC_AUTH_USER_BETA} {$BASIC_AUTH_PASS_HASH_BETA}
+    }
+
+    # セキュリティヘッダー
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # リバースプロキシのタイムアウトを10分に設定（講評生成処理に時間がかかるため）
+    reverse_proxy web-beta:3000 {
+        transport http {
+            dial_timeout 10s
+            response_header_timeout 600s  # 10分（レスポンスヘッダーの待機時間）
+            read_timeout 600s  # 10分（レスポンスボディの読み込みタイムアウト）
+            write_timeout 600s  # 10分（リクエストボディの書き込みタイムアウト）
+        }
+    }
+}

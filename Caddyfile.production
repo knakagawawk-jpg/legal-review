@@ -1,7 +1,10 @@
-# Production Caddyfile
-# - Domain is configured via CADDY_DOMAIN (default: localhost)
+# Production Caddyfile - 複数ドメイン対応
+# - 本番環境: CADDY_DOMAIN (default: localhost)
+# - βテスト環境: CADDY_DOMAIN_BETA (default: beta.localhost)
+# - 開発環境: CADDY_DOMAIN_DEV (default: dev.localhost)
 # - Basic auth uses BASIC_AUTH_USER / BASIC_AUTH_PASS_HASH (bcrypt hash)
 
+# 本番環境
 {$CADDY_DOMAIN:localhost} {
     # Basic auth (bcrypt hash) - ページリクエストのみに適用（APIは除外）
     # Generate hash with: docker run --rm caddy:2-alpine caddy hash-password --plaintext your-password
@@ -29,6 +32,64 @@
             response_header_timeout 600s  # 10分（レスポンスヘッダーの待機時間）
             read_timeout 600s  # 10分（レスポンスボディの読み込みタイムアウト）
             write_timeout 600s  # 10分（リクエストボディの書き込みタイムアウト）
+        }
+    }
+}
+
+# βテスト環境
+{$CADDY_DOMAIN_BETA:beta.localhost} {
+    # Basic auth (bcrypt hash) - ページリクエストのみに適用（APIは除外）
+    @not_api {
+        not path /api/* /_next/*
+    }
+    basicauth @not_api {
+        {$BASIC_AUTH_USER_BETA} {$BASIC_AUTH_PASS_HASH_BETA}
+    }
+
+    # セキュリティヘッダー
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # リバースプロキシのタイムアウトを10分に設定
+    reverse_proxy web-beta:3000 {
+        transport http {
+            dial_timeout 10s
+            response_header_timeout 600s
+            read_timeout 600s
+            write_timeout 600s
+        }
+    }
+}
+
+# 開発環境
+{$CADDY_DOMAIN_DEV:dev.localhost} {
+    # Basic auth (bcrypt hash) - ページリクエストのみに適用（APIは除外）
+    @not_api {
+        not path /api/* /_next/*
+    }
+    basicauth @not_api {
+        {$BASIC_AUTH_USER_DEV} {$BASIC_AUTH_PASS_HASH_DEV}
+    }
+
+    # セキュリティヘッダー
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # リバースプロキシのタイムアウトを10分に設定
+    reverse_proxy web-dev-server:3000 {
+        transport http {
+            dial_timeout 10s
+            response_header_timeout 600s
+            read_timeout 600s
+            write_timeout 600s
         }
     }
 }
