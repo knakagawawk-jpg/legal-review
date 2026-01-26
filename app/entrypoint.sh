@@ -33,6 +33,12 @@ if ! python3 /app/app/migrate_official_questions_table.py; then
     echo "WARNING: Official questions table migration failed, but continuing..."
 fi
 
+# official_questions に grading_impression_text カラムを追加
+echo "Running grading impression migration..."
+if ! python3 /app/app/migrate_grading_impression_to_official_questions.py; then
+    echo "WARNING: Grading impression migration failed, but continuing..."
+fi
+
 # reviews / user_review_history マイグレーション（旧dev.db互換）
 echo "Running reviews migration..."
 if ! python3 /app/app/migrate_reviews_tables.py; then

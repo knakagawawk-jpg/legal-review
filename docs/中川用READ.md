@@ -20,6 +20,20 @@ docker compose --profile production build web backend
 # 3) コンテナを更新起動（基本は down しない）
 docker compose --profile production up -d --force-recreate
 
+# 3-1) エラーが発生した場合のデバッグ手順
+# backendコンテナの状態確認
+docker ps -a --filter "name=law-review-backend"
+# backendコンテナのログ確認（エラー原因の特定）
+docker logs law-review-backend --tail=100
+# backendコンテナのヘルスチェック状態確認
+docker inspect law-review-backend --format '{{json .State.Health}}' | python3 -m json.tool
+
+# 3-2) データベーススキーマエラーの場合（例: no such column: grading_impression_text）
+# マイグレーションを手動実行（コンテナ内で実行）
+docker exec law-review-backend python3 /app/app/migrate_grading_impression_to_official_questions.py
+# または、コンテナを再起動（entrypoint.shで自動実行される）
+docker compose --profile production restart backend
+
 # 4) 反映確認（イメージの作成日時を見る）
 docker image inspect $(docker inspect law-review-web --format '{{.Image}}') --format 'WEB Created={{.Created}}'
 docker image inspect $(docker inspect law-review-backend --format '{{.Image}}') --format 'BE Created={{.Created}}'
