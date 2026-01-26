@@ -336,8 +336,8 @@ export default function ReviewPage() {
                         setSubject(null)
                       }
                     }
-                    setSelectedMetadata(null)
-                    setSelectedDetails(null)
+                    // 科目変更時に公式問題IDをリセット
+                    setOfficialQuestionId(null)
                   }}
                 >
                   <SelectTrigger className="h-7 w-24 border-slate-200 bg-white text-xs shadow-sm">

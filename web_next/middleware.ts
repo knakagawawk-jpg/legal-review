@@ -16,6 +16,11 @@ const protectedPaths = [
   "/dev",
 ]
 
+// dev環境のみアクセス可能なパス
+const devOnlyPaths = [
+  "/dev",
+]
+
 // 認証が不要なパス（認証ページなど）
 const publicPaths = [
   "/",
@@ -26,6 +31,19 @@ const publicPaths = [
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
+
+  // dev環境のみアクセス可能なパスかチェック
+  const isDevOnlyPath = devOnlyPaths.some((path) => pathname.startsWith(path))
+  if (isDevOnlyPath) {
+    const enableDevPage = process.env.NEXT_PUBLIC_ENABLE_DEV_PAGE === "true"
+    if (!enableDevPage) {
+      // dev環境以外では403を返す
+      return new NextResponse(
+        JSON.stringify({ error: "開発者用ページはdev環境でのみ利用可能です" }),
+        { status: 403, headers: { "Content-Type": "application/json" } }
+      )
+    }
+  }
 
   // 保護されたパスかチェック
   const isProtectedPath = protectedPaths.some((path) => pathname.startsWith(path))

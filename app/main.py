@@ -1398,7 +1398,14 @@ def get_all_submissions_dev(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0)
 ):
-    """開発用：全投稿一覧を取得（認証必須）"""
+    """開発用：全投稿一覧を取得（認証必須、dev環境のみ）"""
+    # dev環境以外ではアクセス不可
+    enable_dev_page = os.getenv("ENABLE_DEV_PAGE", "false").lower() == "true"
+    if not enable_dev_page:
+        raise HTTPException(
+            status_code=403,
+            detail="開発者用ページはdev環境でのみ利用可能です"
+        )
     submissions = db.query(Submission).order_by(Submission.created_at.desc()).offset(offset).limit(limit).all()
     
     result = []

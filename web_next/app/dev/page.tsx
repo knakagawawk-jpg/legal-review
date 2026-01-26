@@ -33,6 +33,28 @@ function DevPage() {
   const router = useRouter()
   const { isOpen } = useSidebar()
   const [activeTab, setActiveTab] = useState("verify")
+  const [isDevEnv, setIsDevEnv] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    // dev環境かどうかをチェック
+    const enableDevPage = process.env.NEXT_PUBLIC_ENABLE_DEV_PAGE === "true"
+    setIsDevEnv(enableDevPage)
+    
+    // dev環境以外の場合はホームにリダイレクト
+    if (!enableDevPage) {
+      router.replace("/")
+    }
+  }, [router])
+
+  // 環境チェック中は何も表示しない
+  if (isDevEnv === null) {
+    return null
+  }
+
+  // dev環境以外の場合は何も表示しない（リダイレクト処理中）
+  if (!isDevEnv) {
+    return null
+  }
 
   return (
     <div 

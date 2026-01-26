@@ -27,7 +27,8 @@ export function useSidebar() {
   return context
 }
 
-const navigation = [
+// 基本ナビゲーション項目
+const baseNavigation = [
   {
     name: "Your Page",
     href: "/your-page",
@@ -56,6 +57,10 @@ const navigation = [
     description: "開発中",
     color: "from-violet-500 to-purple-500",
   },
+]
+
+// dev環境のみのナビゲーション項目
+const devNavigation = [
   {
     name: "開発用",
     href: "/dev",
@@ -64,6 +69,15 @@ const navigation = [
     color: "from-slate-500 to-zinc-500",
   },
 ]
+
+// 環境に応じたナビゲーションを取得
+function getNavigation() {
+  const enableDevPage = process.env.NEXT_PUBLIC_ENABLE_DEV_PAGE === "true"
+  if (enableDevPage) {
+    return [...baseNavigation, ...devNavigation]
+  }
+  return baseNavigation
+}
 
 // サイドバーの状態を管理するProviderコンポーネント
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
@@ -113,6 +127,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 export function Sidebar() {
   const pathname = usePathname()
   const { isOpen, setIsOpen } = useSidebar()
+  const navigation = getNavigation()
 
   return (
     <>
