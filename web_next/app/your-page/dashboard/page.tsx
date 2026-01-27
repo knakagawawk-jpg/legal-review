@@ -373,7 +373,7 @@ function YourPageDashboardInner() {
   const [recentReviewExpanded, setRecentReviewExpanded] = useState<Record<number, boolean>>({})
 
   // 保存（5秒後Insert）管理
-  const recentReviewSaveTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
+  const recentReviewSaveTimersRef = useRef<Record<number, number>>({})
   const recentReviewSavePendingRef = useRef<Set<number>>(new Set())
 
   // Current date (YYYY-MM-DD) - URLクエリパラメータから取得、なければ「study_date（4:00境界）」を使用
@@ -416,7 +416,7 @@ function YourPageDashboardInner() {
   }, [recentReviewSelectedSessionId])
 
   // Debounce save
-  const saveTimeoutsRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
+  const saveTimeoutsRef = useRef<Record<number, number>>({})
   const pendingUpdatesRef = useRef<Record<number, Partial<DashboardItem>>>({})
   const pendingSaves = useRef<Set<number>>(new Set())
 
