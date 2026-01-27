@@ -11,7 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Lightbulb, ListTodo, RotateCcw, Clock, ChevronDown, Sparkles, Calendar as CalendarIcon, GripVertical, Trash2, Plus, CalendarDays } from "lucide-react"
+import { Lightbulb, ListTodo, RotateCcw, Clock, ChevronDown, Sparkles, Calendar as CalendarIcon, Plus, CalendarDays } from "lucide-react"
+import { SortableRow } from "@/components/sortable-row"
 import { SidebarToggle } from "@/components/sidebar"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
@@ -305,130 +306,6 @@ function MemoField({
 }
 
 // Sortable Row Component
-function SortableRow({
-  item,
-  children,
-  entryType,
-  onDelete,
-  onEditCreatedDate,
-}: {
-  item: DashboardItem
-  children: React.ReactNode
-  entryType: number
-  onDelete: (id: number) => void
-  onEditCreatedDate?: (id: number) => void
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: item.id.toString() })
-  const [showMenu, setShowMenu] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const clickStartPos = useRef<{ x: number; y: number } | null>(null)
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  }
-
-  // Close menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setShowMenu(false)
-      }
-    }
-
-    if (showMenu) {
-      document.addEventListener("mousedown", handleClickOutside)
-      return () => {
-        document.removeEventListener("mousedown", handleClickOutside)
-      }
-    }
-  }, [showMenu])
-
-  // Handle mouse down to track click position
-  const handleMouseDown = (e: React.MouseEvent) => {
-    clickStartPos.current = { x: e.clientX, y: e.clientY }
-  }
-
-  // Handle click on drag handle
-  const handleClick = (e: React.MouseEvent) => {
-    // マウスが動いていない場合（クリック）のみメニューを表示
-    if (clickStartPos.current) {
-      const deltaX = Math.abs(e.clientX - clickStartPos.current.x)
-      const deltaY = Math.abs(e.clientY - clickStartPos.current.y)
-      if (deltaX < 5 && deltaY < 5) {
-        e.stopPropagation()
-        e.preventDefault()
-        setShowMenu(true)
-      }
-      clickStartPos.current = null
-    }
-  }
-
-  return (
-    <TableRow
-      ref={setNodeRef}
-      style={style}
-      className={`border-b border-border/50 hover:bg-amber-50/30 transition-colors ${isDragging ? "opacity-50 bg-amber-50" : ""}`}
-    >
-      <TableCell className="py-1.5 px-1 w-6 relative">
-        <button
-          {...attributes}
-          {...listeners}
-          onMouseDown={handleMouseDown}
-          onClick={handleClick}
-          className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-muted rounded"
-        >
-          <GripVertical className="h-3 w-3 text-muted-foreground" />
-        </button>
-        {showMenu && (
-          <div
-            ref={menuRef}
-            className="absolute left-6 top-1/2 -translate-y-1/2 z-10 flex gap-1 bg-card border rounded shadow-lg p-1"
-          >
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={(e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                onDelete(item.id)
-                setShowMenu(false)
-              }}
-              className="h-6 w-6 bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-              title="削除"
-            >
-              <Trash2 className="h-3 w-3" />
-            </Button>
-            {onEditCreatedDate && (entryType === 2 || entryType === 3) && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  e.preventDefault()
-                  onEditCreatedDate(item.id)
-                  setShowMenu(false)
-                }}
-                className="h-6 w-6 bg-muted hover:bg-muted/80"
-                title="作成日の編集"
-              >
-                <CalendarDays className="h-3 w-3" />
-              </Button>
-            )}
-          </div>
-        )}
-      </TableCell>
-      {children}
-    </TableRow>
-  )
-}
 
 function YourPageDashboardInner() {
   const { isOpen } = useSidebar()
@@ -1222,7 +1099,7 @@ function YourPageDashboardInner() {
     const selectedSubject = subjects.find(s => s.id === item.subject)
     const subjectColor = selectedSubject ? SUBJECT_COLORS[selectedSubject.name] || "" : ""
     return (
-      <SortableRow key={item.id} item={item} entryType={1} onDelete={deleteItem}>
+      <SortableRow key={item.id} item={item} onDelete={deleteItem}>
         <TableCell className="py-1.5 px-0.5 w-14 align-top">
           <Select
             value={item.subject?.toString() || undefined}
@@ -1419,11 +1296,11 @@ function YourPageDashboardInner() {
       <SortableRow
         key={item.id}
         item={item}
-        entryType={3}
         onDelete={deleteItem}
         onEditCreatedDate={(id) => {
           setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
         }}
+        showCreatedDateButton={true}
       >
         <TableCell className="py-1.5 px-0.5 w-14 align-top">
           <Select

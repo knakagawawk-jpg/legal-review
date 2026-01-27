@@ -634,3 +634,85 @@ class StudyItemReorderRequest(BaseModel):
     subject_id: int
     entry_type: int
     ordered_ids: List[int]
+
+
+# ============================================================================
+# 管理者用スキーマ
+# ============================================================================
+
+class AdminUserResponse(BaseModel):
+    """管理者用ユーザー情報レスポンス"""
+    id: int
+    email: str
+    name: Optional[str]
+    is_active: bool
+    is_admin: bool
+    created_at: datetime
+    updated_at: datetime
+    last_login_at: Optional[datetime]
+    # 統計情報
+    review_count: int = 0
+    thread_count: int = 0
+    short_answer_session_count: int = 0
+    total_tokens: int = 0
+    total_cost_yen: float = 0.0
+
+    class Config:
+        from_attributes = True
+
+
+class AdminUserListResponse(BaseModel):
+    """管理者用ユーザー一覧レスポンス"""
+    users: List[AdminUserResponse]
+    total: int
+
+
+class AdminStatsResponse(BaseModel):
+    """管理者用統計情報レスポンス"""
+    # ユーザー統計
+    total_users: int
+    active_users: int
+    admin_users: int
+    
+    # トークン・コスト統計
+    total_tokens: int
+    total_input_tokens: int
+    total_output_tokens: int
+    total_cost_yen: float
+    
+    # 機能別統計
+    feature_stats: Dict[str, Dict[str, Any]]  # feature_typeごとの統計
+    
+    # アクセス統計
+    review_count: int
+    thread_count: int
+    short_answer_session_count: int
+    
+    # 期間別統計（オプション）
+    today_tokens: int = 0
+    today_cost_yen: float = 0.0
+    this_month_tokens: int = 0
+    this_month_cost_yen: float = 0.0
+
+
+class AdminFeatureStatsResponse(BaseModel):
+    """機能別統計詳細"""
+    feature_type: str
+    request_count: int
+    total_tokens: int
+    total_input_tokens: int
+    total_output_tokens: int
+    total_cost_yen: float
+    avg_latency_ms: Optional[float] = None
+
+
+class AdminUserUpdateRequest(BaseModel):
+    """管理者用ユーザー更新リクエスト"""
+    is_active: Optional[bool] = None
+    is_admin: Optional[bool] = None
+
+
+class AdminDatabaseInfoResponse(BaseModel):
+    """管理者用データベース情報レスポンス"""
+    current_database_url: str
+    available_databases: List[Dict[str, str]]

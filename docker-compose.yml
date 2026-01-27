@@ -27,7 +27,7 @@ services:
       - production # 本番環境用プロファイル
     # ports公開しない（内部ネットワークのみアクセス可能）
 
-  # バックエンド - βテスト環境用
+    # バックエンド - βテスト環境用
   backend-beta:
     build:
       context: .
@@ -54,7 +54,7 @@ services:
       - beta # βテスト環境用プロファイル
     # ports公開しない（内部ネットワークのみアクセス可能）
 
-  # バックエンド - 開発環境用
+    # バックエンド - 開発環境用
   backend-dev:
     build:
       context: .
@@ -215,7 +215,7 @@ services:
       - dev # 開発環境用プロファイル（サーバー上）
     # ports公開しない（proxy経由のみアクセス可能）
 
-  # プロキシ - 本番環境用（複数ドメイン対応）
+    # プロキシ - 本番環境用（複数ドメイン対応）
   proxy:
     env_file:
       - .env

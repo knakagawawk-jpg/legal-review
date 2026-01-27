@@ -266,3 +266,50 @@ export interface LlmRequestListResponse {
   items: LlmRequest[]
   total: number
 }
+
+// 管理者用の型定義
+export interface AdminUser {
+  id: number
+  email: string
+  name?: string | null
+  is_active: boolean
+  is_admin: boolean
+  created_at: string
+  updated_at: string
+  last_login_at?: string | null
+  review_count: number
+  thread_count: number
+  short_answer_session_count: number
+  total_tokens: number
+  total_cost_yen: number
+}
+
+export interface AdminUserListResponse {
+  users: AdminUser[]
+  total: number
+}
+
+export interface AdminStats {
+  total_users: number
+  active_users: number
+  admin_users: number
+  total_tokens: number
+  total_input_tokens: number
+  total_output_tokens: number
+  total_cost_yen: number
+  feature_stats: Record<string, {
+    request_count: number
+    total_tokens: number
+    total_input_tokens: number
+    total_output_tokens: number
+    total_cost_yen: number
+    avg_latency_ms?: number | null
+  }>
+  review_count: number
+  thread_count: number
+  short_answer_session_count: number
+  today_tokens: number
+  today_cost_yen: number
+  this_month_tokens: number
+  this_month_cost_yen: number
+}

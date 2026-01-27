@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
-from .db import SessionLocal, engine, Base
+from .db import SessionLocal, engine, Base, get_db_session_for_url
 from .models import (
     Submission, Review, Problem,
     ShortAnswerProblem, ShortAnswerSession, ShortAnswerAnswer,
@@ -39,7 +39,8 @@ from .schemas import (
     ShortAnswerAnswerCreate, ShortAnswerAnswerResponse,
     NotebookCreate, NotebookUpdate, NotebookResponse, NotebookDetailResponse,
     NoteSectionCreate, NoteSectionUpdate, NoteSectionResponse, NoteSectionDetailResponse,
-    NotePageCreate, NotePageUpdate, NotePageResponse,
+    NotePageCreate,
+    AdminUserResponse, AdminUserListResponse, AdminStatsResponse, AdminFeatureStatsResponse, AdminUserUpdateRequest, NotePageUpdate, NotePageResponse,
     SubmissionHistoryResponse, ShortAnswerHistoryResponse, UserReviewHistoryResponse,
     ThreadCreate, ThreadResponse, ThreadListResponse,
     MessageCreate, MessageResponse, MessageListResponse, ThreadMessageCreate,
@@ -51,12 +52,14 @@ from .schemas import (
     StudyTagCreate, StudyTagResponse,
     StudyItemCreate, StudyItemUpdate, StudyItemResponse, StudyItemReorderRequest,
     OfficialQuestionYearsResponse, OfficialQuestionActiveResponse,
-    LlmRequestResponse, LlmRequestListResponse
+    LlmRequestResponse, LlmRequestListResponse,
+    AdminUserResponse, AdminUserListResponse, AdminStatsResponse, AdminFeatureStatsResponse,
+    AdminUserUpdateRequest, AdminDatabaseInfoResponse
 )
 from pydantic import BaseModel
 from .llm_service import generate_review, chat_about_review, free_chat, generate_recent_review_problems, generate_chat_title
 from .llm_usage import build_llm_request_row
-from .auth import get_current_user, get_current_user_required, verify_google_token, get_or_create_user, create_access_token
+from .auth import get_current_user, get_current_user_required, get_current_admin, verify_google_token, get_or_create_user, create_access_token
 from config.settings import AUTH_ENABLED
 from .timer_api import register_timer_routes
 from .timer_utils import get_study_date as get_study_date_4am
@@ -1623,6 +1626,177 @@ async def list_llm_requests(
         items=items,
         total=total,
     )
+
+
+@app.get("/v1/admin/llm-requests", response_model=LlmRequestListResponse)
+async def list_admin_llm_requests(
+    database_url: Optional[str] = Query(None, description="データベースURL（指定しない場合はデフォルトDB）"),
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    feature_type: Optional[str] = Query(None),
+    model: Optional[str] = Query(None),
+    request_id: Optional[str] = Query(None),
+    review_id: Optional[int] = Query(None),
+    thread_id: Optional[int] = Query(None),
+    session_id: Optional[int] = Query(None),
+    user_id: Optional[int] = Query(None),
+    created_from: Optional[str] = Query(None, description="ISO datetime"),
+    created_to: Optional[str] = Query(None, description="ISO datetime"),
+):
+    """管理者用: 全ユーザーのLLMリクエストログを取得（データベース切り替え対応）"""
+    try:
+        # データベースURLが指定されている場合は、そのDBを使用
+        if database_url:
+            # セキュリティチェック: SQLiteファイルのみ許可
+            if not database_url.startswith("sqlite:///"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="現在はSQLiteデータベースのみサポートしています"
+                )
+            # 一時的なセッションを作成
+            db_gen = get_db_session_for_url(database_url)
+            db = next(db_gen)
+            try:
+                return await _list_admin_llm_requests_internal(
+                    db, limit, offset, feature_type, model, request_id,
+                    review_id, thread_id, session_id, user_id, created_from, created_to
+                )
+            finally:
+                try:
+                    next(db_gen, None)  # ジェネレータをクリーンアップ
+                except StopIteration:
+                    pass
+        else:
+            # デフォルトのDBを使用
+            return await _list_admin_llm_requests_internal(
+                db, limit, offset, feature_type, model, request_id,
+                review_id, thread_id, session_id, user_id, created_from, created_to
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin LLM requests error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"LLMログの取得に失敗しました: {str(e)}"
+        )
+
+
+async def _list_admin_llm_requests_internal(
+    db: Session,
+    limit: int,
+    offset: int,
+    feature_type: Optional[str],
+    model: Optional[str],
+    request_id: Optional[str],
+    review_id: Optional[int],
+    thread_id: Optional[int],
+    session_id: Optional[int],
+    user_id: Optional[int],
+    created_from: Optional[str],
+    created_to: Optional[str],
+) -> LlmRequestListResponse:
+    """LLMログ取得の内部実装"""
+    try:
+        query = db.query(LlmRequest)
+        
+        # ユーザーIDでフィルタ（指定された場合）
+        if user_id is not None:
+            query = query.filter(LlmRequest.user_id == user_id)
+        
+        if feature_type:
+            query = query.filter(LlmRequest.feature_type == feature_type)
+        if model:
+            model_like = f"%{model.lower()}%"
+            query = query.filter(func.lower(LlmRequest.model).like(model_like))
+        if request_id:
+            query = query.filter(LlmRequest.request_id == request_id)
+        if review_id is not None:
+            query = query.filter(LlmRequest.review_id == review_id)
+        if thread_id is not None:
+            query = query.filter(LlmRequest.thread_id == thread_id)
+        if session_id is not None:
+            query = query.filter(LlmRequest.session_id == session_id)
+        
+        def _parse_dt(value: Optional[str]) -> Optional[datetime]:
+            if not value:
+                return None
+            try:
+                dt = datetime.fromisoformat(value)
+            except Exception:
+                return None
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        
+        dt_from = _parse_dt(created_from)
+        dt_to = _parse_dt(created_to)
+        if dt_from:
+            query = query.filter(LlmRequest.created_at >= dt_from)
+        if dt_to:
+            query = query.filter(LlmRequest.created_at <= dt_to)
+        
+        total = query.count()
+        rows = query.order_by(LlmRequest.created_at.desc()).offset(offset).limit(limit).all()
+        
+        # レスポンス時にコストを計算
+        from .llm_usage import calculate_cost_yen_split, calculate_cost_usd_split
+        from decimal import Decimal
+        items = []
+        for row in rows:
+            # 円換算のコストを計算
+            cost_split_yen = calculate_cost_yen_split(row.model, row.input_tokens, row.output_tokens)
+            # ドル換算のコストを計算
+            cost_split_usd = calculate_cost_usd_split(row.model, row.input_tokens, row.output_tokens)
+            
+            input_cost_usd = None
+            output_cost_usd = None
+            total_cost_usd = None
+            total_cost_yen = None
+            
+            if cost_split_usd:
+                input_cost_usd, output_cost_usd = cost_split_usd
+                input_cost_usd = float(input_cost_usd) if input_cost_usd is not None else None
+                output_cost_usd = float(output_cost_usd) if output_cost_usd is not None else None
+                if input_cost_usd is not None or output_cost_usd is not None:
+                    total_cost_usd = (input_cost_usd or 0.0) + (output_cost_usd or 0.0)
+            
+            if cost_split_yen:
+                input_cost_yen, output_cost_yen = cost_split_yen
+                if input_cost_yen is not None or output_cost_yen is not None:
+                    total_cost_yen = float((input_cost_yen or Decimal("0")) + (output_cost_yen or Decimal("0")))
+            
+            # DBに保存されているcost_yenも使用（計算値がない場合のフォールバック）
+            if total_cost_yen is None and row.cost_yen is not None:
+                total_cost_yen = float(row.cost_yen)
+            
+            item = LlmRequestResponse(
+                id=row.id,
+                user_id=row.user_id,
+                feature_type=row.feature_type,
+                review_id=row.review_id,
+                thread_id=row.thread_id,
+                session_id=row.session_id,
+                model=row.model,
+                prompt_version=row.prompt_version,
+                input_tokens=row.input_tokens,
+                output_tokens=row.output_tokens,
+                input_cost_usd=input_cost_usd,
+                output_cost_usd=output_cost_usd,
+                total_cost_usd=total_cost_usd,
+                total_cost_yen=total_cost_yen,
+                request_id=row.request_id,
+                latency_ms=row.latency_ms,
+                created_at=row.created_at,
+            )
+            items.append(item)
+        
+        return LlmRequestListResponse(items=items, total=total)
+    except Exception as e:
+        logger.error(f"Admin LLM requests internal error: {str(e)}", exc_info=True)
+        raise
 
 # ノート機能のエンドポイント
 @app.get("/v1/notebooks", response_model=List[NotebookResponse])
@@ -4137,3 +4311,482 @@ async def save_recent_review_problem(
     db.commit()
     db.refresh(row)
     return SaveReviewProblemResponse(saved_id=row.id)
+
+
+# ============================================================================
+# 管理者用APIエンドポイント
+# ============================================================================
+
+def get_database_name_from_url(db_url: str) -> str:
+    """データベースURLから環境名を取得"""
+    if not db_url:
+        return "不明"
+    
+    # 小文字に変換して比較（大文字小文字を区別しない）
+    db_url_lower = db_url.lower()
+    
+    if "dev.db" in db_url_lower or "/dev" in db_url_lower:
+        return "dev"
+    elif "beta.db" in db_url_lower or "/beta" in db_url_lower:
+        return "beta"
+    elif "production.db" in db_url_lower or "prod.db" in db_url_lower or "/production" in db_url_lower or "/prod" in db_url_lower:
+        return "本番"
+    else:
+        # URLからファイル名を抽出
+        if "/" in db_url:
+            parts = db_url.split("/")
+            for part in reversed(parts):
+                if part.endswith(".db"):
+                    filename = part.replace(".db", "")
+                    # ファイル名から環境名を推測
+                    if "dev" in filename.lower():
+                        return "dev"
+                    elif "beta" in filename.lower():
+                        return "beta"
+                    elif "production" in filename.lower() or "prod" in filename.lower():
+                        return "本番"
+                    return filename
+        # デフォルトはdev
+        logger.warning(f"Could not determine database name from URL: {db_url}, defaulting to 'dev'")
+        return "dev"
+
+
+def normalize_database_url(db_url: str) -> str:
+    """データベースURLを正規化（相対パスと絶対パスを統一）"""
+    # sqlite:///./data/dev.db -> sqlite:////data/dev.db
+    # sqlite:////data/dev.db -> sqlite:////data/dev.db
+    if db_url.startswith("sqlite:///./"):
+        # 相対パスを絶対パスに変換
+        return db_url.replace("sqlite:///./", "sqlite:////")
+    return db_url
+
+
+def is_valid_sqlite_db(file_path: str) -> bool:
+    """SQLiteデータベースファイルが有効かどうかをチェック"""
+    import os
+    import sqlite3
+    
+    if not os.path.exists(file_path):
+        return False
+    
+    # ファイルサイズが0の場合は無効
+    if os.path.getsize(file_path) == 0:
+        return False
+    
+    # SQLiteヘッダーをチェック
+    try:
+        with sqlite3.connect(file_path) as conn:
+            conn.execute("SELECT 1")
+        return True
+    except Exception:
+        return False
+
+
+def get_db_file_path_from_url(db_url: str) -> str:
+    """DATABASE_URLからファイルパスを抽出"""
+    # sqlite:////data/dev.db -> /data/dev.db
+    # sqlite:///./data/dev.db -> ./data/dev.db
+    if db_url.startswith("sqlite:////"):
+        return db_url.replace("sqlite:////", "/")
+    elif db_url.startswith("sqlite:///"):
+        return db_url.replace("sqlite:///", "")
+    return db_url
+
+
+@app.get("/v1/admin/databases", response_model=AdminDatabaseInfoResponse)
+async def get_admin_databases(
+    current_admin: User = Depends(get_current_admin),
+):
+    """管理者用: 利用可能なデータベース一覧を取得"""
+    import os
+    try:
+        # 環境変数から取得（db.pyと同じロジック）
+        current_db_url = os.getenv("DATABASE_URL", "sqlite:///./data/dev.db")
+        logger.info(f"Current DATABASE_URL: {current_db_url}")
+        
+        normalized_current_url = normalize_database_url(current_db_url)
+        
+        # 利用可能なデータベースの候補リスト
+        candidate_databases = [
+            {
+                "name": "dev",
+                "url": "sqlite:////data/dev.db",
+                "description": "開発環境"
+            },
+            {
+                "name": "beta",
+                "url": "sqlite:////data/beta.db",
+                "description": "βテスト環境"
+            },
+            {
+                "name": "本番",
+                "url": "sqlite:////data/prod.db",
+                "description": "本番環境"
+            },
+        ]
+        
+        # 実際に存在する有効なDBのみをフィルタリング
+        available_databases = []
+        for db in candidate_databases:
+            file_path = get_db_file_path_from_url(db["url"])
+            if is_valid_sqlite_db(file_path):
+                available_databases.append(db)
+            else:
+                logger.info(f"Database not available: {db['name']} ({file_path})")
+        
+        # 現在のDBの環境名を取得
+        current_db_name = get_database_name_from_url(current_db_url)
+        logger.info(f"Detected database name: {current_db_name} from URL: {current_db_url}")
+        
+        # 現在のDBがリストに含まれているか確認し、含まれていない場合は追加
+        current_in_list = False
+        for db in available_databases:
+            normalized_db_url = normalize_database_url(db["url"])
+            if normalized_db_url == normalized_current_url:
+                current_in_list = True
+                # 現在のDBの情報を更新
+                db["name"] = current_db_name
+                db["description"] = f"現在接続中 ({current_db_name})"
+                break
+        
+        if not current_in_list:
+            # 現在のDBが候補にない場合でも、有効なら追加
+            current_file_path = get_db_file_path_from_url(current_db_url)
+            if is_valid_sqlite_db(current_file_path):
+                available_databases.insert(0, {
+                    "name": current_db_name,
+                    "url": current_db_url,
+                    "description": f"現在接続中 ({current_db_name})"
+                })
+        
+        return AdminDatabaseInfoResponse(
+            current_database_url=current_db_url,
+            available_databases=available_databases
+        )
+    except Exception as e:
+        logger.error(f"Error in get_admin_databases: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"データベース情報の取得に失敗しました: {str(e)}"
+        )
+
+
+@app.get("/v1/admin/users", response_model=AdminUserListResponse)
+async def get_admin_users(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    search: Optional[str] = Query(None),
+    is_active: Optional[bool] = Query(None),
+    database_url: Optional[str] = Query(None, description="データベースURL（指定しない場合はデフォルトDB）"),
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """管理者用: ユーザー一覧を取得（データベース切り替え対応）"""
+    try:
+        # データベースURLが指定されている場合は、そのDBを使用
+        if database_url:
+            # セキュリティチェック: SQLiteファイルのみ許可（相対パスや危険なパスを防ぐ）
+            if not database_url.startswith("sqlite:///"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="現在はSQLiteデータベースのみサポートしています"
+                )
+            # 一時的なセッションを作成
+            db_gen = get_db_session_for_url(database_url)
+            db = next(db_gen)
+            try:
+                return await _get_admin_users_internal(db, skip, limit, search, is_active)
+            finally:
+                try:
+                    next(db_gen, None)  # ジェネレータをクリーンアップ
+                except StopIteration:
+                    pass
+        else:
+            # デフォルトのDBを使用
+            return await _get_admin_users_internal(db, skip, limit, search, is_active)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin users error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"ユーザー一覧の取得に失敗しました: {str(e)}"
+        )
+
+
+async def _get_admin_users_internal(
+    db: Session,
+    skip: int,
+    limit: int,
+    search: Optional[str],
+    is_active: Optional[bool]
+) -> AdminUserListResponse:
+    """ユーザー一覧取得の内部実装"""
+    query = db.query(User)
+    
+    # 検索条件
+    if search:
+        query = query.filter(
+            or_(
+                User.email.ilike(f"%{search}%"),
+                User.name.ilike(f"%{search}%")
+            )
+        )
+    
+    if is_active is not None:
+        query = query.filter(User.is_active == is_active)
+    
+    # 総数を取得
+    total = query.count()
+    
+    # ページネーション
+    users = query.order_by(User.created_at.desc()).offset(skip).limit(limit).all()
+    
+    # 各ユーザーの統計情報を取得
+    user_responses = []
+    for user in users:
+        # 講評数
+        review_count = db.query(func.count(Review.id)).filter(Review.user_id == user.id).scalar() or 0
+        
+        # スレッド数
+        thread_count = db.query(func.count(Thread.id)).filter(Thread.user_id == user.id).scalar() or 0
+        
+        # 短答式セッション数
+        short_answer_session_count = db.query(func.count(ShortAnswerSession.id)).filter(
+            ShortAnswerSession.user_id == user.id
+        ).scalar() or 0
+        
+        # トークン数・コスト
+        token_stats = db.query(
+            func.sum(LlmRequest.input_tokens).label('input_tokens'),
+            func.sum(LlmRequest.output_tokens).label('output_tokens'),
+            func.sum(LlmRequest.cost_yen).label('cost_yen')
+        ).filter(LlmRequest.user_id == user.id).first()
+        
+        total_tokens = (token_stats.input_tokens or 0) + (token_stats.output_tokens or 0) if token_stats else 0
+        total_cost_yen = float(token_stats.cost_yen or 0) if token_stats else 0.0
+        
+        user_responses.append(AdminUserResponse(
+            id=user.id,
+            email=user.email,
+            name=user.name,
+            is_active=user.is_active,
+            is_admin=user.is_admin,
+            created_at=user.created_at,
+            updated_at=user.updated_at,
+            last_login_at=user.last_login_at,
+            review_count=review_count,
+            thread_count=thread_count,
+            short_answer_session_count=short_answer_session_count,
+            total_tokens=total_tokens,
+            total_cost_yen=total_cost_yen
+        ))
+    
+    return AdminUserListResponse(users=user_responses, total=total)
+
+
+@app.get("/v1/admin/stats", response_model=AdminStatsResponse)
+async def get_admin_stats(
+    database_url: Optional[str] = Query(None, description="データベースURL（指定しない場合はデフォルトDB）"),
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """管理者用: 全体統計情報を取得（データベース切り替え対応）"""
+    try:
+        # データベースURLが指定されている場合は、そのDBを使用
+        if database_url:
+            # セキュリティチェック: SQLiteファイルのみ許可
+            if not database_url.startswith("sqlite:///"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="現在はSQLiteデータベースのみサポートしています"
+                )
+            # 一時的なセッションを作成
+            db_gen = get_db_session_for_url(database_url)
+            db = next(db_gen)
+            try:
+                return await _get_admin_stats_internal(db)
+            finally:
+                try:
+                    next(db_gen, None)  # ジェネレータをクリーンアップ
+                except StopIteration:
+                    pass
+        else:
+            # デフォルトのDBを使用
+            return await _get_admin_stats_internal(db)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin stats error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"統計情報の取得に失敗しました: {str(e)}"
+        )
+
+
+async def _get_admin_stats_internal(db: Session) -> AdminStatsResponse:
+    """統計情報取得の内部実装"""
+    try:
+        # データベース接続テスト
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        
+        jst = ZoneInfo("Asia/Tokyo")
+        utc = ZoneInfo("UTC")
+        now_jst = datetime.now(jst)
+        now_utc = datetime.now(utc)
+        
+        # JSTの今日の開始時刻をUTCに変換
+        today_start_jst = now_jst.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start_utc = today_start_jst.astimezone(utc)
+        
+        # JSTの今月の開始時刻をUTCに変換
+        month_start_jst = now_jst.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        month_start_utc = month_start_jst.astimezone(utc)
+        
+        # ユーザー統計
+        total_users = db.query(func.count(User.id)).scalar() or 0
+        active_users = db.query(func.count(User.id)).filter(User.is_active == True).scalar() or 0
+        admin_users = db.query(func.count(User.id)).filter(User.is_admin == True).scalar() or 0
+        
+        # トークン・コスト統計（全体）
+        token_stats = db.query(
+            func.sum(LlmRequest.input_tokens).label('input_tokens'),
+            func.sum(LlmRequest.output_tokens).label('output_tokens'),
+            func.sum(LlmRequest.cost_yen).label('cost_yen')
+        ).first()
+        
+        total_input_tokens = token_stats.input_tokens or 0 if token_stats else 0
+        total_output_tokens = token_stats.output_tokens or 0 if token_stats else 0
+        total_tokens = total_input_tokens + total_output_tokens
+        total_cost_yen = float(token_stats.cost_yen or 0) if token_stats else 0.0
+        
+        # 今日の統計（UTCでフィルタ）
+        today_stats = db.query(
+            func.sum(LlmRequest.input_tokens + LlmRequest.output_tokens).label('tokens'),
+            func.sum(LlmRequest.cost_yen).label('cost_yen')
+        ).filter(LlmRequest.created_at >= today_start_utc).first()
+        
+        today_tokens = today_stats.tokens or 0 if today_stats else 0
+        today_cost_yen = float(today_stats.cost_yen or 0) if today_stats else 0.0
+        
+        # 今月の統計（UTCでフィルタ）
+        month_stats = db.query(
+            func.sum(LlmRequest.input_tokens + LlmRequest.output_tokens).label('tokens'),
+            func.sum(LlmRequest.cost_yen).label('cost_yen')
+        ).filter(LlmRequest.created_at >= month_start_utc).first()
+        
+        this_month_tokens = month_stats.tokens or 0 if month_stats else 0
+        this_month_cost_yen = float(month_stats.cost_yen or 0) if month_stats else 0.0
+        
+        # 機能別統計
+        feature_stats_query = db.query(
+            LlmRequest.feature_type,
+            func.count(LlmRequest.id).label('count'),
+            func.sum(LlmRequest.input_tokens).label('input_tokens'),
+            func.sum(LlmRequest.output_tokens).label('output_tokens'),
+            func.sum(LlmRequest.cost_yen).label('cost_yen'),
+            func.avg(LlmRequest.latency_ms).label('avg_latency')
+        ).group_by(LlmRequest.feature_type).all()
+        
+        feature_stats = {}
+        for stat in feature_stats_query:
+            feature_stats[stat.feature_type] = {
+                "request_count": stat.count or 0,
+                "total_tokens": (stat.input_tokens or 0) + (stat.output_tokens or 0),
+                "total_input_tokens": stat.input_tokens or 0,
+                "total_output_tokens": stat.output_tokens or 0,
+                "total_cost_yen": float(stat.cost_yen or 0),
+                "avg_latency_ms": float(stat.avg_latency) if stat.avg_latency else None
+            }
+        
+        # アクセス統計
+        review_count = db.query(func.count(Review.id)).scalar() or 0
+        thread_count = db.query(func.count(Thread.id)).scalar() or 0
+        short_answer_session_count = db.query(func.count(ShortAnswerSession.id)).scalar() or 0
+        
+        return AdminStatsResponse(
+            total_users=total_users,
+            active_users=active_users,
+            admin_users=admin_users,
+            total_tokens=total_tokens,
+            total_input_tokens=total_input_tokens,
+            total_output_tokens=total_output_tokens,
+            total_cost_yen=total_cost_yen,
+            feature_stats=feature_stats,
+            review_count=review_count,
+            thread_count=thread_count,
+            short_answer_session_count=short_answer_session_count,
+            today_tokens=today_tokens,
+            today_cost_yen=today_cost_yen,
+            this_month_tokens=this_month_tokens,
+            this_month_cost_yen=this_month_cost_yen
+        )
+    except Exception as e:
+        logger.error(f"Admin stats internal error: {str(e)}", exc_info=True)
+        raise
+
+
+@app.put("/v1/admin/users/{user_id}", response_model=AdminUserResponse)
+async def update_admin_user(
+    user_id: int,
+    user_update: AdminUserUpdateRequest,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """管理者用: ユーザー情報を更新（管理者権限の付与・剥奪、アクティブ状態の変更）"""
+    # 対象ユーザーを取得
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="ユーザーが見つかりません")
+    
+    # 自分自身の管理者権限を剥奪しようとしている場合は拒否
+    if user_id == current_admin.id and user_update.is_admin is False:
+        raise HTTPException(
+            status_code=400,
+            detail="自分自身の管理者権限を剥奪することはできません"
+        )
+    
+    # 更新
+    if user_update.is_active is not None:
+        target_user.is_active = user_update.is_active
+    
+    if user_update.is_admin is not None:
+        target_user.is_admin = user_update.is_admin
+    
+    db.commit()
+    db.refresh(target_user)
+    
+    # 統計情報を取得して返す
+    review_count = db.query(func.count(Review.id)).filter(Review.user_id == target_user.id).scalar() or 0
+    thread_count = db.query(func.count(Thread.id)).filter(Thread.user_id == target_user.id).scalar() or 0
+    short_answer_session_count = db.query(func.count(ShortAnswerSession.id)).filter(
+        ShortAnswerSession.user_id == target_user.id
+    ).scalar() or 0
+    
+    token_stats = db.query(
+        func.sum(LlmRequest.input_tokens).label('input_tokens'),
+        func.sum(LlmRequest.output_tokens).label('output_tokens'),
+        func.sum(LlmRequest.total_cost_yen).label('cost_yen')
+    ).filter(LlmRequest.user_id == target_user.id).first()
+    
+    total_tokens = (token_stats.input_tokens or 0) + (token_stats.output_tokens or 0)
+    total_cost_yen = float(token_stats.cost_yen or 0)
+    
+    return AdminUserResponse(
+        id=target_user.id,
+        email=target_user.email,
+        name=target_user.name,
+        is_active=target_user.is_active,
+        is_admin=target_user.is_admin,
+        created_at=target_user.created_at,
+        updated_at=target_user.updated_at,
+        last_login_at=target_user.last_login_at,
+        review_count=review_count,
+        thread_count=thread_count,
+        short_answer_session_count=short_answer_session_count,
+        total_tokens=total_tokens,
+        total_cost_yen=total_cost_yen
+    )

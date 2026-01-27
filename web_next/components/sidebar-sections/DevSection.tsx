@@ -8,6 +8,6 @@ export function DevSection() {
   if (!enableDevPage) {
     return null
   }
-  
+
   return null // 現在は何も表示しない（将来実装予定）
 }

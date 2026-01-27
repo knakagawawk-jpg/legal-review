@@ -25,3 +25,49 @@ def get_db() -> Generator:
         yield db
     finally:
         db.close()
+
+
+def get_db_session_for_url(database_url: str) -> Generator:
+    """
+    指定されたデータベースURLでセッションを取得する関数（管理者用）
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # SQLiteの場合、ファイルパスを抽出して存在確認
+        if "sqlite" in database_url:
+            # sqlite:////data/dev.db -> /data/dev.db
+            # sqlite:///./data/dev.db -> ./data/dev.db
+            if database_url.startswith("sqlite:////"):
+                file_path = database_url.replace("sqlite:////", "/")
+            elif database_url.startswith("sqlite:///./"):
+                file_path = database_url.replace("sqlite:///./", "./")
+            elif database_url.startswith("sqlite:///"):
+                file_path = database_url.replace("sqlite:///", "")
+            else:
+                file_path = database_url.replace("sqlite://", "")
+            
+            import os
+            if not os.path.exists(file_path):
+                logger.warning(f"Database file not found: {file_path} (URL: {database_url})")
+                # ファイルが存在しない場合でもエンジンは作成する（新規作成される可能性があるため）
+        
+        # 新しいエンジンを作成
+        temp_engine = create_engine(
+            database_url,
+            connect_args={"check_same_thread": False} if "sqlite" in database_url else {}
+        )
+        TempSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=temp_engine)
+        db = TempSessionLocal()
+        try:
+            # 接続テスト
+            from sqlalchemy import text
+            db.execute(text("SELECT 1"))
+            yield db
+        finally:
+            db.close()
+            temp_engine.dispose()  # エンジンをクリーンアップ
+    except Exception as e:
+        logger.error(f"Failed to create database session for URL {database_url}: {str(e)}", exc_info=True)
+        raise

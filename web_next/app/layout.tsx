@@ -8,6 +8,9 @@ const inter = Inter({ subsets: ["latin"] })
 export const metadata: Metadata = {
   title: "Juristutor-AI",
   description: "答案のAI講評、勉強管理含めた次世代の勉強用プラットフォーム",
+  icons: {
+    icon: "/icon.png",
+  },
   openGraph: {
     title: "Juristutor-AI",
     description: "答案のAI講評、勉強管理含めた次世代の勉強用プラットフォーム",

@@ -1,7 +1,9 @@
 "use client"
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"
-import { ExternalLink, History, BookOpen, ChevronDown, Filter, Menu, Lightbulb, ListTodo, Heart, Calendar as CalendarIcon, Pencil, Check, X } from "lucide-react"
+import Link from "next/link"
+import { ExternalLink, History, BookOpen, ChevronDown, Filter, Menu, Lightbulb, ListTodo, Heart, Calendar as CalendarIcon, Pencil, Check, X, Maximize2, Plus, CalendarDays } from "lucide-react"
+import { SortableRow } from "@/components/sortable-row"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -10,14 +12,33 @@ import { cn } from "@/lib/utils"
 import { FIXED_SUBJECTS, getSubjectName, getSubjectId } from "@/lib/subjects"
 import { withAuth } from "@/components/auth/with-auth"
 import { apiClient } from "@/lib/api-client"
+import { StudyTimeCard } from "@/components/study-time-card"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
+import { ItemField } from "@/components/item-field"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar, DatePickerCalendar } from "@/components/ui/calendar"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core"
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
 
 type ReviewHistoryItem = {
   id: number
@@ -270,25 +291,30 @@ function ExamTable({ data, title }: { data: ExamRecord[]; title: string }) {
   )
 }
 
+
 // 勉強管理ページコンポーネント
 function StudyManagementPage() {
   const [memoItems, setMemoItems] = useState<DashboardItem[]>([])
   const [topicItems, setTopicItems] = useState<DashboardItem[]>([])
   const [loading, setLoading] = useState(true)
   
+  // 折りたたみ状態
+  const [memoOpen, setMemoOpen] = useState(true)
+  const [topicOpen, setTopicOpen] = useState(true)
+  
   // MEMO用フィルター
   const [memoSubjectFilter, setMemoSubjectFilter] = useState<string | null>(null)
   const [memoStatusFilter, setMemoStatusFilter] = useState<number | null>(null)
   const [memoStartDate, setMemoStartDate] = useState<Date | undefined>(undefined)
   const [memoEndDate, setMemoEndDate] = useState<Date | undefined>(undefined)
-  const [memoFavoriteFilter, setMemoFavoriteFilter] = useState<"fav-only" | "fav-except" | "all">("fav-only")
+  const [memoFavoriteFilter, setMemoFavoriteFilter] = useState<"fav-only" | "fav-except" | "all">("all")
   
   // Topics用フィルター
   const [topicSubjectFilter, setTopicSubjectFilter] = useState<string | null>(null)
   const [topicStatusFilter, setTopicStatusFilter] = useState<number | null>(null)
   const [topicStartDate, setTopicStartDate] = useState<Date | undefined>(undefined)
   const [topicEndDate, setTopicEndDate] = useState<Date | undefined>(undefined)
-  const [topicFavoriteFilter, setTopicFavoriteFilter] = useState<"fav-only" | "fav-except" | "all">("fav-only")
+  const [topicFavoriteFilter, setTopicFavoriteFilter] = useState<"fav-only" | "fav-except" | "all">("all")
   
   // スクロール位置保持用
   const memoScrollRef = useRef<HTMLDivElement>(null)
@@ -301,41 +327,184 @@ function StudyManagementPage() {
   const memoUpdateTimers = useRef<Record<number, NodeJS.Timeout>>({})
   const pendingMemoUpdates = useRef<Record<number, string>>({})
   
+  // 項目・科目・種類更新用のタイマー
+  const itemUpdateTimers = useRef<Record<number, NodeJS.Timeout>>({})
+  const pendingItemUpdates = useRef<Record<number, Partial<DashboardItem>>>({})
+  
+  // 作成日編集用のPopover状態
+  const [memoCreatedDatePickerOpen, setMemoCreatedDatePickerOpen] = useState<Record<number, boolean>>({})
+  const [topicCreatedDatePickerOpen, setTopicCreatedDatePickerOpen] = useState<Record<number, boolean>>({})
+  
+  // Sensors for drag and drop
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
+  
   // データ取得
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true)
+      const [memoData, topicData] = await Promise.all([
+        apiClient.get<{ items: DashboardItem[], total: number }>("/api/dashboard/items/all?entry_type=1"),
+        apiClient.get<{ items: DashboardItem[], total: number }>("/api/dashboard/items/all?entry_type=2"),
+      ])
+      console.log("MEMO data:", memoData)
+      console.log("Topics data:", topicData)
+      setMemoItems(memoData.items || [])
+      setTopicItems(topicData.items || [])
+      
+      // スクロール位置を復元
+      const memoScrollPos = localStorage.getItem("study-memo-scroll")
+      const topicScrollPos = localStorage.getItem("study-topic-scroll")
+      setTimeout(() => {
+        if (memoScrollRef.current && memoScrollPos) {
+          memoScrollRef.current.scrollTop = parseInt(memoScrollPos)
+        }
+        if (topicScrollRef.current && topicScrollPos) {
+          topicScrollRef.current.scrollTop = parseInt(topicScrollPos)
+        }
+      }, 100)
+    } catch (error) {
+      console.error("Failed to load dashboard items:", error)
+      setMemoItems([])
+      setTopicItems([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
-    const loadData = async () => {
+    loadData()
+  }, [loadData])
+  
+  // 新しいMEMOアイテムを作成
+  const createMemoItem = useCallback(async () => {
+    try {
+      const today = new Date().toISOString().split("T")[0]
+      await apiClient.post<DashboardItem>("/api/dashboard/items", {
+        dashboard_date: today,
+        entry_type: 1,
+        item: "",
+        status: 1,
+        position: null,
+        created_at: today,
+      })
+      await loadData()
+    } catch (error) {
+      console.error("Failed to create memo item:", error)
+    }
+  }, [loadData])
+  
+  // 新しいTopicsアイテムを作成
+  const createTopicItem = useCallback(async () => {
+    try {
+      const today = new Date().toISOString().split("T")[0]
+      await apiClient.post<DashboardItem>("/api/dashboard/items", {
+        dashboard_date: today,
+        entry_type: 2,
+        item: "",
+        status: 1,
+        position: null,
+        created_at: today,
+      })
+      await loadData()
+    } catch (error) {
+      console.error("Failed to create topic item:", error)
+    }
+  }, [loadData])
+  
+  // アイテム削除
+  const deleteItem = useCallback(async (itemId: number) => {
+    try {
+      await apiClient.delete(`/api/dashboard/items/${itemId}`)
+      await loadData()
+    } catch (error) {
+      console.error("Failed to delete item:", error)
+    }
+  }, [loadData])
+  
+  // MEMOのドラッグ終了処理
+  const handleDragEndMemo = useCallback(async (event: DragEndEvent) => {
+    const { active, over } = event
+
+    if (over && active.id !== over.id) {
+      const oldIndex = memoItems.findIndex((item) => item.id.toString() === active.id)
+      const newIndex = memoItems.findIndex((item) => item.id.toString() === over.id)
+
+      const newItems = arrayMove(memoItems, oldIndex, newIndex)
+      setMemoItems(newItems)
+
+      // Update positions
+      const movedItem = newItems[newIndex]
+      const prevItem = newIndex > 0 ? newItems[newIndex - 1] : null
+      const nextItem = newIndex < newItems.length - 1 ? newItems[newIndex + 1] : null
+
+      let newPosition: number
+      if (prevItem && nextItem) {
+        newPosition = Math.floor((prevItem.position + nextItem.position) / 2)
+      } else if (prevItem) {
+        newPosition = prevItem.position + 10
+      } else if (nextItem) {
+        newPosition = nextItem.position - 10
+      } else {
+        newPosition = 10
+      }
+
       try {
-        setLoading(true)
-        const [memoData, topicData] = await Promise.all([
-          apiClient.get<{ items: DashboardItem[], total: number }>("/api/dashboard/items/all?entry_type=1"),
-          apiClient.get<{ items: DashboardItem[], total: number }>("/api/dashboard/items/all?entry_type=2"),
-        ])
-        console.log("MEMO data:", memoData)
-        console.log("Topics data:", topicData)
-        setMemoItems(memoData.items || [])
-        setTopicItems(topicData.items || [])
-        
-        // スクロール位置を復元
-        const memoScrollPos = localStorage.getItem("study-memo-scroll")
-        const topicScrollPos = localStorage.getItem("study-topic-scroll")
-        setTimeout(() => {
-          if (memoScrollRef.current && memoScrollPos) {
-            memoScrollRef.current.scrollTop = parseInt(memoScrollPos)
-          }
-          if (topicScrollRef.current && topicScrollPos) {
-            topicScrollRef.current.scrollTop = parseInt(topicScrollPos)
-          }
-        }, 100)
+        await apiClient.put(`/api/dashboard/items/${movedItem.id}`, {
+          position: newPosition,
+        })
       } catch (error) {
-        console.error("Failed to load dashboard items:", error)
-        setMemoItems([])
-        setTopicItems([])
-      } finally {
-        setLoading(false)
+        console.error("Failed to reorder memo item:", error)
+        await loadData()
       }
     }
-    loadData()
-  }, [])
+  }, [memoItems, loadData])
+  
+  // Topicsのドラッグ終了処理
+  const handleDragEndTopic = useCallback(async (event: DragEndEvent) => {
+    const { active, over } = event
+
+    if (over && active.id !== over.id) {
+      const oldIndex = topicItems.findIndex((item) => item.id.toString() === active.id)
+      const newIndex = topicItems.findIndex((item) => item.id.toString() === over.id)
+
+      const newItems = arrayMove(topicItems, oldIndex, newIndex)
+      setTopicItems(newItems)
+
+      // Update positions
+      const movedItem = newItems[newIndex]
+      const prevItem = newIndex > 0 ? newItems[newIndex - 1] : null
+      const nextItem = newIndex < newItems.length - 1 ? newItems[newIndex + 1] : null
+
+      let newPosition: number
+      if (prevItem && nextItem) {
+        newPosition = Math.floor((prevItem.position + nextItem.position) / 2)
+      } else if (prevItem) {
+        newPosition = prevItem.position + 10
+      } else if (nextItem) {
+        newPosition = nextItem.position - 10
+      } else {
+        newPosition = 10
+      }
+
+      try {
+        await apiClient.put(`/api/dashboard/items/${movedItem.id}`, {
+          position: newPosition,
+        })
+      } catch (error) {
+        console.error("Failed to reorder topic item:", error)
+        await loadData()
+      }
+    }
+  }, [topicItems, loadData])
   
   // スクロール位置を保存
   const handleMemoScroll = useCallback(() => {
@@ -406,6 +575,43 @@ function StudyManagementPage() {
       }
     }, 5000)
   }, [])
+  
+  // 項目・科目・種類更新（debounce付き）
+  const updateItemField = useCallback(async (itemId: number, field: keyof DashboardItem, value: any, entryType: number) => {
+    // 楽観的更新
+    if (entryType === 1) {
+      setMemoItems(prev => prev.map(item => item.id === itemId ? { ...item, [field]: value } : item))
+    } else {
+      setTopicItems(prev => prev.map(item => item.id === itemId ? { ...item, [field]: value } : item))
+    }
+    
+    // 既存のタイマーをクリア
+    if (itemUpdateTimers.current[itemId]) {
+      clearTimeout(itemUpdateTimers.current[itemId])
+    }
+    
+    // 更新内容を保存
+    pendingItemUpdates.current[itemId] = {
+      ...pendingItemUpdates.current[itemId],
+      [field]: value
+    }
+    
+    // 0.8秒後にDBに保存
+    itemUpdateTimers.current[itemId] = setTimeout(async () => {
+      try {
+        const updateData = pendingItemUpdates.current[itemId]
+        await apiClient.put(`/api/dashboard/items/${itemId}`, updateData)
+        delete itemUpdateTimers.current[itemId]
+        delete pendingItemUpdates.current[itemId]
+      } catch (error) {
+        console.error("Failed to update item field:", error)
+        // エラー時はデータを再読み込み
+        await loadData()
+        delete itemUpdateTimers.current[itemId]
+        delete pendingItemUpdates.current[itemId]
+      }
+    }, 800)
+  }, [loadData])
   
   // フィルター適用後のMEMO
   const filteredMemoItems = useMemo(() => {
@@ -558,9 +764,43 @@ function StudyManagementPage() {
               <Lightbulb className="h-3.5 w-3.5 text-amber-200/60" />
               Your MEMO
             </CardTitle>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={createMemoItem}
+                className="h-7 text-xs gap-1 bg-transparent px-2"
+              >
+                <Plus className="h-3 w-3" />
+                追加
+              </Button>
+              <Link href="/your-page/history/memo">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs px-2"
+                >
+                  <Maximize2 className="h-3.5 w-3.5 mr-1" />
+                  拡大
+                </Button>
+              </Link>
+              <Collapsible open={memoOpen} onOpenChange={setMemoOpen}>
+                <CollapsibleTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 text-xs p-0"
+                  >
+                    <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", memoOpen && "rotate-180")} />
+                  </Button>
+                </CollapsibleTrigger>
+              </Collapsible>
+            </div>
           </div>
         </CardHeader>
-        <CardContent className="px-3 pb-2">
+        <Collapsible open={memoOpen} onOpenChange={setMemoOpen}>
+          <CollapsibleContent>
+            <CardContent className="px-3 pb-2">
           {/* MEMO用フィルター */}
           <div className="mb-2 flex items-center gap-2 flex-wrap">
             {/* 科目 */}
@@ -681,57 +921,98 @@ function StudyManagementPage() {
             ref={memoScrollRef}
             onScroll={handleMemoScroll}
             className="overflow-y-auto"
-            style={{ maxHeight: "240px" }} // 10行分（1.5rem * 10）
+            style={{ maxHeight: "480px" }} // 20行分（1.5rem * 20）
           >
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-xs text-muted-foreground sticky top-0 bg-white">
-                  <th className="py-1 px-0.5 w-14 text-left font-medium">科目</th>
-                  <th className="py-1 px-1 w-[120px] text-left font-medium">項目</th>
-                  <th className="py-1 px-0 w-14 text-left font-medium">種類</th>
-                  <th className="py-1 px-1 text-left font-medium">メモ</th>
-                  <th className="py-1 px-1 w-8 text-center font-medium">♡</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground py-6 text-sm">
-                      読み込み中...
-                    </TableCell>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEndMemo}
+            >
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-xs text-muted-foreground sticky top-0 bg-white">
+                    <th className="py-1 px-1 w-6"></th>
+                    <th className="py-1 px-0.5 w-14 text-left font-medium">科目</th>
+                    <th className="py-1 px-1 w-[120px] text-left font-medium">項目</th>
+                    <th className="py-1 px-0 w-14 text-left font-medium">種類</th>
+                    <th className="py-1 px-1 text-left font-medium">メモ</th>
+                    <th className="py-1 px-1 w-8 text-center font-medium">♡</th>
                   </tr>
-                ) : filteredMemoItems.length === 0 ? (
-                  <tr>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground py-6 text-sm">
-                      データがありません
-                    </TableCell>
-                  </tr>
-                ) : (
-                  filteredMemoItems.map((item) => {
+                </thead>
+                <SortableContext items={filteredMemoItems.map(p => p.id.toString())} strategy={verticalListSortingStrategy}>
+                  <tbody>
+                    {loading ? (
+                      <tr>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-6 text-sm">
+                          読み込み中...
+                        </TableCell>
+                      </tr>
+                    ) : filteredMemoItems.length === 0 ? (
+                      <tr>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-6 text-sm">
+                          データがありません
+                        </TableCell>
+                      </tr>
+                    ) : (
+                      filteredMemoItems.map((item) => {
                     const statusOption = POINT_STATUS_OPTIONS.find((s) => s.value === item.status)
                     const selectedSubject = subjects.find(s => s.id === item.subject)
                     return (
-                      <tr key={item.id} className="hover:bg-amber-50/40">
+                      <SortableRow key={item.id} item={item} onDelete={deleteItem}>
                         <TableCell className="py-1.5 px-0.5 w-14 align-top">
-                          {selectedSubject ? (
-                            <span className={cn("text-xs px-1.5 py-0.5 rounded", SUBJECT_COLORS[selectedSubject.name] || "")}>
-                              {selectedSubject.name}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">--</span>
-                          )}
+                          <Select
+                            value={item.subject?.toString() || undefined}
+                            onValueChange={(value) => updateItemField(item.id, "subject", value ? parseInt(value) : null, 1)}
+                          >
+                            <SelectTrigger className="h-7 text-[10px] border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
+                              {selectedSubject ? (
+                                <span className={cn("text-xs px-1.5 py-0.5 rounded", SUBJECT_COLORS[selectedSubject.name] || "")}>
+                                  {selectedSubject.name}
+                                </span>
+                              ) : (
+                                <SelectValue placeholder="--" />
+                              )}
+                            </SelectTrigger>
+                            <SelectContent>
+                              {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => {
+                                const color = SUBJECT_COLORS[s.name] || ""
+                                return (
+                                  <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
+                                    <span className={color ? `px-1.5 py-0.5 rounded ${color}` : ""}>{s.name}</span>
+                                  </SelectItem>
+                                )
+                              })}
+                            </SelectContent>
+                          </Select>
                         </TableCell>
                         <TableCell className="py-1.5 px-1 w-[120px] align-top">
-                          <span className="text-xs">{item.item}</span>
+                          <ItemField
+                            value={item.item}
+                            onChange={(e) => updateItemField(item.id, "item", e.target.value, 1)}
+                          />
                         </TableCell>
                         <TableCell className="py-1.5 px-0 w-14 align-top">
-                          {statusOption ? (
-                            <span className={cn("text-xs px-1.5 py-0.5 rounded", statusOption.color)}>
-                              {statusOption.label}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">--</span>
-                          )}
+                          <Select
+                            value={item.status.toString()}
+                            onValueChange={(value) => updateItemField(item.id, "status", parseInt(value), 1)}
+                          >
+                            <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-14">
+                              {statusOption ? (
+                                <span className={cn("text-xs px-1.5 py-0.5 rounded", statusOption.color)}>
+                                  {statusOption.label}
+                                </span>
+                              ) : (
+                                <SelectValue />
+                              )}
+                            </SelectTrigger>
+                            <SelectContent>
+                              {POINT_STATUS_OPTIONS.filter(opt => opt.value != null && opt.value.toString() !== "").map((opt) => (
+                                <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                                  <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </TableCell>
                         <TableCell className="py-1.5 px-1 align-top">
                           <MemoField
@@ -750,14 +1031,18 @@ function StudyManagementPage() {
                             <Heart className={cn("h-4 w-4", item.favorite === 1 && "fill-current")} />
                           </button>
                         </TableCell>
-                      </tr>
+                      </SortableRow>
                     )
                   })
                 )}
-              </tbody>
-            </table>
+                  </tbody>
+                </SortableContext>
+              </table>
+            </DndContext>
           </div>
-        </CardContent>
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
       </Card>
       
       {/* Your Topics */}
@@ -768,9 +1053,43 @@ function StudyManagementPage() {
               <ListTodo className="h-3.5 w-3.5 text-amber-200/60" />
               Your Topics
             </CardTitle>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={createTopicItem}
+                className="h-7 text-xs gap-1 bg-transparent px-2"
+              >
+                <Plus className="h-3 w-3" />
+                追加
+              </Button>
+              <Link href="/your-page/history/topics">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs px-2"
+                >
+                  <Maximize2 className="h-3.5 w-3.5 mr-1" />
+                  拡大
+                </Button>
+              </Link>
+              <Collapsible open={topicOpen} onOpenChange={setTopicOpen}>
+                <CollapsibleTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 text-xs p-0"
+                  >
+                    <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", topicOpen && "rotate-180")} />
+                  </Button>
+                </CollapsibleTrigger>
+              </Collapsible>
+            </div>
           </div>
         </CardHeader>
-        <CardContent className="px-3 pb-2">
+        <Collapsible open={topicOpen} onOpenChange={setTopicOpen}>
+          <CollapsibleContent>
+            <CardContent className="px-3 pb-2">
           {/* Topics用フィルター */}
           <div className="mb-2 flex items-center gap-2 flex-wrap">
             {/* 科目 */}
@@ -828,7 +1147,7 @@ function StudyManagementPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all" className="text-xs">全種類</SelectItem>
+                <SelectItem value="all" className="text-xs">全状態</SelectItem>
                 {TASK_STATUS_OPTIONS.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
                     {opt.label}
@@ -891,53 +1210,110 @@ function StudyManagementPage() {
             ref={topicScrollRef}
             onScroll={handleTopicScroll}
             className="overflow-y-auto"
-            style={{ maxHeight: "240px" }} // 10行分（1.5rem * 10）
+            style={{ maxHeight: "480px" }} // 20行分（1.5rem * 20）
           >
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-xs text-muted-foreground sticky top-0 bg-white">
-                  <th className="py-1 px-0.5 w-14 text-left font-medium">科目</th>
-                  <th className="py-1 px-1 text-left font-medium">項目</th>
-                  <th className="py-1 px-1 w-12 text-center font-medium">作成</th>
-                  <th className="py-1 px-0 w-14 text-left font-medium">期限</th>
-                  <th className="py-1 px-0 w-14 text-left font-medium">種類</th>
-                  <th className="py-1 px-1 text-left font-medium">メモ</th>
-                  <th className="py-1 px-1 w-8 text-center font-medium">♡</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-6 text-sm">
-                      読み込み中...
-                    </TableCell>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEndTopic}
+            >
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-xs text-muted-foreground sticky top-0 bg-white">
+                    <th className="py-1 px-1 w-6"></th>
+                    <th className="py-1 px-0.5 w-14 text-left font-medium">科目</th>
+                    <th className="py-1 px-1 text-left font-medium">項目</th>
+                    <th className="py-1 px-1 w-12 text-center font-medium">作成</th>
+                    <th className="py-1 px-0 w-14 text-left font-medium">期限</th>
+                    <th className="py-1 px-0 w-14 text-left font-medium">状態</th>
+                    <th className="py-1 px-1 text-left font-medium">メモ</th>
+                    <th className="py-1 px-1 w-8 text-center font-medium">♡</th>
                   </tr>
-                ) : filteredTopicItems.length === 0 ? (
-                  <tr>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-6 text-sm">
-                      データがありません
-                    </TableCell>
-                  </tr>
-                ) : (
-                  filteredTopicItems.map((item) => {
+                </thead>
+                <SortableContext items={filteredTopicItems.map(p => p.id.toString())} strategy={verticalListSortingStrategy}>
+                  <tbody>
+                    {loading ? (
+                      <tr>
+                        <TableCell colSpan={8} className="text-center text-muted-foreground py-6 text-sm">
+                          読み込み中...
+                        </TableCell>
+                      </tr>
+                    ) : filteredTopicItems.length === 0 ? (
+                      <tr>
+                        <TableCell colSpan={8} className="text-center text-muted-foreground py-6 text-sm">
+                          データがありません
+                        </TableCell>
+                      </tr>
+                    ) : (
+                      filteredTopicItems.map((item) => {
                     const statusOption = TASK_STATUS_OPTIONS.find((s) => s.value === item.status)
                     const selectedSubject = subjects.find(s => s.id === item.subject)
+                    const createdDate = item.created_at ? formatDate(item.created_at) : ""
                     return (
-                      <tr key={item.id} className="hover:bg-amber-50/40">
+                      <SortableRow 
+                        key={item.id} 
+                        item={item} 
+                        onDelete={deleteItem}
+                        onEditCreatedDate={(id) => {
+                          setTopicCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
+                        }}
+                        showCreatedDateButton={true}
+                      >
                         <TableCell className="py-1.5 px-0.5 w-14 align-top">
-                          {selectedSubject ? (
-                            <span className={cn("text-xs px-1.5 py-0.5 rounded", SUBJECT_COLORS[selectedSubject.name] || "")}>
-                              {selectedSubject.name}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">--</span>
-                          )}
+                          <Select
+                            value={item.subject?.toString() || undefined}
+                            onValueChange={(value) => updateItemField(item.id, "subject", value ? parseInt(value) : null, 2)}
+                          >
+                            <SelectTrigger className="h-7 text-[10px] border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
+                              {selectedSubject ? (
+                                <span className={cn("text-xs px-1.5 py-0.5 rounded", SUBJECT_COLORS[selectedSubject.name] || "")}>
+                                  {selectedSubject.name}
+                                </span>
+                              ) : (
+                                <SelectValue placeholder="--" />
+                              )}
+                            </SelectTrigger>
+                            <SelectContent>
+                              {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => {
+                                const color = SUBJECT_COLORS[s.name] || ""
+                                return (
+                                  <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
+                                    <span className={color ? `px-1.5 py-0.5 rounded ${color}` : ""}>{s.name}</span>
+                                  </SelectItem>
+                                )
+                              })}
+                            </SelectContent>
+                          </Select>
                         </TableCell>
-                        <TableCell className="py-1.5 px-1 align-top">
-                          <span className="text-xs">{item.item}</span>
+                        <TableCell className="py-1.5 px-1 w-[120px] align-top">
+                          <ItemField
+                            value={item.item}
+                            onChange={(e) => updateItemField(item.id, "item", e.target.value, 2)}
+                          />
                         </TableCell>
-                        <TableCell className="py-1.5 px-1 w-12 align-top text-center">
-                          <span className="text-xs text-muted-foreground">{formatDate(item.created_at)}</span>
+                        <TableCell className="py-1.5 px-1 w-12 text-xs text-muted-foreground text-center relative align-top">
+                          <Popover
+                            open={topicCreatedDatePickerOpen[item.id] || false}
+                            onOpenChange={(open) => setTopicCreatedDatePickerOpen(prev => ({ ...prev, [item.id]: open }))}
+                          >
+                            <PopoverTrigger asChild>
+                              <button className="w-full h-full hover:bg-muted/50 rounded px-1">
+                                {createdDate}
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-3" align="start">
+                              <DatePickerCalendar
+                                selectedDate={item.created_at ? new Date(item.created_at) : null}
+                                onSelect={(date) => {
+                                  if (date) {
+                                    const dateStr = date.toISOString().split("T")[0]
+                                    updateItemField(item.id, "created_at", dateStr, 2)
+                                  }
+                                  setTopicCreatedDatePickerOpen(prev => ({ ...prev, [item.id]: false }))
+                                }}
+                              />
+                            </PopoverContent>
+                          </Popover>
                         </TableCell>
                         <TableCell className="py-1.5 px-0 w-14 align-top">
                           {item.due_date ? (
@@ -947,13 +1323,27 @@ function StudyManagementPage() {
                           )}
                         </TableCell>
                         <TableCell className="py-1.5 px-0 w-14 align-top">
-                          {statusOption ? (
-                            <span className={cn("text-xs px-1.5 py-0.5 rounded", statusOption.color)}>
-                              {statusOption.label}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">--</span>
-                          )}
+                          <Select
+                            value={item.status.toString()}
+                            onValueChange={(value) => updateItemField(item.id, "status", parseInt(value), 2)}
+                          >
+                            <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-14">
+                              {statusOption ? (
+                                <span className={cn("text-xs px-1.5 py-0.5 rounded", statusOption.color)}>
+                                  {statusOption.label}
+                                </span>
+                              ) : (
+                                <SelectValue />
+                              )}
+                            </SelectTrigger>
+                            <SelectContent>
+                              {TASK_STATUS_OPTIONS.filter(opt => opt.value != null && opt.value.toString() !== "").map((opt) => (
+                                <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                                  <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </TableCell>
                         <TableCell className="py-1.5 px-1 align-top">
                           <MemoField
@@ -972,29 +1362,22 @@ function StudyManagementPage() {
                             <Heart className={cn("h-4 w-4", item.favorite === 1 && "fill-current")} />
                           </button>
                         </TableCell>
-                      </tr>
+                      </SortableRow>
                     )
                   })
                 )}
-              </tbody>
-            </table>
+                  </tbody>
+                </SortableContext>
+              </table>
+            </DndContext>
           </div>
-        </CardContent>
+            </CardContent>
+          </CollapsibleContent>
+        </Collapsible>
       </Card>
       
-      {/* 勉強時間（一旦プレースホルダー） */}
-      <Card className="shadow-sm border-amber-200/60">
-        <CardHeader className="py-1.5 px-3">
-          <CardTitle className="text-xs font-medium flex items-center gap-1.5 text-amber-900/80">
-            勉強時間
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-3 pb-2">
-          <div className="text-center text-muted-foreground py-4 text-sm">
-            勉強時間統計（今後実装予定）
-          </div>
-        </CardContent>
-      </Card>
+      {/* 勉強時間カード */}
+      <StudyTimeCard />
       
       {/* 過去のチャット履歴 */}
       <ChatHistorySection />
@@ -1066,6 +1449,23 @@ function StudyTimeSection() {
     return weekdays[index]
   }
   
+  // 今週の開始日（月曜日）を取得
+  const getWeekStartDate = (): Date => {
+    const today = new Date()
+    const day = today.getDay()
+    const diff = today.getDate() - day + (day === 0 ? -6 : 1) // 月曜日を週の開始とする
+    const monday = new Date(today.setDate(diff))
+    return monday
+  }
+  
+  // 週の日付をmm/dd形式で取得
+  const getWeekDateLabel = (index: number): string => {
+    const weekStart = getWeekStartDate()
+    const date = new Date(weekStart)
+    date.setDate(weekStart.getDate() + index)
+    return `${date.getMonth() + 1}/${date.getDate()}`
+  }
+  
   const toggleCollapsible = (key: string) => {
     setOpenCollapsibles(prev => ({ ...prev, [key]: !prev[key] }))
   }
@@ -1118,8 +1518,8 @@ function StudyTimeSection() {
               <CollapsibleContent className="px-2 pb-2">
                 <div className="space-y-1 text-xs">
                   {weekStats?.daily_stats?.map((day: any, index: number) => (
-                    <div key={index} className="flex justify-between py-1">
-                      <span>{getWeekdayName(index)}：{formatTime(day.total_seconds)}</span>
+                    <div key={index} className="flex justify-between py-1 rounded">
+                      <span>{getWeekdayName(index)} {getWeekDateLabel(index)}：{formatTime(day.total_seconds)}</span>
                     </div>
                   ))}
                 </div>
@@ -1152,8 +1552,8 @@ function StudyTimeSection() {
               <CollapsibleContent className="px-2 pb-2">
                 <div className="space-y-1 text-xs">
                   {monthStats?.week_stats?.map((week: any, index: number) => (
-                    <div key={index} className="flex justify-between py-1">
-                      <span>週{index + 1}：{formatTime(week.total_seconds)}</span>
+                    <div key={index} className="flex justify-between py-1 rounded">
+                      <span>第{index + 1}週：{formatTime(week.total_seconds)}</span>
                     </div>
                   ))}
                 </div>
@@ -1192,7 +1592,7 @@ function ChatHistorySection() {
   const [typeFilter, setTypeFilter] = useState<string | null>(null)  // null = 全タイプ
   const [startDate, setStartDate] = useState<Date | undefined>(undefined)
   const [endDate, setEndDate] = useState<Date | undefined>(undefined)
-  const [favoriteFilter, setFavoriteFilter] = useState<"fav-only" | "fav-except" | "all">("fav-only")
+  const [favoriteFilter, setFavoriteFilter] = useState<"fav-only" | "fav-except" | "all">("all")
   
   // タイトル編集
   const [editingThreadId, setEditingThreadId] = useState<number | null>(null)

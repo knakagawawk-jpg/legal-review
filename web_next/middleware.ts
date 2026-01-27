@@ -52,8 +52,8 @@ export function middleware(request: NextRequest) {
   // 保護されたパスへのアクセス
   if (isProtectedPath) {
     // 認証トークンの確認
-    const token = request.cookies.get("auth_token")?.value || 
-                  request.headers.get("authorization")?.replace("Bearer ", "")
+    const token = request.cookies.get("auth_token")?.value ||
+      request.headers.get("authorization")?.replace("Bearer ", "")
 
     if (!token) {
       // トークンがない場合はリダイレクト（クライアント側で処理）

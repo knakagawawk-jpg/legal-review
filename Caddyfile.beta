@@ -43,11 +43,11 @@
 }
 
 # ドメインベースの設定（サーバー上で使用、beta.juristutor-ai.comなど）
-# 注意: localhostの場合は上記の:80ブロックが優先されるため、このブロックは使用されません
-# サーバー上で使用する場合は、環境変数CADDY_DOMAIN_BETAをbeta.juristutor-ai.comなどに変更してください
-# （このブロックのコメントを解除する必要はありません。Caddyが自動的に選択します）
+# 注意: localhostの場合は上記の:80ブロックが使用されます
+# サーバー上で使用する場合は、環境変数CADDY_DOMAIN_BETAをbeta.juristutor-ai.comなどに変更し、
+# このブロックのコメントを解除してください
 #
-{$CADDY_DOMAIN_BETA:beta.localhost} {
+# {$CADDY_DOMAIN_BETA:beta.localhost} {
 #     # 自動TLSを使用（Let's Encrypt）
 #     
 #     # Basic auth (bcrypt hash) - ページリクエストのみに適用（APIは除外）

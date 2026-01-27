@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { FIXED_SUBJECTS, getSubjectId } from "@/lib/subjects"
-import { BookOpen, FileText, StickyNote, Plus, Folder, ChevronRight, ChevronDown, ChevronLeft, X, Menu, GripVertical, Trash2, CalendarDays, MoreVertical, Edit } from "lucide-react"
+import { BookOpen, FileText, StickyNote, Plus, Folder, ChevronRight, ChevronDown, ChevronLeft, X, Menu, MoreVertical, Edit, Maximize2 } from "lucide-react"
+import { SortableRow } from "@/components/sortable-row"
+import Link from "next/link"
 import type { Notebook, NoteSection, NotePage } from "@/types/api"
 import {
   Dialog,
@@ -177,154 +179,6 @@ type StudyItem = {
   createdAt: string  // 作成日 (mm/dd形式)
 }
 
-// Sortable Row Component
-function SortableRow({
-  item,
-  children,
-  onDelete,
-  onEditCreatedDate,
-}: {
-  item: StudyItem
-  children: React.ReactNode
-  onDelete: (id: number) => void
-  onEditCreatedDate?: (id: number) => void
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: item.id.toString() })
-  const [showMenu, setShowMenu] = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const handleButtonRef = useRef<HTMLButtonElement>(null)
-  const clickStartPos = useRef<{ x: number; y: number } | null>(null)
-  const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null)
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  }
-
-  // Close menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node
-      if (menuRef.current && menuRef.current.contains(target)) return
-      if (handleButtonRef.current && handleButtonRef.current.contains(target)) return
-      if (showMenu) {
-        setShowMenu(false)
-      }
-    }
-
-    if (showMenu) {
-      document.addEventListener("mousedown", handleClickOutside)
-      return () => {
-        document.removeEventListener("mousedown", handleClickOutside)
-      }
-    }
-  }, [showMenu])
-
-  // Handle mouse down to track click position
-  const handleMouseDown = (e: React.MouseEvent) => {
-    clickStartPos.current = { x: e.clientX, y: e.clientY }
-  }
-
-  // Handle click on drag handle
-  const handleClick = (e: React.MouseEvent) => {
-    // マウスが動いていない場合（クリック）のみメニューを表示
-    if (clickStartPos.current) {
-      const deltaX = Math.abs(e.clientX - clickStartPos.current.x)
-      const deltaY = Math.abs(e.clientY - clickStartPos.current.y)
-      if (deltaX < 5 && deltaY < 5) {
-        e.stopPropagation()
-        e.preventDefault()
-        // メニュー位置を固定座標で保存（スクロールコンテナにクリップされないようPortal表示）
-        try {
-          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-          setMenuPos({
-            left: rect.left + rect.width + 6,
-            top: rect.top + rect.height / 2,
-          })
-        } catch {
-          setMenuPos({ left: e.clientX + 6, top: e.clientY })
-        }
-        setShowMenu(true)
-      }
-      clickStartPos.current = null
-    }
-  }
-
-  return (
-    <TableRow
-      ref={setNodeRef}
-      style={style}
-      className={cn(
-        "border-b border-border/50 hover:bg-amber-50/30 transition-colors",
-        isDragging && "opacity-50 bg-amber-50"
-      )}
-    >
-      <TableCell className="py-1.5 px-1 w-6 relative">
-        <button
-          ref={handleButtonRef}
-          {...attributes}
-          {...listeners}
-          onMouseDown={handleMouseDown}
-          onClick={handleClick}
-          className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-muted rounded"
-        >
-          <GripVertical className="h-3 w-3 text-muted-foreground" />
-        </button>
-        {showMenu && menuPos && typeof document !== "undefined" && createPortal(
-          <div
-            ref={menuRef}
-            className="fixed z-[9999] flex gap-1 bg-card border rounded shadow-lg p-1"
-            style={{
-              left: menuPos.left,
-              top: menuPos.top,
-              transform: "translateY(-50%)",
-            }}
-          >
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={(e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                onDelete(item.id)
-                setShowMenu(false)
-              }}
-              className="h-6 w-6 bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-              title="削除"
-            >
-              <Trash2 className="h-3 w-3" />
-            </Button>
-            {onEditCreatedDate && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  e.preventDefault()
-                  onEditCreatedDate(item.id)
-                  setShowMenu(false)
-                }}
-                className="h-6 w-6 bg-muted hover:bg-muted/80"
-                title="作成日の編集"
-              >
-                <CalendarDays className="h-3 w-3" />
-              </Button>
-            )}
-          </div>,
-          document.body
-        )}
-      </TableCell>
-      {children}
-    </TableRow>
-  )
-}
 
 /**
  * 科目と色の対応:
@@ -1895,6 +1749,16 @@ function SubjectPage() {
                         <Plus className="h-3 w-3 mr-1" />
                         追加
                       </Button>
+                      <Link href={`/your-page/subjects/${encodeURIComponent(selectedSubject)}/norms`}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs"
+                        >
+                          <Maximize2 className="h-3.5 w-3.5 mr-1" />
+                          拡大
+                        </Button>
+                      </Link>
                       <Collapsible open={normsOpen} onOpenChange={setNormsOpen}>
                         <CollapsibleTrigger asChild>
                           <Button
@@ -1964,6 +1828,8 @@ function SubjectPage() {
                                         onEditCreatedDate={(id) => {
                                           setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
                                         }}
+                                        showCreatedDateButton={true}
+                                        usePortal={true}
                                       >
                                         {/* 項目：確定後も編集可能（Dashboard仕様に合わせる） */}
                                         <TableCell className="text-xs align-top">
@@ -2230,6 +2096,16 @@ function SubjectPage() {
                         <Plus className="h-3 w-3 mr-1" />
                         追加
                       </Button>
+                      <Link href={`/your-page/subjects/${encodeURIComponent(selectedSubject)}/points`}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs"
+                        >
+                          <Maximize2 className="h-3.5 w-3.5 mr-1" />
+                          拡大
+                        </Button>
+                      </Link>
                       <Collapsible open={pointsOpen} onOpenChange={setPointsOpen}>
                         <CollapsibleTrigger asChild>
                           <Button
@@ -2298,6 +2174,8 @@ function SubjectPage() {
                                         onEditCreatedDate={(id) => {
                                           setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
                                         }}
+                                        showCreatedDateButton={true}
+                                        usePortal={true}
                                       >
                                         {/* 項目：確定後も編集可能（Dashboard仕様に合わせる） */}
                                         <TableCell className="text-xs align-top">

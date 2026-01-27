@@ -34,6 +34,31 @@ docker exec law-review-backend python3 /app/app/migrate_grading_impression_to_of
 # または、コンテナを再起動（entrypoint.shで自動実行される）
 docker compose --profile production restart backend
 
+# 3-3) web/proxyコンテナが起動していない場合
+# backendがhealthyになったら、webとproxyを起動
+docker compose --profile production up -d web proxy
+# または、全コンテナを再起動
+docker compose --profile production up -d --force-recreate
+
+# 3-4) 接続拒否・SSL証明書エラーの場合
+# 全コンテナの状態確認
+docker compose --profile production ps
+# webコンテナの状態確認
+docker ps -a --filter "name=law-review-web"
+docker logs law-review-web --tail=50
+# proxyコンテナのログ確認（SSL証明書エラーなど）
+docker logs law-review-proxy --tail=100
+# ポートが開いているか確認
+sudo netstat -tlnp | grep -E ':(80|443)'
+# または
+sudo ss -tlnp | grep -E ':(80|443)'
+# DNS設定確認（サーバー上から）
+nslookup juristutor-ai.com
+# コンテナ間の接続確認（proxyからwebへ）
+docker exec law-review-proxy wget -O- http://web:3000/api/health
+# 全コンテナを再起動
+docker compose --profile production restart
+
 # 4) 反映確認（イメージの作成日時を見る）
 docker image inspect $(docker inspect law-review-web --format '{{.Image}}') --format 'WEB Created={{.Created}}'
 docker image inspect $(docker inspect law-review-backend --format '{{.Image}}') --format 'BE Created={{.Created}}'

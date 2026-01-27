@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
-import { AlertCircle, Loader2, Search, Eye, Trash2 } from "lucide-react"
+import { AlertCircle, Loader2, Search, Eye, Trash2, Shield, ShieldOff, UserCheck, UserX } from "lucide-react"
 import type { ReviewResponse, SubmissionHistory, LlmRequestListResponse } from "@/types/api"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
@@ -32,13 +32,36 @@ type DevReviewData = {
 function DevPage() {
   const router = useRouter()
   const { isOpen } = useSidebar()
-  const [activeTab, setActiveTab] = useState("verify")
+  const [activeTab, setActiveTab] = useState("dashboard")
   const [isDevEnv, setIsDevEnv] = useState<boolean | null>(null)
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [selectedDatabaseUrl, setSelectedDatabaseUrl] = useState<string | null>(null)
 
   useEffect(() => {
     // dev環境かどうかをチェック
     const enableDevPage = process.env.NEXT_PUBLIC_ENABLE_DEV_PAGE === "true"
     setIsDevEnv(enableDevPage)
+    
+    // 管理者権限をチェック
+    const checkAdmin = async () => {
+      try {
+        const res = await fetch("/api/users/me")
+        if (res.ok) {
+          const user = await res.json()
+          setIsAdmin(user.is_admin === true)
+        } else {
+          setIsAdmin(false)
+        }
+      } catch (error) {
+        console.error("Admin check error:", error)
+        setIsAdmin(false)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    
+    checkAdmin()
     
     // dev環境以外の場合はホームにリダイレクト
     if (!enableDevPage) {
@@ -47,13 +70,32 @@ function DevPage() {
   }, [router])
 
   // 環境チェック中は何も表示しない
-  if (isDevEnv === null) {
-    return null
+  if (isDevEnv === null || isLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin" />
+      </div>
+    )
   }
 
   // dev環境以外の場合は何も表示しない（リダイレクト処理中）
   if (!isDevEnv) {
     return null
+  }
+
+  // 管理者でない場合はアクセス拒否
+  if (!isAdmin) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Alert variant="destructive" className="max-w-md">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>アクセス拒否</AlertTitle>
+          <AlertDescription>
+            このページにアクセスするには管理者権限が必要です。
+          </AlertDescription>
+        </Alert>
+      </div>
+    )
   }
 
   return (
@@ -65,31 +107,47 @@ function DevPage() {
     >
       <div className="container mx-auto px-8 py-12 max-w-7xl">
         {/* ヘッダー */}
-        <div className="mb-8 text-center">
-          <h1 className="text-4xl font-bold mb-2">🔧 開発用ページ</h1>
-          <p className="text-muted-foreground text-lg">
-            各種ページの検証とデバッグを行います
-          </p>
+        <div className="mb-8">
+          <div className="text-center mb-4">
+            <h1 className="text-4xl font-bold mb-2">⚙️ 管理者ページ</h1>
+            <p className="text-muted-foreground text-lg">
+              ユーザー管理、統計情報、システム監視を行います
+            </p>
+          </div>
+          <DatabaseSelector 
+            selectedDatabaseUrl={selectedDatabaseUrl}
+            onDatabaseChange={setSelectedDatabaseUrl}
+          />
         </div>
 
         {/* タブ */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="verify">📊 講評結果検証</TabsTrigger>
-            <TabsTrigger value="list">📋 過去の講評一覧</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-5">
+            <TabsTrigger value="dashboard">📊 ダッシュボード</TabsTrigger>
+            <TabsTrigger value="users">👥 ユーザー管理</TabsTrigger>
+            <TabsTrigger value="stats">📈 統計情報</TabsTrigger>
             <TabsTrigger value="llm">🧾 LLMログ</TabsTrigger>
+            <TabsTrigger value="dev">🔧 開発ツール</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="verify">
-            <ReviewResultVerify />
+          <TabsContent value="dashboard">
+            <AdminDashboard databaseUrl={selectedDatabaseUrl || undefined} />
           </TabsContent>
 
-          <TabsContent value="list">
-            <SubmissionList />
+          <TabsContent value="users">
+            <AdminUsers databaseUrl={selectedDatabaseUrl || undefined} />
+          </TabsContent>
+
+          <TabsContent value="stats">
+            <AdminStats databaseUrl={selectedDatabaseUrl || undefined} />
           </TabsContent>
 
           <TabsContent value="llm">
-            <LlmRequestTable />
+            <LlmRequestTable databaseUrl={selectedDatabaseUrl || undefined} />
+          </TabsContent>
+
+          <TabsContent value="dev">
+            <DevTools />
           </TabsContent>
         </Tabs>
       </div>
@@ -742,7 +800,153 @@ function SubmissionList() {
   )
 }
 
-function LlmRequestTable() {
+function DatabaseSelector({ 
+  selectedDatabaseUrl, 
+  onDatabaseChange 
+}: { 
+  selectedDatabaseUrl: string | null
+  onDatabaseChange: (url: string | null) => void 
+}) {
+  const [databases, setDatabases] = useState<Array<{ name: string; url: string; description: string }>>([])
+  const [currentDatabaseUrl, setCurrentDatabaseUrl] = useState<string>("")
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchDatabases = async () => {
+      try {
+        const res = await fetch("/api/admin/databases")
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}))
+          console.error("Failed to fetch databases:", errorData)
+          return
+        }
+        const data = await res.json()
+        console.log("Database info:", data)
+        setDatabases(data.available_databases || [])
+        setCurrentDatabaseUrl(data.current_database_url || "")
+        // 初期値として現在のDBを選択
+        if (!selectedDatabaseUrl) {
+          onDatabaseChange(data.current_database_url || null)
+        }
+      } catch (error) {
+        console.error("Failed to fetch databases:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchDatabases()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  if (loading) {
+    return (
+      <Card className="mb-6">
+        <CardContent className="pt-6">
+          <Skeleton className="h-10 w-full" />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (databases.length === 0) {
+    return (
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-lg">🗄️ データベース選択</CardTitle>
+          <CardDescription>
+            表示するデータベースを選択してください（DEV環境のみ）
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>エラー</AlertTitle>
+            <AlertDescription>
+              データベース一覧の取得に失敗しました。バックエンドのログを確認してください。
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // 現在のDBの環境名を取得
+  const getCurrentDbName = () => {
+    if (!currentDatabaseUrl) return "不明"
+    const urlLower = currentDatabaseUrl.toLowerCase()
+    if (urlLower.includes("dev.db") || urlLower.includes("/dev")) return "dev"
+    if (urlLower.includes("beta.db") || urlLower.includes("/beta")) return "beta"
+    if (urlLower.includes("production.db") || urlLower.includes("/production")) return "本番"
+    return "不明"
+  }
+
+  const currentDbName = getCurrentDbName()
+  const getSelectedDbName = (url: string | null) => {
+    if (!url) return currentDbName
+    const urlLower = url.toLowerCase()
+    if (urlLower.includes("dev.db") || urlLower.includes("/dev")) return "dev"
+    if (urlLower.includes("beta.db") || urlLower.includes("/beta")) return "beta"
+    if (urlLower.includes("production.db") || urlLower.includes("/production")) return "本番"
+    return "不明"
+  }
+  const selectedDbName = getSelectedDbName(selectedDatabaseUrl)
+
+  // URLを正規化して比較する関数
+  const normalizeUrl = (url: string) => {
+    if (!url) return ""
+    // sqlite:///./data/dev.db -> sqlite:////data/dev.db
+    return url.replace("sqlite:///./", "sqlite:////")
+  }
+
+  return (
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle className="text-lg">🗄️ データベース選択</CardTitle>
+        <CardDescription>
+          表示するデータベースを選択してください（DEV環境のみ）
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center gap-4">
+          <div className="flex-1">
+            <Select
+              value={selectedDatabaseUrl || currentDatabaseUrl || ""}
+              onValueChange={(value) => {
+                // 現在のDBと同じ場合はnullを設定（デフォルトDBを使用）
+                const normalizedValue = normalizeUrl(value)
+                const normalizedCurrent = normalizeUrl(currentDatabaseUrl)
+                if (normalizedValue === normalizedCurrent) {
+                  onDatabaseChange(null)
+                } else {
+                  onDatabaseChange(value)
+                }
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="データベースを選択" />
+              </SelectTrigger>
+              <SelectContent>
+                {databases.map((db) => {
+                  const isCurrent = normalizeUrl(db.url) === normalizeUrl(currentDatabaseUrl)
+                  return (
+                    <SelectItem key={db.url} value={db.url}>
+                      {db.name} {isCurrent && "(現在)"}
+                    </SelectItem>
+                  )
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+          <Badge variant="outline" className="text-sm">
+            選択中: {selectedDbName}
+          </Badge>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function LlmRequestTable({ databaseUrl }: { databaseUrl?: string }) {
   const [filters, setFilters] = useState({
     feature_type: "",
     model: "",
@@ -750,6 +954,7 @@ function LlmRequestTable() {
     review_id: "",
     thread_id: "",
     session_id: "",
+    user_id: "",
     created_from: "",
     created_to: "",
     limit: "50",
@@ -773,15 +978,17 @@ function LlmRequestTable() {
         params.set("limit", "50")
       }
 
-      const res = await fetch(`/api/llm-requests?${params.toString()}`)
+      // 管理者用APIを使用
+      const res = await fetch(`/api/admin/llm-requests?${params.toString()}`)
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({ error: "Unknown error" }))
-        throw new Error(errorData.error || "LLMログの取得に失敗しました")
+        throw new Error(errorData.error || errorData.detail || "LLMログの取得に失敗しました")
       }
       const json: LlmRequestListResponse = await res.json()
       setData(json)
     } catch (err: any) {
       setError(err.message || "エラーが発生しました")
+      console.error("LLMログ取得エラー:", err)
     } finally {
       setLoading(false)
     }
@@ -789,7 +996,7 @@ function LlmRequestTable() {
 
   useEffect(() => {
     loadData()
-  }, [query, offset])
+  }, [query, offset, databaseUrl])
 
   const handleSearch = () => {
     setOffset(0)
@@ -804,6 +1011,7 @@ function LlmRequestTable() {
       review_id: "",
       thread_id: "",
       session_id: "",
+      user_id: "",
       created_from: "",
       created_to: "",
       limit: "50",
@@ -836,23 +1044,23 @@ function LlmRequestTable() {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader>
-          <CardTitle>🧾 LLMログ一覧</CardTitle>
-          <CardDescription>ユーザーのLLM呼び出しログを確認できます</CardDescription>
-        </CardHeader>
+          <CardHeader>
+            <CardTitle>🧾 LLMログ一覧（全ユーザー）</CardTitle>
+            <CardDescription>全ユーザーのLLM呼び出しログを確認できます</CardDescription>
+          </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="space-y-1">
               <label className="text-xs font-medium">種別</label>
               <Select
-                value={filters.feature_type}
-                onValueChange={(value) => setFilters({ ...filters, feature_type: value })}
+                value={filters.feature_type || "all"}
+                onValueChange={(value) => setFilters({ ...filters, feature_type: value === "all" ? "" : value })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="すべて" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">すべて</SelectItem>
+                  <SelectItem value="all">すべて</SelectItem>
                   <SelectItem value="review">review</SelectItem>
                   <SelectItem value="review_chat">review_chat</SelectItem>
                   <SelectItem value="free_chat">free_chat</SelectItem>
@@ -904,6 +1112,15 @@ function LlmRequestTable() {
               />
             </div>
             <div className="space-y-1">
+              <label className="text-xs font-medium">User ID</label>
+              <Input
+                type="number"
+                value={filters.user_id}
+                onChange={(e) => setFilters({ ...filters, user_id: e.target.value })}
+                placeholder="user_id（全ユーザーは空欄）"
+              />
+            </div>
+            <div className="space-y-1">
               <label className="text-xs font-medium">開始日時</label>
               <Input
                 type="datetime-local"
@@ -926,7 +1143,7 @@ function LlmRequestTable() {
                 onValueChange={(value) => setFilters({ ...filters, limit: value })}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="50" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="20">20</SelectItem>
@@ -965,6 +1182,7 @@ function LlmRequestTable() {
               <TableHeader>
                 <TableRow>
                   <TableHead>日時</TableHead>
+                  <TableHead>User ID</TableHead>
                   <TableHead>種別</TableHead>
                   <TableHead>モデル</TableHead>
                   <TableHead>tokens(in/out)</TableHead>
@@ -982,14 +1200,14 @@ function LlmRequestTable() {
               <TableBody>
                 {loading && (
                   <TableRow>
-                    <TableCell colSpan={14}>
+                    <TableCell colSpan={15}>
                       <Skeleton className="h-8 w-full" />
                     </TableCell>
                   </TableRow>
                 )}
                 {!loading && items.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={14} className="text-center text-muted-foreground">
+                    <TableCell colSpan={15} className="text-center text-muted-foreground">
                       データがありません
                     </TableCell>
                   </TableRow>
@@ -1000,6 +1218,7 @@ function LlmRequestTable() {
                       <TableCell className="whitespace-nowrap">
                         {row.created_at ? new Date(row.created_at).toLocaleString("ja-JP") : "-"}
                       </TableCell>
+                      <TableCell>{row.user_id}</TableCell>
                       <TableCell>
                         <Badge variant="secondary">{row.feature_type}</Badge>
                       </TableCell>
@@ -1043,6 +1262,583 @@ function LlmRequestTable() {
           </div>
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+// ============================================================================
+// 管理者用コンポーネント
+// ============================================================================
+
+function AdminDashboard({ databaseUrl }: { databaseUrl?: string }) {
+  const [stats, setStats] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    loadStats()
+  }, [databaseUrl])
+
+  const loadStats = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const url = databaseUrl 
+        ? `/api/admin/stats?database_url=${encodeURIComponent(databaseUrl)}`
+        : "/api/admin/stats"
+      const res = await fetch(url)
+      if (!res.ok) throw new Error("統計情報の取得に失敗しました")
+      const data = await res.json()
+      setStats(data)
+    } catch (err: any) {
+      setError(err.message || "エラーが発生しました")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-32 w-full" />
+        ))}
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>エラー</AlertTitle>
+        <AlertDescription>{error}</AlertDescription>
+      </Alert>
+    )
+  }
+
+  if (!stats) return null
+
+  return (
+    <div className="space-y-6">
+      {/* KPIカード */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>総ユーザー数</CardDescription>
+            <CardTitle className="text-3xl">{stats.total_users?.toLocaleString() || 0}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground">
+              アクティブ: {stats.active_users || 0} / 管理者: {stats.admin_users || 0}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>総トークン数</CardDescription>
+            <CardTitle className="text-3xl">{(stats.total_tokens || 0).toLocaleString()}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground">
+              入力: {(stats.total_input_tokens || 0).toLocaleString()} / 出力: {(stats.total_output_tokens || 0).toLocaleString()}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>総コスト</CardDescription>
+            <CardTitle className="text-3xl">¥{stats.total_cost_yen?.toFixed(2) || "0.00"}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground">
+              今日: ¥{stats.today_cost_yen?.toFixed(2) || "0.00"} / 今月: ¥{stats.this_month_cost_yen?.toFixed(2) || "0.00"}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>アクセス数</CardDescription>
+            <CardTitle className="text-3xl">{(stats.review_count || 0) + (stats.thread_count || 0) + (stats.short_answer_session_count || 0)}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground">
+              講評: {stats.review_count || 0} / チャット: {stats.thread_count || 0} / 短答: {stats.short_answer_session_count || 0}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* 機能別統計 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>機能別統計</CardTitle>
+          <CardDescription>機能ごとの使用量とコスト</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {stats.feature_stats && Object.entries(stats.feature_stats).map(([feature, data]: [string, any]) => (
+              <div key={feature} className="border rounded-lg p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <Badge variant="secondary">{feature}</Badge>
+                  <span className="text-sm font-semibold">¥{data.total_cost_yen?.toFixed(2) || "0.00"}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">リクエスト数:</span> {data.request_count?.toLocaleString() || 0}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">トークン数:</span> {(data.total_tokens || 0).toLocaleString()}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">平均レイテンシ:</span> {data.avg_latency_ms ? `${data.avg_latency_ms.toFixed(0)}ms` : "-"}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function AdminUsers({ databaseUrl }: { databaseUrl?: string }) {
+  const [users, setUsers] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [search, setSearch] = useState("")
+  const [isActiveFilter, setIsActiveFilter] = useState<boolean | null>(null)
+  const [skip, setSkip] = useState(0)
+  const [total, setTotal] = useState(0)
+  const limit = 50
+
+  useEffect(() => {
+    loadUsers()
+  }, [skip, search, isActiveFilter, databaseUrl])
+
+  const loadUsers = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const params = new URLSearchParams()
+      params.append("skip", String(skip))
+      params.append("limit", String(limit))
+      if (search) params.append("search", search)
+      if (isActiveFilter !== null) params.append("is_active", String(isActiveFilter))
+
+      // データベースURLが指定されている場合は追加
+      if (databaseUrl) {
+        params.append("database_url", databaseUrl)
+      }
+      const res = await fetch(`/api/admin/users?${params.toString()}`)
+      if (!res.ok) throw new Error("ユーザー一覧の取得に失敗しました")
+      const data = await res.json()
+      setUsers(data.users || [])
+      setTotal(data.total || 0)
+    } catch (err: any) {
+      setError(err.message || "エラーが発生しました")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSearch = () => {
+    setSkip(0)
+    loadUsers()
+  }
+
+  const handleUpdateUser = async (userId: number, updates: { is_active?: boolean; is_admin?: boolean }) => {
+    try {
+      const res = await fetch(`/api/admin/users/${userId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      })
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        throw new Error(errorData.error || "ユーザー情報の更新に失敗しました")
+      }
+      // 更新後、一覧を再読み込み
+      await loadUsers()
+    } catch (err: any) {
+      alert(err.message || "エラーが発生しました")
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>ユーザー一覧</CardTitle>
+          <CardDescription>全{total}件のユーザー</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* 検索・フィルタ */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+              <Input
+                placeholder="メールアドレス・名前で検索"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                className="pl-10"
+              />
+            </div>
+            <Select
+              value={isActiveFilter === null ? "all" : String(isActiveFilter)}
+              onValueChange={(value) => setIsActiveFilter(value === "all" ? null : value === "true")}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="すべて" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">すべて</SelectItem>
+                <SelectItem value="true">アクティブのみ</SelectItem>
+                <SelectItem value="false">非アクティブのみ</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={handleSearch} disabled={loading}>
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "検索"}
+            </Button>
+          </div>
+
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {/* ユーザーテーブル */}
+          <div className="border rounded-lg overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>ID</TableHead>
+                  <TableHead>メールアドレス</TableHead>
+                  <TableHead>名前</TableHead>
+                  <TableHead>状態</TableHead>
+                  <TableHead>作成日</TableHead>
+                  <TableHead>最終ログイン</TableHead>
+                  <TableHead>講評数</TableHead>
+                  <TableHead>トークン数</TableHead>
+                  <TableHead>コスト</TableHead>
+                  <TableHead>操作</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading && (
+                  <TableRow>
+                    <TableCell colSpan={10}>
+                      <Skeleton className="h-8 w-full" />
+                    </TableCell>
+                  </TableRow>
+                )}
+                {!loading && users.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={10} className="text-center text-muted-foreground">
+                      ユーザーが見つかりませんでした
+                    </TableCell>
+                  </TableRow>
+                )}
+                {!loading && users.map((user) => (
+                  <TableRow key={user.id}>
+                    <TableCell>{user.id}</TableCell>
+                    <TableCell>{user.email}</TableCell>
+                    <TableCell>{user.name || "-"}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        {user.is_active ? (
+                          <Badge variant="default">アクティブ</Badge>
+                        ) : (
+                          <Badge variant="secondary">非アクティブ</Badge>
+                        )}
+                        {user.is_admin && <Badge variant="outline">管理者</Badge>}
+                      </div>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {user.created_at ? new Date(user.created_at).toLocaleDateString("ja-JP") : "-"}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {user.last_login_at ? new Date(user.last_login_at).toLocaleDateString("ja-JP") : "-"}
+                    </TableCell>
+                    <TableCell>{user.review_count || 0}</TableCell>
+                    <TableCell>{(user.total_tokens || 0).toLocaleString()}</TableCell>
+                    <TableCell>¥{(user.total_cost_yen || 0).toFixed(2)}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        {user.is_admin ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              if (confirm(`${user.email}の管理者権限を剥奪しますか？`)) {
+                                handleUpdateUser(user.id, { is_admin: false })
+                              }
+                            }}
+                            title="管理者権限を剥奪"
+                          >
+                            <ShieldOff className="w-4 h-4" />
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              if (confirm(`${user.email}に管理者権限を付与しますか？`)) {
+                                handleUpdateUser(user.id, { is_admin: true })
+                              }
+                            }}
+                            title="管理者権限を付与"
+                          >
+                            <Shield className="w-4 h-4" />
+                          </Button>
+                        )}
+                        {user.is_active ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              if (confirm(`${user.email}を無効化しますか？`)) {
+                                handleUpdateUser(user.id, { is_active: false })
+                              }
+                            }}
+                            title="ユーザーを無効化"
+                          >
+                            <UserX className="w-4 h-4" />
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              if (confirm(`${user.email}を有効化しますか？`)) {
+                                handleUpdateUser(user.id, { is_active: true })
+                              }
+                            }}
+                            title="ユーザーを有効化"
+                          >
+                            <UserCheck className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* ページネーション */}
+          <div className="flex justify-between items-center">
+            <div className="text-sm text-muted-foreground">
+              {total > 0 && `${skip + 1} - ${Math.min(skip + limit, total)} / ${total}`}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setSkip(Math.max(0, skip - limit))}
+                disabled={skip === 0 || loading}
+              >
+                前へ
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setSkip(skip + limit)}
+                disabled={skip + limit >= total || loading}
+              >
+                次へ
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function AdminStats({ databaseUrl }: { databaseUrl?: string }) {
+  const [stats, setStats] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    loadStats()
+  }, [databaseUrl])
+
+  const loadStats = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const url = databaseUrl 
+        ? `/api/admin/stats?database_url=${encodeURIComponent(databaseUrl)}`
+        : "/api/admin/stats"
+      const res = await fetch(url)
+      if (!res.ok) throw new Error("統計情報の取得に失敗しました")
+      const data = await res.json()
+      setStats(data)
+    } catch (err: any) {
+      setError(err.message || "エラーが発生しました")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-32 w-full" />
+        ))}
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>エラー</AlertTitle>
+        <AlertDescription>{error}</AlertDescription>
+      </Alert>
+    )
+  }
+
+  if (!stats) return null
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>詳細統計情報</CardTitle>
+          <CardDescription>システム全体の統計データ</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* ユーザー統計 */}
+          <div>
+            <h3 className="text-lg font-semibold mb-4">ユーザー統計</h3>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="border rounded-lg p-4">
+                <div className="text-sm text-muted-foreground">総ユーザー数</div>
+                <div className="text-2xl font-bold">{stats.total_users?.toLocaleString() || 0}</div>
+              </div>
+              <div className="border rounded-lg p-4">
+                <div className="text-sm text-muted-foreground">アクティブユーザー</div>
+                <div className="text-2xl font-bold">{stats.active_users?.toLocaleString() || 0}</div>
+              </div>
+              <div className="border rounded-lg p-4">
+                <div className="text-sm text-muted-foreground">管理者ユーザー</div>
+                <div className="text-2xl font-bold">{stats.admin_users?.toLocaleString() || 0}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* トークン・コスト統計 */}
+          <div>
+            <h3 className="text-lg font-semibold mb-4">トークン・コスト統計</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="border rounded-lg p-4">
+                <div className="text-sm text-muted-foreground">総トークン数</div>
+                <div className="text-2xl font-bold">{(stats.total_tokens || 0).toLocaleString()}</div>
+                <div className="text-xs text-muted-foreground mt-2">
+                  入力: {(stats.total_input_tokens || 0).toLocaleString()} / 出力: {(stats.total_output_tokens || 0).toLocaleString()}
+                </div>
+              </div>
+              <div className="border rounded-lg p-4">
+                <div className="text-sm text-muted-foreground">総コスト</div>
+                <div className="text-2xl font-bold">¥{stats.total_cost_yen?.toFixed(2) || "0.00"}</div>
+                <div className="text-xs text-muted-foreground mt-2">
+                  今日: ¥{stats.today_cost_yen?.toFixed(2) || "0.00"} / 今月: ¥{stats.this_month_cost_yen?.toFixed(2) || "0.00"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* アクセス統計 */}
+          <div>
+            <h3 className="text-lg font-semibold mb-4">アクセス統計</h3>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="border rounded-lg p-4">
+                <div className="text-sm text-muted-foreground">講評生成数</div>
+                <div className="text-2xl font-bold">{(stats.review_count || 0).toLocaleString()}</div>
+              </div>
+              <div className="border rounded-lg p-4">
+                <div className="text-sm text-muted-foreground">チャットセッション数</div>
+                <div className="text-2xl font-bold">{(stats.thread_count || 0).toLocaleString()}</div>
+              </div>
+              <div className="border rounded-lg p-4">
+                <div className="text-sm text-muted-foreground">短答式セッション数</div>
+                <div className="text-2xl font-bold">{(stats.short_answer_session_count || 0).toLocaleString()}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* 機能別統計 */}
+          {stats.feature_stats && Object.keys(stats.feature_stats).length > 0 && (
+            <div>
+              <h3 className="text-lg font-semibold mb-4">機能別統計</h3>
+              <div className="border rounded-lg overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>機能</TableHead>
+                      <TableHead>リクエスト数</TableHead>
+                      <TableHead>総トークン数</TableHead>
+                      <TableHead>入力トークン</TableHead>
+                      <TableHead>出力トークン</TableHead>
+                      <TableHead>総コスト</TableHead>
+                      <TableHead>平均レイテンシ</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {Object.entries(stats.feature_stats).map(([feature, data]: [string, any]) => (
+                      <TableRow key={feature}>
+                        <TableCell>
+                          <Badge variant="secondary">{feature}</Badge>
+                        </TableCell>
+                        <TableCell>{(data.request_count || 0).toLocaleString()}</TableCell>
+                        <TableCell>{(data.total_tokens || 0).toLocaleString()}</TableCell>
+                        <TableCell>{(data.total_input_tokens || 0).toLocaleString()}</TableCell>
+                        <TableCell>{(data.total_output_tokens || 0).toLocaleString()}</TableCell>
+                        <TableCell>¥{(data.total_cost_yen || 0).toFixed(2)}</TableCell>
+                        <TableCell>{data.avg_latency_ms ? `${data.avg_latency_ms.toFixed(0)}ms` : "-"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function DevTools() {
+  const [activeSubTab, setActiveSubTab] = useState("verify")
+
+  return (
+    <div className="space-y-6">
+      <Tabs value={activeSubTab} onValueChange={setActiveSubTab}>
+        <TabsList>
+          <TabsTrigger value="verify">📊 講評結果検証</TabsTrigger>
+          <TabsTrigger value="list">📋 過去の講評一覧</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="verify">
+          <ReviewResultVerify />
+        </TabsContent>
+
+        <TabsContent value="list">
+          <SubmissionList />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
