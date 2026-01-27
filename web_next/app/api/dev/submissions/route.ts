@@ -6,8 +6,17 @@ const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:8000"
 // 動的ルートとしてマーク（request.urlを使用するため）
 export const dynamic = 'force-dynamic'
 
-// GET /api/dev/submissions - 開発用：全投稿一覧を取得（認証必須）
+// GET /api/dev/submissions - 開発用：全投稿一覧を取得（認証必須、dev環境のみ）
 export async function GET(request: NextRequest) {
+  // dev環境以外ではアクセス不可
+  const enableDevPage = process.env.NEXT_PUBLIC_ENABLE_DEV_PAGE === "true"
+  if (!enableDevPage) {
+    return NextResponse.json(
+      { error: "開発者用ページはdev環境でのみ利用可能です" },
+      { status: 403 }
+    )
+  }
+
   try {
     const cookieStore = await cookies()
     const token = cookieStore.get("auth_token")?.value

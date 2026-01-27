@@ -102,9 +102,10 @@ export function LoginButton() {
 
           window.google.accounts.id.initialize({
             client_id: clientId,
-            // FedCM設定を有効化
+            // FedCM設定を無効化（localhostでの動作を安定させるため）
             // 参考: https://developers.google.com/identity/gsi/web/guides/fedcm-migration
-            use_fedcm_for_prompt: true,
+            // FedCMは新しい標準だが、localhost環境では不安定な場合があるため無効化
+            use_fedcm_for_prompt: false,
             callback: async (response) => {
               console.log("Google callback received")
               setIsLoggingIn(true)

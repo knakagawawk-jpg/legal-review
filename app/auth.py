@@ -400,3 +400,18 @@ async def get_current_user_required(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Authentication service error"
         )
+
+async def get_current_admin(
+    current_user: User = Depends(get_current_user_required)
+) -> User:
+    """
+    現在のユーザーが管理者かどうかを確認（認証必須）
+    管理者でない場合は403エラーを返す
+    """
+    if not current_user.is_admin:
+        logger.warning(f"Admin access attempt by non-admin user: {current_user.email} (user_id: {current_user.id})")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    return current_user

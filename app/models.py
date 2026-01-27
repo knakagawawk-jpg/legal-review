@@ -50,7 +50,7 @@ class OfficialQuestion(Base):
     設計のポイント:
     - 同一の試験種別・年度・科目に対して複数のバージョンを持つことができる
     - status='active'のものは1つだけ（部分ユニークインデックスで保証）
-    - 司法試験のみ採点実感を持つ（別テーブルで管理）
+    - 司法試験のみ採点実感を持つ（grading_impression_textカラム、NULL可）
     """
     __tablename__ = "official_questions"
     
@@ -69,6 +69,7 @@ class OfficialQuestion(Base):
     # 問題文関連
     text = Column(Text, nullable=False)  # 問題文
     syutudaisyusi = Column(Text, nullable=True)  # 出題趣旨
+    grading_impression_text = Column(Text, nullable=True)  # 採点実感（司法試験のみ、NULL可）
     
     # タイムスタンプ
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -77,12 +78,6 @@ class OfficialQuestion(Base):
     # リレーションシップ
     # subject_idは1-18の数字で管理（Subjectテーブルへの参照は削除）
     reviews = relationship("Review", foreign_keys="Review.official_question_id", back_populates="official_question")
-    grading_impression = relationship(
-        "ShihouGradingImpression",
-        back_populates="question",
-        uselist=False,
-        cascade="all, delete-orphan"
-    )
     
     __table_args__ = (
         # CHECK制約
@@ -112,32 +107,6 @@ class OfficialQuestion(Base):
         
         # 注意: 既存DBにはcreate_allが効かないので、別途マイグレーションで作成する
     )
-
-
-class ShihouGradingImpression(Base):
-    """
-    司法試験の採点実感テーブル
-    
-    設計のポイント:
-    - 司法試験の問題のみがこのテーブルにレコードを持つ
-    - question_idがPRIMARY KEY（1対1の関係）
-    - CASCADE削除で問題削除時に自動削除
-    """
-    __tablename__ = "shihou_grading_impressions"
-    
-    question_id = Column(
-        BigInteger().with_variant(Integer, "sqlite"),
-        ForeignKey("official_questions.id", ondelete="CASCADE"),
-        primary_key=True
-    )
-    grading_impression_text = Column(Text, nullable=False)
-    
-    # タイムスタンプ
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    
-    # リレーションシップ
-    question = relationship("OfficialQuestion", back_populates="grading_impression")
 
 
 class Review(Base):
@@ -368,65 +337,6 @@ class LlmRequest(Base):
 # 既存のモデル（後方互換性のため保持）
 # ============================================================================
 
-# 新しい問題管理モデル（改善版）
-class ProblemMetadata(Base):
-    """問題のメタデータテーブル（識別情報のみ）"""
-    __tablename__ = "problem_metadata"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    exam_type = Column(String(20), nullable=False)  # "司法試験" or "予備試験"
-    year = Column(Integer, nullable=False)  # 年度（例: 2018, 2025）
-    subject = Column(Integer, nullable=True, index=True)  # 科目ID（1-18、NULL可）
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    
-    # リレーションシップ
-    # subjectは1-18の数字で管理（Subjectテーブルへの参照は削除）
-    details = relationship("ProblemDetails", back_populates="problem_metadata", cascade="all, delete-orphan", order_by="ProblemDetails.question_number")
-    submissions = relationship("Submission", back_populates="problem_metadata")
-    
-    __table_args__ = (
-        UniqueConstraint('exam_type', 'year', 'subject', name='uq_problem_metadata'),
-        Index('idx_exam_year_subject', 'exam_type', 'year', 'subject'),
-        CheckConstraint("subject BETWEEN 1 AND 18", name="ck_problem_metadata_subject"),
-    )
-
-class ProblemDetails(Base):
-    """問題の詳細情報テーブル（設問ごとに管理）"""
-    __tablename__ = "problem_details"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    problem_metadata_id = Column(Integer, ForeignKey("problem_metadata.id", ondelete="CASCADE"), nullable=False, index=True)
-    question_number = Column(Integer, nullable=False)  # 設問番号（1, 2, ...）
-    
-    # 問題文関連
-    question_text = Column(Text, nullable=False)  # 設問ごとの問題文
-    
-    # 出題趣旨・採点実感
-    purpose = Column(Text, nullable=True)  # 出題趣旨
-    scoring_notes = Column(Text, nullable=True)  # 採点実感
-    
-    # その他の情報
-    pdf_path = Column(String(500), nullable=True)  # PDFファイルの保存パス
-    
-    # 今後追加される可能性のあるフィールド用のプレースホルダー
-    # difficulty_level = Column(String(20), nullable=True)  # 難易度
-    # estimated_time = Column(Integer, nullable=True)  # 目安時間（分）
-    # key_points = Column(Text, nullable=True)  # 重要ポイント
-    # related_articles = Column(Text, nullable=True)  # 関連条文
-    
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    
-    # リレーションシップ
-    problem_metadata = relationship("ProblemMetadata", back_populates="details")  # metadataは予約語のためproblem_metadataに変更
-    submissions = relationship("Submission", back_populates="problem_details")
-    
-    __table_args__ = (
-        UniqueConstraint('problem_metadata_id', 'question_number', name='uq_problem_details'),
-        Index('idx_metadata_question', 'problem_metadata_id', 'question_number'),
-    )
-
 # 既存のProblemモデル（後方互換性のため暫定的に保持）
 class Problem(Base):
     __tablename__ = "problems"
@@ -459,26 +369,20 @@ class Submission(Base):
     # 既存の問題ID（後方互換性のため保持）
     problem_id = Column(Integer, ForeignKey("problems.id"), nullable=True)  # 旧Problemテーブルへの参照（移行用）
     
-    # 新しい問題ID（改善版）
-    problem_metadata_id = Column(Integer, ForeignKey("problem_metadata.id", ondelete="SET NULL"), nullable=True, index=True)  # 問題メタデータID
-    problem_details_id = Column(Integer, ForeignKey("problem_details.id", ondelete="SET NULL"), nullable=True, index=True)  # 問題詳細ID（設問）
     
     subject = Column(Integer, nullable=True, index=True)  # 科目ID（1-18、NULL可）
-    question_text = Column(Text, nullable=True)  # 問題文（problem_details_idがある場合は詳細から取得、ない場合は手動入力）
+    question_text = Column(Text, nullable=True)  # 問題文（手動入力またはofficial_question_idから取得）
     answer_text = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="submissions")
     # subjectは1-18の数字で管理（Subjectテーブルへの参照は削除）
     problem = relationship("Problem", foreign_keys=[problem_id], back_populates="old_submissions")  # 既存の参照
-    problem_metadata = relationship("ProblemMetadata", back_populates="submissions")  # 新しいメタデータ参照
-    problem_details = relationship("ProblemDetails", back_populates="submissions")  # 新しい詳細参照
     # 注意: 新しいReviewクラスはSubmissionとは直接関係がないため、リレーションシップを削除
     # 新しいReviewはuser_idとofficial_question_id/custom_question_textで管理される
     
     __table_args__ = (
         Index('idx_user_created_at', 'user_id', 'created_at'),
-        Index('idx_metadata_details', 'problem_metadata_id', 'problem_details_id'),
         # subjectがNULLの場合は許可、NULLでない場合は1-18の範囲内であることを確認
         CheckConstraint("subject IS NULL OR (subject BETWEEN 1 AND 18)", name="ck_submission_subject"),
     )

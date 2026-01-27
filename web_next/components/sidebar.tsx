@@ -4,7 +4,7 @@ import { useState, createContext, useContext, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { FileText, BookOpen, MessageCircle, ScrollText, Wrench, Menu, ChevronLeft, Scale } from "lucide-react"
+import { FileText, BookOpen, MessageCircle, ScrollText, Wrench, Menu, ChevronLeft, Scale, Settings } from "lucide-react"
 import { SidebarContentSection } from "./sidebar-sections"
 import { LoginButton } from "./auth/login-button"
 import { UserMenu } from "./auth/user-menu"
@@ -22,12 +22,13 @@ export function useSidebar() {
   const context = useContext(SidebarContext)
   if (!context) {
     // Contextが提供されていない場合は、デフォルトの動作（常に閉じている）を返す
-    return { isOpen: false, setIsOpen: () => {} }
+    return { isOpen: false, setIsOpen: () => { } }
   }
   return context
 }
 
-const navigation = [
+// 基本ナビゲーション項目
+const baseNavigation = [
   {
     name: "Your Page",
     href: "/your-page",
@@ -56,6 +57,10 @@ const navigation = [
     description: "開発中",
     color: "from-violet-500 to-purple-500",
   },
+]
+
+// dev環境のみのナビゲーション項目
+const devNavigation = [
   {
     name: "開発用",
     href: "/dev",
@@ -65,10 +70,19 @@ const navigation = [
   },
 ]
 
+// 環境に応じたナビゲーションを取得
+function getNavigation() {
+  const enableDevPage = process.env.NEXT_PUBLIC_ENABLE_DEV_PAGE === "true"
+  if (enableDevPage) {
+    return [...baseNavigation, ...devNavigation]
+  }
+  return baseNavigation
+}
+
 // サイドバーの状態を管理するProviderコンポーネント
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false)
-  
+
   // localStorageからサイドバーの状態を読み込む（デフォルトは開く）
   const getInitialState = () => {
     if (typeof window === 'undefined') return true
@@ -79,9 +93,9 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       return true
     }
   }
-  
+
   const [isOpen, setIsOpen] = useState(getInitialState)
-  
+
   // クライアント側でのみマウントされたことを確認（Hydrationエラーを防ぐ）
   useEffect(() => {
     setMounted(true)
@@ -94,7 +108,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       setIsOpen(true)
     }
   }, [])
-  
+
   // サイドバーの状態が変更されたときにlocalStorageに保存
   const handleSetIsOpen = (open: boolean) => {
     setIsOpen(open)
@@ -106,13 +120,31 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       }
     }
   }
-  
+
   return <SidebarContext.Provider value={{ isOpen, setIsOpen: handleSetIsOpen }}>{children}</SidebarContext.Provider>
 }
 
 export function Sidebar() {
   const pathname = usePathname()
   const { isOpen, setIsOpen } = useSidebar()
+  const { user } = useAuth()
+  const baseNav = getNavigation()
+  
+  // 管理者用ナビゲーション（管理者権限がある場合のみ表示）
+  const adminNavigation = user?.is_admin ? [
+    {
+      name: "管理者ページ",
+      href: "/dev",
+      icon: Settings,
+      description: "ユーザー管理・統計",
+      color: "from-red-500 to-rose-500",
+    },
+  ] : []
+  
+  // 管理者の場合は devNavigation の /dev を除外（adminNavigation の管理者ページで置き換え）
+  const navigation = user?.is_admin 
+    ? baseNav.filter(item => item.href !== "/dev")
+    : baseNav
 
   return (
     <>
@@ -149,7 +181,7 @@ export function Sidebar() {
             <div className="flex-shrink-0">
               <p className="px-2 mb-2 text-[10px] font-semibold uppercase tracking-wider text-blue-400/70">メニュー</p>
               <div className="space-y-0.5">
-                {navigation.map((item) => {
+                {[...navigation, ...adminNavigation].map((item) => {
                   const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
                   const Icon = item.icon
 
@@ -233,9 +265,9 @@ function AuthSection() {
 // サイドバーを開くボタンコンポーネント（ヘッダーなどで使用）
 export function SidebarToggle() {
   const { isOpen, setIsOpen } = useSidebar()
-  
+
   if (isOpen) return null
-  
+
   return (
     <button
       onClick={() => setIsOpen(true)}

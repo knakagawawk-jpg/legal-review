@@ -3,64 +3,7 @@ from typing import Optional, Any, Dict, List
 from datetime import datetime
 import uuid
 
-# Problem関連のスキーマ（改善版）
-class ProblemMetadataResponse(BaseModel):
-    """問題メタデータのレスポンス"""
-    id: int
-    exam_type: str
-    year: int
-    subject: int  # 科目ID（1-18）
-    subject_name: str  # 科目名（表示用）
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
-
-class ProblemDetailsResponse(BaseModel):
-    """問題詳細情報のレスポンス"""
-    id: int
-    problem_metadata_id: int
-    question_number: int
-    question_text: str
-    purpose: Optional[str] = None
-    scoring_notes: Optional[str] = None
-    pdf_path: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
-
-class ProblemMetadataWithDetailsResponse(BaseModel):
-    """問題メタデータ + 詳細情報のリスト"""
-    metadata: ProblemMetadataResponse
-    details: List[ProblemDetailsResponse]
-
-class ProblemDetailsCreate(BaseModel):
-    """問題詳細情報の作成用スキーマ"""
-    question_number: int
-    question_text: str
-    purpose: Optional[str] = None
-    scoring_notes: Optional[str] = None
-    pdf_path: Optional[str] = None
-
-class ProblemMetadataCreate(BaseModel):
-    """問題メタデータの作成用スキーマ（詳細情報も含む）"""
-    exam_type: str  # "司法試験" or "予備試験"
-    year: int
-    subject: Optional[int] = None  # 科目ID（1-18）
-    subject_name: Optional[str] = None  # 科目名（subjectが指定されていない場合に使用）
-    details: List[ProblemDetailsCreate]  # 設問ごとの詳細情報
-
-class ProblemDetailsUpdate(BaseModel):
-    """問題詳細情報の更新用スキーマ"""
-    question_text: Optional[str] = None
-    purpose: Optional[str] = None
-    scoring_notes: Optional[str] = None
-    pdf_path: Optional[str] = None
-
-# 既存のProblem関連のスキーマ（後方互換性のため保持）
+# Problem関連のスキーマ（後方互換性のため保持）
 class ProblemCreate(BaseModel):
     exam_type: str  # "司法試験" or "予備試験"
     year: int
@@ -101,11 +44,6 @@ class ProblemListResponse(BaseModel):
     problems: List[ProblemResponse]
     total: int
 
-class ProblemMetadataListResponse(BaseModel):
-    """問題メタデータのリストレスポンス（改善版）"""
-    metadata_list: List[ProblemMetadataResponse]
-    total: int
-
 class ProblemBulkCreateResponse(BaseModel):
     success_count: int
     error_count: int
@@ -122,11 +60,9 @@ class ReviewRequest(BaseModel):
     # 公式問題（推奨: official_question_id で指定）
     official_question_id: Optional[int] = None
     problem_id: Optional[int] = None  # 既存問題を選択する場合（旧形式、後方互換性のため保持）
-    problem_metadata_id: Optional[int] = None  # 新しい問題メタデータID（改善版）
-    problem_details_id: Optional[int] = None  # 新しい問題詳細ID（設問指定、改善版）
     subject: Optional[int] = None  # 科目ID（1-18）
     subject_name: Optional[str] = None  # 科目名（subjectが指定されていない場合に使用）
-    question_text: Optional[str] = None  # problem_details_idがある場合は無視される
+    question_text: Optional[str] = None  # 問題文（official_question_idが指定されている場合は無視される）
     answer_text: str
     question_title: Optional[str] = None  # 問題タイトル（任意）
     reference_text: Optional[str] = None  # 参照文章（任意、講評上参照してほしい解説等）
@@ -698,3 +634,85 @@ class StudyItemReorderRequest(BaseModel):
     subject_id: int
     entry_type: int
     ordered_ids: List[int]
+
+
+# ============================================================================
+# 管理者用スキーマ
+# ============================================================================
+
+class AdminUserResponse(BaseModel):
+    """管理者用ユーザー情報レスポンス"""
+    id: int
+    email: str
+    name: Optional[str]
+    is_active: bool
+    is_admin: bool
+    created_at: datetime
+    updated_at: datetime
+    last_login_at: Optional[datetime]
+    # 統計情報
+    review_count: int = 0
+    thread_count: int = 0
+    short_answer_session_count: int = 0
+    total_tokens: int = 0
+    total_cost_yen: float = 0.0
+
+    class Config:
+        from_attributes = True
+
+
+class AdminUserListResponse(BaseModel):
+    """管理者用ユーザー一覧レスポンス"""
+    users: List[AdminUserResponse]
+    total: int
+
+
+class AdminStatsResponse(BaseModel):
+    """管理者用統計情報レスポンス"""
+    # ユーザー統計
+    total_users: int
+    active_users: int
+    admin_users: int
+    
+    # トークン・コスト統計
+    total_tokens: int
+    total_input_tokens: int
+    total_output_tokens: int
+    total_cost_yen: float
+    
+    # 機能別統計
+    feature_stats: Dict[str, Dict[str, Any]]  # feature_typeごとの統計
+    
+    # アクセス統計
+    review_count: int
+    thread_count: int
+    short_answer_session_count: int
+    
+    # 期間別統計（オプション）
+    today_tokens: int = 0
+    today_cost_yen: float = 0.0
+    this_month_tokens: int = 0
+    this_month_cost_yen: float = 0.0
+
+
+class AdminFeatureStatsResponse(BaseModel):
+    """機能別統計詳細"""
+    feature_type: str
+    request_count: int
+    total_tokens: int
+    total_input_tokens: int
+    total_output_tokens: int
+    total_cost_yen: float
+    avg_latency_ms: Optional[float] = None
+
+
+class AdminUserUpdateRequest(BaseModel):
+    """管理者用ユーザー更新リクエスト"""
+    is_active: Optional[bool] = None
+    is_admin: Optional[bool] = None
+
+
+class AdminDatabaseInfoResponse(BaseModel):
+    """管理者用データベース情報レスポンス"""
+    current_database_url: str
+    available_databases: List[Dict[str, str]]

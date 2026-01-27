@@ -1,20 +1,19 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { CheckCircle2, AlertCircle, Loader2, Copy, Check, ChevronDown, ChevronRight, BookOpen, PenLine, Sparkles, Scale, FileText, X } from "lucide-react"
+import { CheckCircle2, AlertCircle, Loader2, Copy, Check, ChevronDown, ChevronRight, BookOpen, PenLine, Sparkles, Scale, FileText, X, Square } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { ReviewRequest, ReviewResponse, ProblemMetadata, ProblemMetadataWithDetails } from "@/types/api"
+import type { ReviewRequest, ReviewResponse } from "@/types/api"
 import { formatYearToEra, formatYearToShortEra } from "@/lib/utils"
 import { getSubjectName, FIXED_SUBJECTS } from "@/lib/subjects"
 import { SidebarToggle, useSidebar } from "@/components/sidebar"
@@ -31,14 +30,13 @@ export default function ReviewPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [generationPhase, setGenerationPhase] = useState<string>("")
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   // Step 1: 問題選択 + 答案入力
   const [examType, setExamType] = useState<string>("")
   const [year, setYear] = useState<number | null>(null)
   const [subject, setSubject] = useState<number | null>(null)  // 既存問題選択用（科目ID）
   const [newSubjectId, setNewSubjectId] = useState<number | null>(null)  // 新規問題用の科目ID
-  const [selectedMetadata, setSelectedMetadata] = useState<ProblemMetadata | null>(null)
-  const [selectedDetails, setSelectedDetails] = useState<ProblemMetadataWithDetails | null>(null)
   const [officialQuestionId, setOfficialQuestionId] = useState<number | null>(null)
   const [questionTitle, setQuestionTitle] = useState<string>("")
   const [questionText, setQuestionText] = useState<string>("")
@@ -48,10 +46,8 @@ export default function ReviewPage() {
 
   // データ取得
   const [years, setYears] = useState<number[]>([])
-  const [metadataList, setMetadataList] = useState<ProblemMetadata[]>([])
   const [loadingYears, setLoadingYears] = useState(false)
   const [loadingMetadata, setLoadingMetadata] = useState(false)
-  const [accordionValue, setAccordionValue] = useState<string>("")
   const [isQuestionOpen, setIsQuestionOpen] = useState(false)
   const [isPurposeOpen, setIsPurposeOpen] = useState(false)
 
@@ -127,9 +123,6 @@ export default function ReviewPage() {
         setReferenceText(data.syutudaisyusi || "")
         setGradingImpressionText(data.grading_impression_text || "")
 
-        // 旧UI状態は互換のためクリア
-        setSelectedMetadata(null)
-        setSelectedDetails(null)
         setQuestionTitle("")
       } catch (err: any) {
         setOfficialQuestionId(null)
@@ -144,97 +137,6 @@ export default function ReviewPage() {
     fetchOfficial()
   }, [mode, examType, year, subject])
 
-  // 問題メタデータを取得
-  useEffect(() => {
-    if (mode === "existing" && (examType || year || subject !== null)) {
-      // 既存問題モードは official_question_id ベースへ移行したため、旧ProblemMetadata取得は無効化
-      return
-      const fetchMetadata = async () => {
-        setLoadingMetadata(true)
-        setError(null)
-        try {
-          const params = new URLSearchParams()
-          if (examType) params.append("exam_type", examType)
-          if (year) params.append("year", year.toString())
-          if (subject !== null) {
-            // 科目IDをそのまま使用
-            params.append("subject", subject.toString())
-          }
-
-          const res = await fetch(`/api/problems/metadata?${params.toString()}`)
-          if (!res.ok) {
-            const errorData = await res.json().catch(() => ({ error: "問題データの取得に失敗しました" }))
-            throw new Error(errorData.error || errorData.detail || `問題データの取得に失敗しました (HTTP ${res.status})`)
-          }
-          const data = await res.json()
-          const metadataList = data.metadata_list || []
-          setMetadataList(metadataList)
-
-          // 3つすべて選択されていて、問題が1件のみの場合は自動的に取得
-          if (examType && year && subject !== null && metadataList.length === 1) {
-            const metadata = metadataList[0]
-            setSelectedMetadata(metadata)
-            try {
-              const detailRes = await fetch(`/api/problems/metadata/${metadata.id}`)
-              if (!detailRes.ok) {
-                const errorData = await detailRes.json().catch(() => ({ error: "問題詳細の取得に失敗しました" }))
-                throw new Error(errorData.error || errorData.detail || `問題詳細の取得に失敗しました (HTTP ${detailRes.status})`)
-              }
-              const detailData: ProblemMetadataWithDetails = await detailRes.json()
-              setSelectedDetails(detailData)
-              setAccordionValue("") // 問題が選択されたときはAccordionを閉じた状態にする
-              setIsQuestionOpen(false) // Collapsibleも閉じた状態にする
-              setIsPurposeOpen(false)
-              // 最初の設問を選択
-              if (detailData.details && detailData.details.length > 0) {
-                setQuestionText(detailData.details[0].question_text)
-                setReferenceText(detailData.details[0].purpose || "")
-              }
-            } catch (err: any) {
-              setError(err.message)
-            }
-          } else if (!(examType && year && subject !== null)) {
-            // 3つすべて選択されていない場合は選択状態をクリア
-            setSelectedMetadata(null)
-            setSelectedDetails(null)
-            setQuestionTitle("")
-            setQuestionText("")
-            setReferenceText("")
-          }
-        } catch (err: any) {
-          setError(err.message)
-        } finally {
-          setLoadingMetadata(false)
-        }
-      }
-      fetchMetadata()
-    }
-  }, [mode, examType, year, subject])
-
-  // 問題詳細を取得
-  const handleSelectMetadata = async (metadata: ProblemMetadata) => {
-    setSelectedMetadata(metadata)
-    setLoadingMetadata(true)
-    setError(null)
-    try {
-      const res = await fetch(`/api/problems/metadata/${metadata.id}`)
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({ error: "問題詳細の取得に失敗しました" }))
-        throw new Error(errorData.error || errorData.detail || `問題詳細の取得に失敗しました (HTTP ${res.status})`)
-      }
-      const data: ProblemMetadataWithDetails = await res.json()
-      setSelectedDetails(data)
-      // 最初の設問を選択
-      if (data.details && data.details.length > 0) {
-        setQuestionText(data.details[0].question_text)
-        setReferenceText(data.details[0].purpose || "")
-      }
-    } catch (err: any) {
-      setError(err.message)
-    } finally {
-      setLoadingMetadata(false)
-    }
-  }
 
   // 講評を生成
   const handleGenerate = async () => {
@@ -248,6 +150,15 @@ export default function ReviewPage() {
       setError("問題文を入力してください")
       return
     }
+
+    // 既存のリクエストがあれば中断
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+
+    // 新しいAbortControllerを作成
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
 
     setLoading(true)
     setError(null)
@@ -284,7 +195,14 @@ export default function ReviewPage() {
 
       setGenerationPhase("評価中...")
 
-      const data = await apiClient.post<ReviewResponse>("/api/review", requestBody)
+      const data = await apiClient.post<ReviewResponse>("/api/review", requestBody, {
+        signal: abortController.signal
+      })
+
+      // 中断された場合は処理を停止
+      if (abortController.signal.aborted) {
+        return
+      }
 
       setGenerationPhase("生成完了")
 
@@ -298,12 +216,29 @@ export default function ReviewPage() {
         throw new Error("講評の生成に成功しましたが、review_id/submission_idが取得できませんでした")
       }
     } catch (err: any) {
+      // AbortErrorの場合はエラーを表示しない
+      if (err.name === 'AbortError' || abortController.signal.aborted) {
+        setGenerationPhase("")
+        return
+      }
       console.error("Review generation error:", err)
       const errorMessage = err?.error || err?.message || "講評の生成に失敗しました"
       setError(errorMessage)
       setGenerationPhase("")
     } finally {
+      if (!abortController.signal.aborted) {
+        setLoading(false)
+        abortControllerRef.current = null
+      }
+    }
+  }
+
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
       setLoading(false)
+      setGenerationPhase("")
     }
   }
 
@@ -364,8 +299,6 @@ export default function ReviewPage() {
               <>
                 <Select value={examType} onValueChange={(value) => {
                   setExamType(value)
-                  setSelectedMetadata(null)
-                  setSelectedDetails(null)
                 }}>
                   <SelectTrigger className="h-7 w-24 border-slate-200 bg-white text-xs shadow-sm">
                     <SelectValue placeholder="試験種別" />
@@ -377,8 +310,6 @@ export default function ReviewPage() {
                 </Select>
                 <Select value={year ? year.toString() : ""} onValueChange={(value) => {
                   setYear(value ? parseInt(value) : null)
-                  setSelectedMetadata(null)
-                  setSelectedDetails(null)
                 }}>
                   <SelectTrigger className="h-7 w-20 border-slate-200 bg-white text-xs shadow-sm">
                     <SelectValue placeholder="年度" />
@@ -405,8 +336,8 @@ export default function ReviewPage() {
                         setSubject(null)
                       }
                     }
-                    setSelectedMetadata(null)
-                    setSelectedDetails(null)
+                    // 科目変更時に公式問題IDをリセット
+                    setOfficialQuestionId(null)
                   }}
                 >
                   <SelectTrigger className="h-7 w-24 border-slate-200 bg-white text-xs shadow-sm">
@@ -435,14 +366,11 @@ export default function ReviewPage() {
                 try {
                   const newMode = mode === "existing" ? "new" : "existing"
                   // 状態をリセット
-                  setSelectedMetadata(null)
-                  setSelectedDetails(null)
                   setQuestionTitle("")
                   setQuestionText("")
                   setReferenceText("")
                   setNewSubjectId(null) // 新規問題モード用の科目IDもリセット
                   setError(null) // エラーもクリア
-                  setAccordionValue("") // Accordionもリセット
                   setIsQuestionOpen(false) // Collapsibleもリセット
                   setIsPurposeOpen(false)
                   // 最後にモードを変更
@@ -547,33 +475,6 @@ export default function ReviewPage() {
                             <div className="flex items-center justify-center gap-2 p-4">
                               <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
                               <p className="text-xs text-slate-500">公式問題を取得中...</p>
-                            </div>
-                          ) : metadataList.length > 0 ? (
-                            <div className="p-2.5">
-                              <div className="mb-2 text-xs font-medium text-slate-700">
-                                問題を選択してください ({metadataList.length}件)
-                              </div>
-                              <Accordion type="single" value={accordionValue} onValueChange={setAccordionValue} className="w-full">
-                                {metadataList.map((metadata) => (
-                                  <AccordionItem key={metadata.id} value={`metadata-${metadata.id}`}>
-                                    <AccordionTrigger
-                                      className="text-xs py-2 hover:no-underline"
-                                      onClick={() => handleSelectMetadata(metadata)}
-                                    >
-                                      <div className="flex items-center gap-2">
-                                        <Badge className="bg-indigo-100 text-indigo-700 hover:bg-indigo-100 text-xs">
-                                          {metadata.exam_type} {formatYearToEra(metadata.year)} {metadata.subject_name || (metadata.subject ? getSubjectName(metadata.subject) : "")}
-                                        </Badge>
-                                      </div>
-                                    </AccordionTrigger>
-                                    <AccordionContent className="pt-0 pb-2">
-                                      <div className="text-xs text-slate-500">
-                                        問題ID: {metadata.id}
-                                      </div>
-                                    </AccordionContent>
-                                  </AccordionItem>
-                                ))}
-                              </Accordion>
                             </div>
                           ) : (
                             <div className="flex items-center justify-start gap-2 p-4">
@@ -752,7 +653,17 @@ export default function ReviewPage() {
               </div>
 
               {/* フッター（講評開始ボタン） */}
-              <div className="shrink-0 flex items-center justify-end border-t border-slate-100 px-2.5 py-1.5">
+              <div className="shrink-0 flex items-center justify-end gap-2 border-t border-slate-100 px-2.5 py-1.5">
+                {loading && (
+                  <Button
+                    size="sm"
+                    onClick={handleStop}
+                    className="h-7 gap-1 rounded-full px-3 text-xs shadow transition-all bg-red-500 hover:bg-red-600 text-white"
+                  >
+                    <Square className="h-3 w-3 fill-white" />
+                    停止
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   disabled={!canProceedToStep2() || loading}
@@ -834,20 +745,31 @@ export default function ReviewPage() {
                 <Button variant="outline" onClick={() => setStep(1)} disabled={loading}>
                   戻る
                 </Button>
-                <Button
-                  onClick={handleGenerate}
-                  disabled={!canGenerate()}
-                  className="min-w-[120px]"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      生成中...
-                    </>
-                  ) : (
-                    "講評を生成"
+                <div className="flex gap-2">
+                  {loading && (
+                    <Button
+                      onClick={handleStop}
+                      className="min-w-[100px] bg-red-500 hover:bg-red-600 text-white"
+                    >
+                      <Square className="w-4 h-4 mr-2 fill-white" />
+                      停止
+                    </Button>
                   )}
-                </Button>
+                  <Button
+                    onClick={handleGenerate}
+                    disabled={!canGenerate()}
+                    className="min-w-[120px]"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        生成中...
+                      </>
+                    ) : (
+                      "講評を生成"
+                    )}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

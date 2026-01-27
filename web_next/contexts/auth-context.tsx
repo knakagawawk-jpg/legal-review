@@ -8,6 +8,7 @@ export interface User {
   email: string
   name: string
   is_active: boolean
+  is_admin?: boolean
 }
 
 interface AuthContextType {
@@ -42,10 +43,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok) {
         const userData = await response.json()
         const userInfo = {
-          user_id: userData.id,
+          user_id: userData.user_id,
           email: userData.email,
           name: userData.name,
           is_active: userData.is_active,
+          is_admin: userData.is_admin || false,
         }
         setUser(userInfo)
         // ユーザー情報をキャッシュに保存
@@ -170,6 +172,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: userData.email,
         name: userData.name,
         is_active: userData.is_active,
+        is_admin: userData.is_admin || false,
       }
 
       setUser(userInfo)

@@ -1,4 +1,5 @@
 services:
+  # バックエンド - 本番環境用
   backend:
     build:
       context: .
@@ -6,15 +7,9 @@ services:
     container_name: law-review-backend
     env_file:
       - .env
-    environment:
-      - DATABASE_URL=${DATABASE_URL:-sqlite:////data/dev.db}
-      # 注意: モデル名はユーザーが明示的に指定したものです。AIが勝手に変更しないでください。
-      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-haiku-4-5-20251001}
-      # 用途別のモデル設定は env_file で読み込まれた .env ファイルから自動的に取得されます
-      - AUTH_ENABLED=${AUTH_ENABLED:-false}
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-      - SECRET_KEY=${SECRET_KEY:-change-this-secret-key-in-production}
+    # 注意: 環境変数は env_file (.env) から読み込まれます
+    # environment セクションで同じ変数を設定すると env_file の値を上書きしてしまうため、
+    # ここでは設定しません
     volumes:
       - ./data:/data
       # backend で .env を直接読めるようにマウント（キーはenvファイルにのみ保持）
@@ -28,6 +23,62 @@ services:
       timeout: 10s
       retries: 5
       start_period: 180s
+    profiles:
+      - production # 本番環境用プロファイル
+    # ports公開しない（内部ネットワークのみアクセス可能）
+
+    # バックエンド - βテスト環境用
+  backend-beta:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    container_name: law-review-backend-beta
+    env_file:
+      - .env.beta
+    # 注意: 環境変数は env_file (.env.beta) から読み込まれます
+    # environment セクションで同じ変数を設定すると env_file の値を上書きしてしまうため、
+    # ここでは設定しません
+    volumes:
+      - ./data:/data
+      - ./.env.beta:/app/.env:ro
+    networks:
+      - law-review-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+    profiles:
+      - beta # βテスト環境用プロファイル
+    # ports公開しない（内部ネットワークのみアクセス可能）
+
+    # バックエンド - 開発環境用
+  backend-dev:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    container_name: law-review-backend-dev
+    env_file:
+      - .env.dev
+    # 注意: 環境変数は env_file (.env.dev) から読み込まれます
+    # environment セクションで同じ変数を設定すると env_file の値を上書きしてしまうため、
+    # ここでは設定しません
+    volumes:
+      - ./data:/data
+      - ./.env.dev:/app/.env:ro
+    networks:
+      - law-review-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+    profiles:
+      - dev # 開発環境用プロファイル
     # ports公開しない（内部ネットワークのみアクセス可能）
 
     # Next.js（フロントエンド）- 本番用
@@ -62,7 +113,39 @@ services:
       - production # 本番環境用プロファイル
     # ports公開しない（proxy経由のみアクセス可能）
 
-    # Next.js（フロントエンド）- 開発用（ホットリロード対応）
+    # Next.js（フロントエンド）- βテスト環境用
+  web-beta:
+    build:
+      context: .
+      dockerfile: Dockerfile.nextjs
+      args:
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID}
+        BACKEND_INTERNAL_URL: http://backend-beta:8000
+    container_name: law-review-web-beta
+    env_file:
+      - .env.beta
+    environment:
+      # BACKEND_INTERNAL_URLはβ環境固定（env_fileのBACKEND_INTERNAL_URL_BETAとは別）
+      - BACKEND_INTERNAL_URL=http://backend-beta:8000
+      - NODE_ENV=production
+    # 注意: NEXT_PUBLIC_GOOGLE_CLIENT_ID, REVIEW_TIMEOUT_MS は env_file (.env.beta) から読み込まれます
+    depends_on:
+      backend-beta:
+        condition: service_healthy
+    networks:
+      - law-review-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    profiles:
+      - beta # βテスト環境用プロファイル
+    # ports公開しない（proxy経由のみアクセス可能）
+
+    # Next.js（フロントエンド）- 開発用（ホットリロード対応、ローカル用）
   web-dev:
     build:
       context: .
@@ -95,13 +178,55 @@ services:
       - local # ローカル開発用プロファイル
     # ports公開しない（proxy経由のみアクセス可能）
 
+    # Next.js（フロントエンド）- 開発用（ホットリロード対応、サーバー上）
+  web-dev-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.nextjs.dev
+    container_name: law-review-web-dev-server
+    env_file:
+      - .env.dev
+    environment:
+      # BACKEND_INTERNAL_URLは開発環境固定
+      - BACKEND_INTERNAL_URL=http://backend-dev:8000
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true # ファイル変更検知のため
+      - ENABLE_DEV_PAGE=true # 開発者用ページを有効化（dev環境のみ）
+      - NEXT_PUBLIC_ENABLE_DEV_PAGE=true # フロントエンド用（dev環境のみ）
+    # 注意: NEXT_PUBLIC_GOOGLE_CLIENT_ID, REVIEW_TIMEOUT_MS は env_file (.env.dev) から読み込まれます
+    volumes:
+      # ソースコードをマウント（ホットリロード対応）
+      - ./web_next:/app
+      - /app/node_modules # node_modulesはボリュームで上書きしない
+      - /app/.next # .nextもボリュームで上書きしない
+    depends_on:
+      backend-dev:
+        condition: service_healthy
+    networks:
+      - law-review-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    profiles:
+      - dev # 開発環境用プロファイル（サーバー上）
+    # ports公開しない（proxy経由のみアクセス可能）
+
+    # プロキシ - 本番環境用（複数ドメイン対応）
   proxy:
     env_file:
       - .env
     environment:
       # Caddyfileで使用する環境変数を明示的に渡す
       - CADDY_DOMAIN=${CADDY_DOMAIN:-localhost}
+      - CADDY_DOMAIN_BETA=${CADDY_DOMAIN_BETA:-beta.localhost}
+      - CADDY_DOMAIN_DEV=${CADDY_DOMAIN_DEV:-dev.localhost}
       - BASIC_AUTH_USER=${BASIC_AUTH_USER:-}
+      - BASIC_AUTH_USER_BETA=${BASIC_AUTH_USER_BETA:-}
+      - BASIC_AUTH_USER_DEV=${BASIC_AUTH_USER_DEV:-}
       # BASIC_AUTH_PASS_HASHはenv_fileから読み込まれる
       # 注意: .envファイルでは$$でエスケープする必要がある（$$2a$$14$$...）
       # ハッシュ生成: docker run --rm caddy:2-alpine caddy hash-password --plaintext your-password
@@ -114,12 +239,77 @@ services:
       - "443:443"
       - "443:443/udp" # HTTP/3用
     volumes:
-      # 本番環境用Caddyfileを使用（環境変数 CADDYFILE_PATH で切り替え可能、デフォルト: Caddyfile.production）
+      # 複数ドメイン対応のCaddyfileを使用
       - ${CADDYFILE_PATH:-./Caddyfile.production}:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
       web:
+        condition: service_healthy
+      # 注意: web-betaとweb-dev-serverへの依存関係は削除
+      # これらはbeta/devプロファイルで起動されるため、productionプロファイルのみで起動する場合は存在しない
+      # 複数環境を同時に起動する場合は、--profile production --profile beta --profile dev を使用
+    networks:
+      - law-review-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:2019/config/" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # プロキシ - βテスト環境用（単独起動時用、通常はproxyと統合）
+  proxy-beta:
+    env_file:
+      - .env.beta
+    # 注意: CADDY_DOMAIN_BETA, BASIC_AUTH_USER_BETA, BASIC_AUTH_PASS_HASH_BETA は
+    # env_file (.env.beta) から読み込まれます
+    image: caddy:2-alpine
+    container_name: law-review-proxy-beta
+    profiles:
+      - beta # βテスト環境用プロファイル（単独起動時）
+    ports:
+      - "8080:80"
+      - "8443:443"
+      - "8443:443/udp"
+    volumes:
+      - ./Caddyfile.beta:/etc/caddy/Caddyfile:ro
+      - caddy_data_beta:/data
+      - caddy_config_beta:/config
+    depends_on:
+      web-beta:
+        condition: service_healthy
+    networks:
+      - law-review-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:2019/config/" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # プロキシ - 開発環境用（単独起動時用、通常はproxyと統合）
+  proxy-dev:
+    env_file:
+      - .env.dev
+    # 注意: CADDY_DOMAIN_DEV, BASIC_AUTH_USER_DEV, BASIC_AUTH_PASS_HASH_DEV は
+    # env_file (.env.dev) から読み込まれます
+    image: caddy:2-alpine
+    container_name: law-review-proxy-dev
+    profiles:
+      - dev # 開発環境用プロファイル（単独起動時）
+    ports:
+      - "8081:80"
+      - "8444:443"
+      - "8444:443/udp"
+    volumes:
+      - ./Caddyfile.dev:/etc/caddy/Caddyfile:ro
+      - caddy_data_dev:/data
+      - caddy_config_dev:/config
+    depends_on:
+      web-dev-server:
         condition: service_healthy
     networks:
       - law-review-network
@@ -161,6 +351,16 @@ volumes:
   caddy_data:
     driver: local
   caddy_config:
+    driver: local
+  # βテスト環境用（単独起動時）
+  caddy_data_beta:
+    driver: local
+  caddy_config_beta:
+    driver: local
+  # 開発環境用（単独起動時）
+  caddy_data_dev:
+    driver: local
+  caddy_config_dev:
     driver: local
 
 networks:

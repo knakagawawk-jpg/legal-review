@@ -3,8 +3,6 @@
 export interface ReviewRequest {
   official_question_id?: number | null
   problem_id?: number | null
-  problem_metadata_id?: number | null
-  problem_details_id?: number | null
   subject?: number | null  // 科目ID（1-18）、既存問題の場合は不要
   subject_name?: string | null  // 科目名（subjectが指定されていない場合に使用）
   question_text?: string | null
@@ -88,26 +86,6 @@ export interface ReviewResponse {
   source_type?: "official" | "custom" | null
   reference_text?: string | null
   grading_impression_text?: string | null
-}
-
-export interface ProblemMetadata {
-  id: number
-  exam_type: string
-  year: number
-  subject: number  // 科目ID（1-18）
-  subject_name: string  // 科目名（表示用）
-}
-
-export interface ProblemDetails {
-  id: number
-  question_number: number
-  question_text: string
-  purpose?: string | null
-}
-
-export interface ProblemMetadataWithDetails {
-  metadata: ProblemMetadata
-  details: ProblemDetails[]
 }
 
 // 短答式問題関連の型定義
@@ -287,4 +265,51 @@ export interface LlmRequest {
 export interface LlmRequestListResponse {
   items: LlmRequest[]
   total: number
+}
+
+// 管理者用の型定義
+export interface AdminUser {
+  id: number
+  email: string
+  name?: string | null
+  is_active: boolean
+  is_admin: boolean
+  created_at: string
+  updated_at: string
+  last_login_at?: string | null
+  review_count: number
+  thread_count: number
+  short_answer_session_count: number
+  total_tokens: number
+  total_cost_yen: number
+}
+
+export interface AdminUserListResponse {
+  users: AdminUser[]
+  total: number
+}
+
+export interface AdminStats {
+  total_users: number
+  active_users: number
+  admin_users: number
+  total_tokens: number
+  total_input_tokens: number
+  total_output_tokens: number
+  total_cost_yen: number
+  feature_stats: Record<string, {
+    request_count: number
+    total_tokens: number
+    total_input_tokens: number
+    total_output_tokens: number
+    total_cost_yen: number
+    avg_latency_ms?: number | null
+  }>
+  review_count: number
+  thread_count: number
+  short_answer_session_count: number
+  today_tokens: number
+  today_cost_yen: number
+  this_month_tokens: number
+  this_month_cost_yen: number
 }

@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useRef, useEffect, memo } from "react"
-import { Send } from "lucide-react"
+import { Send, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
@@ -11,17 +11,20 @@ import { ChatInputBar } from "@/components/chat/chat-input-bar"
 interface ChatInputProps {
   onSend: (message: string) => void
   isLoading: boolean
+  onStop?: () => void
 }
 
-export const ChatInput = memo(function ChatInput({ onSend, isLoading }: ChatInputProps) {
+export const ChatInput = memo(function ChatInput({ onSend, isLoading, onStop }: ChatInputProps) {
   const [input, setInput] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const onSendRef = useRef(onSend)
+  const onStopRef = useRef(onStop)
 
-  // onSendの参照を最新に保つ
+  // onSendとonStopの参照を最新に保つ
   useEffect(() => {
     onSendRef.current = onSend
-  }, [onSend])
+    onStopRef.current = onStop
+  }, [onSend, onStop])
 
   // Auto-resize textarea
   useEffect(() => {
@@ -69,25 +72,38 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading }: ChatInpu
           rows={1}
         />
 
+        {/* Stop Button (shown when loading) */}
+        {isLoading && onStop && (
+          <Button
+            onClick={() => onStopRef.current?.()}
+            size="icon"
+            className="h-9 w-9 shrink-0 rounded-full transition-all bg-red-500 text-white hover:bg-red-600 shadow-lg shadow-red-500/30 hover:shadow-red-500/40"
+          >
+            <Square className="h-4 w-4 fill-white" />
+          </Button>
+        )}
+
         {/* Send Button */}
-        <Button
-          onClick={handleSubmit}
-          disabled={!input.trim() || isLoading}
-          size="icon"
-          className={cn(
-            "h-9 w-9 shrink-0 rounded-full transition-all",
-            input.trim() && !isLoading
-              ? "bg-gradient-to-br from-indigo-500 via-indigo-600 to-sky-500 text-white hover:from-indigo-600 hover:via-indigo-700 hover:to-sky-600 shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40"
-              : "bg-slate-200 text-slate-400 cursor-not-allowed",
-          )}
-        >
-          <Send className="h-4 w-4" />
-        </Button>
+        {!isLoading && (
+          <Button
+            onClick={handleSubmit}
+            disabled={!input.trim()}
+            size="icon"
+            className={cn(
+              "h-9 w-9 shrink-0 rounded-full transition-all",
+              input.trim()
+                ? "bg-gradient-to-br from-indigo-500 via-indigo-600 to-sky-500 text-white hover:from-indigo-600 hover:via-indigo-700 hover:to-sky-600 shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40"
+                : "bg-slate-200 text-slate-400 cursor-not-allowed",
+            )}
+          >
+            <Send className="h-4 w-4" />
+          </Button>
+        )}
       </div>
     </ChatInputBar>
   )
 }, (prevProps, nextProps) => {
-  // isLoadingの変更のみを再レンダリングのトリガーとする
+  // isLoadingとonStopの変更のみを再レンダリングのトリガーとする
   // onSendの参照が変わっても再レンダリングしない（refで最新の参照を保持するため）
-  return prevProps.isLoading === nextProps.isLoading
+  return prevProps.isLoading === nextProps.isLoading && prevProps.onStop === nextProps.onStop
 })

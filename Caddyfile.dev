@@ -1,0 +1,78 @@
+# 開発環境用Caddyfile（単独起動時用）
+# - Domain is configured via CADDY_DOMAIN_DEV (default: dev.localhost)
+# - Basic auth uses BASIC_AUTH_USER_DEV / BASIC_AUTH_PASS_HASH_DEV (bcrypt hash)
+#
+# 動作説明:
+# - localhostの場合: ポートベース（:80）でHTTPのみ（環境変数を切り替える必要はありません）
+# - サーバー上の場合: ドメインベースで自動TLS（環境変数CADDY_DOMAIN_DEVを変更）
+# Caddyは自動的に適切な設定を選択します。
+
+# ポートベースの設定（localhost用、HTTPのみ）
+# この設定は常に有効で、localhostでアクセスする際に使用されます
+# 環境変数を切り替える必要はありません
+:80 {
+    # HTTPのみ（TLS無効化）
+    
+    # Basic auth (bcrypt hash) - ページリクエストのみに適用（APIとNext.jsの静的リソースは除外）
+    # Generate hash with: docker run --rm caddy:2-alpine caddy hash-password --plaintext your-password
+    # Note: .envファイルでは$$でエスケープする必要がある（$$2a$$14$$...）
+    @not_api {
+        not path /api/* /_next/* /favicon.ico
+    }
+    basic_auth @not_api {
+        {$BASIC_AUTH_USER_DEV} {$BASIC_AUTH_PASS_HASH_DEV}
+    }
+
+    # セキュリティヘッダー
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # リバースプロキシのタイムアウトを10分に設定（講評生成処理に時間がかかるため）
+    reverse_proxy web-dev-server:3000 {
+        transport http {
+            dial_timeout 10s
+            response_header_timeout 600s  # 10分（レスポンスヘッダーの待機時間）
+            read_timeout 600s  # 10分（レスポンスボディの読み込みタイムアウト）
+            write_timeout 600s  # 10分（リクエストボディの書き込みタイムアウト）
+        }
+    }
+}
+
+# ドメインベースの設定（サーバー上で使用、dev.juristutor-ai.comなど）
+# 注意: localhostの場合は上記の:80ブロックが使用されます
+# サーバー上で使用する場合は、環境変数CADDY_DOMAIN_DEVをdev.juristutor-ai.comなどに変更し、
+# このブロックのコメントを解除してください
+#
+# {$CADDY_DOMAIN_DEV:dev.localhost} {
+#     # 自動TLSを使用（Let's Encrypt）
+#     
+#     # Basic auth (bcrypt hash) - ページリクエストのみに適用（APIは除外）
+#     @not_api {
+#         not path /api/* /_next/*
+#     }
+#     basic_auth @not_api {
+#         {$BASIC_AUTH_USER_DEV} {$BASIC_AUTH_PASS_HASH_DEV}
+#     }
+#
+#     # セキュリティヘッダー
+#     header {
+#         X-Content-Type-Options "nosniff"
+#         X-Frame-Options "DENY"
+#         X-XSS-Protection "1; mode=block"
+#         Referrer-Policy "strict-origin-when-cross-origin"
+#     }
+#
+#     # リバースプロキシのタイムアウトを10分に設定（講評生成処理に時間がかかるため）
+#     reverse_proxy web-dev-server:3000 {
+#         transport http {
+#             dial_timeout 10s
+#             response_header_timeout 600s  # 10分（レスポンスヘッダーの待機時間）
+#             read_timeout 600s  # 10分（レスポンスボディの読み込みタイムアウト）
+#             write_timeout 600s  # 10分（リクエストボディの書き込みタイムアウト）
+#         }
+#     }
+# }
