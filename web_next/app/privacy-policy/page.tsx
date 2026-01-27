@@ -8,7 +8,7 @@ export default function PrivacyPolicyPage() {
   const { isOpen } = useSidebar()
 
   return (
-    <div 
+    <div
       className="flex min-h-screen flex-col bg-slate-50 transition-all duration-300"
       style={{
         marginLeft: isOpen ? '208px' : '0',
@@ -101,7 +101,7 @@ export default function PrivacyPolicyPage() {
             <div className="bg-slate-50 p-4 rounded-lg space-y-2">
               <p className="text-sm font-medium text-slate-800">送信先:</p>
               <p className="text-sm text-slate-700">Google LLC</p>
-              
+
               <p className="text-sm font-medium text-slate-800 mt-3">送信される情報:</p>
               <ul className="list-disc list-inside space-y-1 text-sm text-slate-700 ml-4">
                 <li>Google IDトークン</li>
@@ -109,7 +109,7 @@ export default function PrivacyPolicyPage() {
                 <li>User-Agent（ブラウザ情報）</li>
                 <li>リファラー（参照元URL）</li>
               </ul>
-              
+
               <p className="text-sm font-medium text-slate-800 mt-3">利用目的:</p>
               <ul className="list-disc list-inside space-y-1 text-sm text-slate-700 ml-4">
                 <li>Googleログイン機能の提供</li>
@@ -119,9 +119,9 @@ export default function PrivacyPolicyPage() {
 
               <p className="text-sm text-slate-600 mt-3">
                 Googleのプライバシーポリシーについては、
-                <a 
-                  href="https://policies.google.com/privacy" 
-                  target="_blank" 
+                <a
+                  href="https://policies.google.com/privacy"
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="text-indigo-600 hover:underline"
                 >

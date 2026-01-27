@@ -361,7 +361,7 @@ function SubjectPage() {
   const [editingPageTitle, setEditingPageTitle] = useState("")
   const [editingPageContent, setEditingPageContent] = useState("")
   const [savingPage, setSavingPage] = useState(false)
-  const pageContentTimeoutRef = useRef<number | null>(null)
+  const pageContentTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   
   // 保留中の保存を追跡（ページ切り替え前にフラッシュするため）
   const pendingPageSaveRef = useRef<{ pageId: number; title: string; content: string } | null>(null)
