@@ -41,7 +41,7 @@ def year_to_int(year_str: str) -> int:
         except:
             raise ValueError(f"年度の形式が不正です: {year_str}")
 
-def import_json_file(json_file: Path, db, dry_run: bool = False):
+def import_json_file(json_file: Path, db, dry_run: bool = False, update_existing: bool = False):
     """単一のJSONファイルをデータベースに登録"""
     try:
         # JSONファイルを読み込み
@@ -88,20 +88,6 @@ def import_json_file(json_file: Path, db, dry_run: bool = False):
         if subject_id is None or not (1 <= int(subject_id) <= 18):
             return {"status": "error", "message": f"科目の形式が不正です: subject={subject_raw!r}, subject_name={data.get('subject_name')!r} ({json_file})"}
         
-        if dry_run:
-            # 既存チェックのみ（activeなOfficialQuestionをチェック）
-            existing_oq = db.query(OfficialQuestion).filter(
-                OfficialQuestion.shiken_type == shiken_type,
-                OfficialQuestion.nendo == year,
-                OfficialQuestion.subject_id == subject_id,
-                OfficialQuestion.status == "active"
-            ).first()
-            
-            if existing_oq:
-                return {"status": "exists", "message": "既に登録済み"}
-            else:
-                return {"status": "new", "message": "新規登録予定"}
-        
         # 既存のOfficialQuestionをチェック（activeなもの）
         existing_oq = db.query(OfficialQuestion).filter(
             OfficialQuestion.shiken_type == shiken_type,
@@ -110,8 +96,31 @@ def import_json_file(json_file: Path, db, dry_run: bool = False):
             OfficialQuestion.status == "active"
         ).first()
         
+        if dry_run:
+            if existing_oq:
+                if update_existing:
+                    return {"status": "update", "message": "更新予定"}
+                else:
+                    return {"status": "exists", "message": "既に登録済み"}
+            else:
+                return {"status": "new", "message": "新規登録予定"}
+        
         if existing_oq:
-            return {"status": "skipped", "message": "既に登録済み"}
+            if update_existing:
+                # 既存レコードを更新
+                existing_oq.text = text
+                existing_oq.syutudaisyusi = purpose if purpose else None
+                existing_oq.grading_impression_text = scoring_notes if (shiken_type == "shihou" and scoring_notes) else None
+                db.commit()
+                
+                exam_type_display = "司法試験" if shiken_type == "shihou" else "予備試験"
+                return {
+                    "status": "updated",
+                    "message": f"{exam_type_display} {year}年 {get_subject_name(subject_id)}",
+                    "official_question_id": existing_oq.id
+                }
+            else:
+                return {"status": "skipped", "message": "既に登録済み"}
         
         # OfficialQuestionを作成
         oq = OfficialQuestion(
@@ -151,7 +160,9 @@ def find_all_json_files(json_base_dir: Path):
 def main():
     parser = argparse.ArgumentParser(description="JSONファイルをデータベースに一括インポート")
     parser.add_argument("--dry-run", action="store_true", help="実行前の確認のみ（実際には登録しない）")
+    parser.add_argument("--update", action="store_true", help="既存データを更新する（デフォルト: スキップ）")
     parser.add_argument("--json-dir", type=str, default=None, help="JSONディレクトリのパス（デフォルト: data/json）")
+    parser.add_argument("--years", type=str, nargs="+", default=None, help="更新する年度を指定（例: H30 R5 R6）")
     args = parser.parse_args()
     
     # JSONディレクトリのパスを決定
@@ -169,10 +180,36 @@ def main():
     print(f"JSONディレクトリ: {json_base_dir}")
     if args.dry_run:
         print("【DRY RUNモード】実際には登録しません")
+    if args.update:
+        print("【更新モード】既存データを更新します")
     print("=" * 80)
     
     # すべてのJSONファイルを検索
     json_files = find_all_json_files(json_base_dir)
+    
+    # 年度フィルタリング
+    if args.years:
+        target_years = set()
+        for year_str in args.years:
+            try:
+                target_years.add(year_to_int(year_str))
+            except ValueError:
+                print(f"警告: 無効な年度形式: {year_str}")
+        
+        if target_years:
+            filtered_files = []
+            for json_file in json_files:
+                try:
+                    with open(json_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    year = year_to_int(data.get("year", ""))
+                    if year in target_years:
+                        filtered_files.append(json_file)
+                except:
+                    pass
+            json_files = filtered_files
+            print(f"指定年度でフィルタリング: {args.years} -> {target_years}")
+    
     print(f"見つかったJSONファイル: {len(json_files)}件")
     print("-" * 80)
     
@@ -184,13 +221,14 @@ def main():
     
     try:
         imported_count = 0
+        updated_count = 0
         skipped_count = 0
         error_count = 0
         exists_count = 0
         
         for json_file in json_files:
             relative_path = json_file.relative_to(BASE_DIR)
-            result = import_json_file(json_file, db, dry_run=args.dry_run)
+            result = import_json_file(json_file, db, dry_run=args.dry_run, update_existing=args.update)
             
             status = result["status"]
             message = result["message"]
@@ -200,12 +238,20 @@ def main():
                 print(f"  {message}")
                 print(f"  OfficialQuestion ID: {result.get('official_question_id')}")
                 imported_count += 1
+            elif status == "updated":
+                print(f"↻ 更新: {relative_path}")
+                print(f"  {message}")
+                print(f"  OfficialQuestion ID: {result.get('official_question_id')}")
+                updated_count += 1
             elif status == "skipped":
                 print(f"- スキップ: {relative_path} ({message})")
                 skipped_count += 1
             elif status == "exists":
                 print(f"○ 既存: {relative_path} ({message})")
                 exists_count += 1
+            elif status == "update":
+                print(f"↻ 更新予定: {relative_path} ({message})")
+                updated_count += 1
             elif status == "new":
                 print(f"+ 新規: {relative_path} ({message})")
                 imported_count += 1
@@ -218,9 +264,13 @@ def main():
         print("処理完了:")
         if args.dry_run:
             print(f"  新規登録予定: {imported_count}件")
+            if args.update:
+                print(f"  更新予定: {updated_count}件")
             print(f"  既存: {exists_count}件")
         else:
             print(f"  登録: {imported_count}件")
+            if args.update:
+                print(f"  更新: {updated_count}件")
             print(f"  スキップ: {skipped_count}件")
         print(f"  エラー: {error_count}件")
         

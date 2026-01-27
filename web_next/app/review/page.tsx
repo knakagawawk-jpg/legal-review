@@ -15,7 +15,7 @@ import { CheckCircle2, AlertCircle, Loader2, Copy, Check, ChevronDown, ChevronRi
 import { cn } from "@/lib/utils"
 import type { ReviewRequest, ReviewResponse } from "@/types/api"
 import { formatYearToEra, formatYearToShortEra } from "@/lib/utils"
-import { getSubjectName, FIXED_SUBJECTS } from "@/lib/subjects"
+import { getSubjectName, getSubjectId, FIXED_SUBJECTS } from "@/lib/subjects"
 import { SidebarToggle, useSidebar } from "@/components/sidebar"
 import { apiClient } from "@/lib/api-client"
 import { hasFunctionalConsent } from "@/lib/cookie-consent"
@@ -356,8 +356,9 @@ export default function ReviewPage() {
                     )}
                   </SelectTrigger>
                   <SelectContent>
-                    {FIXED_SUBJECTS.map((subjectName, index) => {
-                      const subjectId = index + 1
+                    {FIXED_SUBJECTS.map((subjectName) => {
+                      const subjectId = getSubjectId(subjectName)
+                      if (subjectId === null) return null
                       return (
                         <SelectItem key={subjectId} value={subjectId.toString()} className="text-xs">
                           {subjectName}
@@ -554,11 +555,15 @@ export default function ReviewPage() {
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="none">未選択</SelectItem>
-                              {FIXED_SUBJECTS.map((subjectName, index) => (
-                                <SelectItem key={index + 1} value={String(index + 1)}>
-                                  {subjectName}
-                                </SelectItem>
-                              ))}
+                              {FIXED_SUBJECTS.map((subjectName) => {
+                                const subjectId = getSubjectId(subjectName)
+                                if (subjectId === null) return null
+                                return (
+                                  <SelectItem key={subjectId} value={String(subjectId)}>
+                                    {subjectName}
+                                  </SelectItem>
+                                )
+                              })}
                             </SelectContent>
                           </Select>
                         )
