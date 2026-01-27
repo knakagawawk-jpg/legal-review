@@ -4,6 +4,7 @@ import type React from "react"
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
+import { hasFunctionalConsent } from "@/lib/cookie-consent"
 
 interface PanelResizerProps {
   onResize: (width: number) => void
@@ -20,11 +21,14 @@ export function PanelResizer({ onResize, currentWidth, minWidth = 20, maxWidth =
 
   // Load saved width on mount
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) {
-      const savedWidth = Number.parseFloat(saved)
-      if (savedWidth >= minWidth && savedWidth <= maxWidth) {
-        onResize(savedWidth)
+    // 機能Cookieの同意をチェック
+    if (hasFunctionalConsent()) {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const savedWidth = Number.parseFloat(saved)
+        if (savedWidth >= minWidth && savedWidth <= maxWidth) {
+          onResize(savedWidth)
+        }
       }
     }
   }, [minWidth, maxWidth, onResize])
@@ -53,7 +57,10 @@ export function PanelResizer({ onResize, currentWidth, minWidth = 20, maxWidth =
   const handleMouseUp = useCallback(() => {
     if (isDragging) {
       setIsDragging(false)
-      localStorage.setItem(STORAGE_KEY, currentWidth.toString())
+      // 機能Cookieの同意をチェック
+      if (hasFunctionalConsent()) {
+        localStorage.setItem(STORAGE_KEY, currentWidth.toString())
+      }
     }
   }, [isDragging, currentWidth])
 
@@ -82,7 +89,10 @@ export function PanelResizer({ onResize, currentWidth, minWidth = 20, maxWidth =
   const handleTouchEnd = useCallback(() => {
     if (isDragging) {
       setIsDragging(false)
-      localStorage.setItem(STORAGE_KEY, currentWidth.toString())
+      // 機能Cookieの同意をチェック
+      if (hasFunctionalConsent()) {
+        localStorage.setItem(STORAGE_KEY, currentWidth.toString())
+      }
     }
   }, [isDragging, currentWidth])
 

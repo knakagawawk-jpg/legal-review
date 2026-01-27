@@ -1,7 +1,10 @@
 /**
  * 認証状態の永続化管理
  * localStorage と sessionStorage の使い分けを実装
+ * 必須Cookieの同意チェックを実装
  */
+
+import { hasRequiredConsent } from './cookie-consent'
 
 const TOKEN_KEY = 'auth_token'
 const REMEMBER_ME_KEY = 'auth_remember_me'
@@ -26,6 +29,12 @@ class AuthStorage {
       return
     }
 
+    // 必須Cookieの同意をチェック
+    if (!hasRequiredConsent()) {
+      console.warn('[Cookie同意] 必須Cookieの同意がないため、トークンの保存をスキップしました')
+      return
+    }
+
     if (rememberMe) {
       // 「ログインを記憶する」がONの場合: localStorageに保存（永続的）
       localStorage.setItem(TOKEN_KEY, token)
@@ -34,6 +43,7 @@ class AuthStorage {
       sessionStorage.removeItem(TOKEN_KEY)
     } else {
       // 「ログインを記憶する」がOFFの場合: sessionStorageに保存（セッションのみ）
+      // sessionStorageはセッションのみなので、同意チェックは不要だが、一貫性のためチェック
       sessionStorage.setItem(TOKEN_KEY, token)
       localStorage.setItem(REMEMBER_ME_KEY, 'false')
       // localStorageから削除（念のため）
@@ -47,6 +57,13 @@ class AuthStorage {
    */
   getToken(): string | null {
     if (typeof window === 'undefined') {
+      return null
+    }
+
+    // 必須Cookieの同意をチェック
+    if (!hasRequiredConsent()) {
+      // 同意がない場合は、既存のトークンも削除（念のため）
+      this.removeToken()
       return null
     }
 
@@ -94,6 +111,12 @@ class AuthStorage {
       return
     }
 
+    // 必須Cookieの同意をチェック
+    if (!hasRequiredConsent()) {
+      console.warn('[Cookie同意] 必須Cookieの同意がないため、ユーザー情報の保存をスキップしました')
+      return
+    }
+
     const rememberMe = this.getRememberMe()
     const storage = rememberMe ? localStorage : sessionStorage
 
@@ -109,6 +132,11 @@ class AuthStorage {
    */
   getUser(): { user_id: number; email: string; name: string; is_active: boolean } | null {
     if (typeof window === 'undefined') {
+      return null
+    }
+
+    // 必須Cookieの同意をチェック
+    if (!hasRequiredConsent()) {
       return null
     }
 

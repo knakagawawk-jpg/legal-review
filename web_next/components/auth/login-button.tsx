@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useAuth } from "@/contexts/auth-context"
 import { Loader2, AlertCircle, X } from "lucide-react"
+import { CookieConsentBanner } from "@/components/cookie-consent-banner"
+import { hasRequiredConsent, hasPrivacyConsent } from "@/lib/cookie-consent"
 
 declare global {
   interface Window {
@@ -30,6 +32,7 @@ export function LoginButton() {
   const [isLoggingIn, setIsLoggingIn] = useState(false)
   const [loginError, setLoginError] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
+  const [showConsentBanner, setShowConsentBanner] = useState(false)
 
   // クライアント側でのみマウントされたことを確認（Hydrationエラーを防ぐ）
   useEffect(() => {
@@ -140,6 +143,13 @@ export function LoginButton() {
 
   const handleLogin = () => {
     console.log("Login button clicked")
+    
+    // 必須Cookieとプライバシーポリシーへの同意をチェック
+    if (!hasRequiredConsent() || !hasPrivacyConsent()) {
+      setShowConsentBanner(true)
+      return
+    }
+    
     console.log("isGoogleLoaded:", isGoogleLoaded)
     console.log("window.google:", window.google)
     console.log("window.google?.accounts?.id:", window.google?.accounts?.id)
@@ -165,6 +175,19 @@ export function LoginButton() {
     }
   }
 
+  const handleConsent = (required: boolean, functional: boolean) => {
+    setShowConsentBanner(false)
+    // 同意後、再度ログイン処理を実行
+    if (required) {
+      // 少し遅延させてからログインプロンプトを表示
+      setTimeout(() => {
+        if (window.google?.accounts?.id) {
+          window.google.accounts.id.prompt()
+        }
+      }, 100)
+    }
+  }
+
   // サーバー側レンダリング時は何も表示しない（Hydrationエラーを防ぐ）
   if (!mounted || isLoading) {
     return null
@@ -177,42 +200,50 @@ export function LoginButton() {
   const displayError = loginError || error
 
   return (
-    <div className="flex flex-col gap-2">
-      {displayError && (
-        <Alert variant="destructive" className="py-2">
-          <div className="flex items-start justify-between">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="h-4 w-4 mt-0.5" />
-              <div className="flex-1">
-                <AlertTitle className="text-sm">ログインエラー</AlertTitle>
-                <AlertDescription className="text-xs mt-1">
-                  {displayError}
-                </AlertDescription>
+    <>
+      {showConsentBanner && (
+        <CookieConsentBanner
+          onConsent={handleConsent}
+          showOnlyRequired={true}
+        />
+      )}
+      <div className="flex flex-col gap-2">
+        {displayError && (
+          <Alert variant="destructive" className="py-2">
+            <div className="flex items-start justify-between">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 mt-0.5" />
+                <div className="flex-1">
+                  <AlertTitle className="text-sm">ログインエラー</AlertTitle>
+                  <AlertDescription className="text-xs mt-1">
+                    {displayError}
+                  </AlertDescription>
+                </div>
               </div>
+              <button
+                onClick={() => {
+                  setLoginError(null)
+                  clearError()
+                }}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
-            <button
-              onClick={() => {
-                setLoginError(null)
-                clearError()
-              }}
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </Alert>
-      )}
+          </Alert>
+        )}
 
-      {!isGoogleLoaded || isLoggingIn || isLoading ? (
-        <Button disabled variant="outline" size="sm">
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          {isLoggingIn ? "ログイン中..." : "読み込み中..."}
-        </Button>
-      ) : (
-        <Button onClick={handleLogin} variant="outline" size="sm">
-          Googleでログイン
-        </Button>
-      )}
-    </div>
+        {!isGoogleLoaded || isLoggingIn || isLoading ? (
+          <Button disabled variant="outline" size="sm">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            {isLoggingIn ? "ログイン中..." : "読み込み中..."}
+          </Button>
+        ) : (
+          <Button onClick={handleLogin} variant="outline" size="sm">
+            Googleでログイン
+          </Button>
+        )}
+      </div>
+    </>
   )
 }

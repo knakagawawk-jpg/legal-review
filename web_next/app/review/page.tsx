@@ -18,6 +18,7 @@ import { formatYearToEra, formatYearToShortEra } from "@/lib/utils"
 import { getSubjectName, FIXED_SUBJECTS } from "@/lib/subjects"
 import { SidebarToggle, useSidebar } from "@/components/sidebar"
 import { apiClient } from "@/lib/api-client"
+import { hasFunctionalConsent } from "@/lib/cookie-consent"
 
 type Step = 1 | 2
 type Mode = "existing" | "new"
@@ -53,16 +54,23 @@ export default function ReviewPage() {
 
   // localStorageから答案を復元
   useEffect(() => {
-    const saved = localStorage.getItem("review_answer_text")
-    if (saved) {
-      setAnswerText(saved)
+    // 機能Cookieの同意をチェック
+    if (hasFunctionalConsent()) {
+      const saved = localStorage.getItem("review_answer_text")
+      if (saved) {
+        setAnswerText(saved)
+      }
     }
   }, [])
 
   // 答案をlocalStorageに保存
   useEffect(() => {
     if (answerText) {
-      localStorage.setItem("review_answer_text", answerText)
+      // 機能Cookieの同意をチェック
+      if (hasFunctionalConsent()) {
+        localStorage.setItem("review_answer_text", answerText)
+      }
+      // 同意がない場合は保存しない（警告は出さない - UX向上のための機能なので）
     }
   }, [answerText])
 

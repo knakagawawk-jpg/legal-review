@@ -8,6 +8,7 @@ import { useMemo, Suspense, useState, useEffect } from "react"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { FIXED_SUBJECTS } from "@/lib/subjects"
 import { getStudyDate, getRecentStudyDates } from "@/lib/study-date"
+import { hasFunctionalConsent } from "@/lib/cookie-consent"
 
 const yourPageNav = [
   {
@@ -53,7 +54,7 @@ function YourPageSectionInner() {
   const [isRecentNotePagesOpen, setIsRecentNotePagesOpen] = useState(false)
   
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && hasFunctionalConsent()) {
       try {
         const historyStr = localStorage.getItem("recent_note_pages")
         if (historyStr) {

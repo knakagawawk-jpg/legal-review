@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { FileText, ArrowLeft, Plus, GripVertical, Trash2, Menu } from "lucide-react"
+import { SortableRow } from "@/components/sortable-row"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useSidebar } from "@/components/sidebar"

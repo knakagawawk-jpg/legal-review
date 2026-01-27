@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils"
 import { FIXED_SUBJECTS, getSubjectName, getSubjectId } from "@/lib/subjects"
 import { withAuth } from "@/components/auth/with-auth"
 import { apiClient } from "@/lib/api-client"
+import { hasFunctionalConsent } from "@/lib/cookie-consent"
 import { StudyTimeCard } from "@/components/study-time-card"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -361,16 +362,18 @@ function StudyManagementPage() {
       setTopicItems(topicData.items || [])
       
       // スクロール位置を復元
-      const memoScrollPos = localStorage.getItem("study-memo-scroll")
-      const topicScrollPos = localStorage.getItem("study-topic-scroll")
-      setTimeout(() => {
-        if (memoScrollRef.current && memoScrollPos) {
-          memoScrollRef.current.scrollTop = parseInt(memoScrollPos)
-        }
-        if (topicScrollRef.current && topicScrollPos) {
-          topicScrollRef.current.scrollTop = parseInt(topicScrollPos)
-        }
-      }, 100)
+      if (hasFunctionalConsent()) {
+        const memoScrollPos = localStorage.getItem("study-memo-scroll")
+        const topicScrollPos = localStorage.getItem("study-topic-scroll")
+        setTimeout(() => {
+          if (memoScrollRef.current && memoScrollPos) {
+            memoScrollRef.current.scrollTop = parseInt(memoScrollPos)
+          }
+          if (topicScrollRef.current && topicScrollPos) {
+            topicScrollRef.current.scrollTop = parseInt(topicScrollPos)
+          }
+        }, 100)
+      }
     } catch (error) {
       console.error("Failed to load dashboard items:", error)
       setMemoItems([])
@@ -508,13 +511,13 @@ function StudyManagementPage() {
   
   // スクロール位置を保存
   const handleMemoScroll = useCallback(() => {
-    if (memoScrollRef.current) {
+    if (memoScrollRef.current && hasFunctionalConsent()) {
       localStorage.setItem("study-memo-scroll", memoScrollRef.current.scrollTop.toString())
     }
   }, [])
   
   const handleTopicScroll = useCallback(() => {
-    if (topicScrollRef.current) {
+    if (topicScrollRef.current && hasFunctionalConsent()) {
       localStorage.setItem("study-topic-scroll", topicScrollRef.current.scrollTop.toString())
     }
   }, [])

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { BookOpen, ArrowLeft, Plus, Menu, CalendarDays } from "lucide-react"
+import { BookOpen, ArrowLeft, Plus, Menu, CalendarDays, Trash2 } from "lucide-react"
 import { SortableRow } from "@/components/sortable-row"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"

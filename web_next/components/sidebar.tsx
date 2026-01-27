@@ -5,10 +5,12 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { FileText, BookOpen, MessageCircle, ScrollText, Wrench, Menu, ChevronLeft, Scale, Settings } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { SidebarContentSection } from "./sidebar-sections"
 import { LoginButton } from "./auth/login-button"
 import { UserMenu } from "./auth/user-menu"
 import { useAuth } from "@/contexts/auth-context"
+import { hasFunctionalConsent } from "@/lib/cookie-consent"
 
 // サイドバーの状態を共有するContext
 type SidebarContextType = {
@@ -87,6 +89,10 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const getInitialState = () => {
     if (typeof window === 'undefined') return true
     try {
+      // 機能Cookieの同意をチェック
+      if (!hasFunctionalConsent()) {
+        return true // 同意がない場合はデフォルト値
+      }
       const saved = localStorage.getItem('sidebar_is_open')
       return saved !== null ? saved === 'true' : true // デフォルトは開く
     } catch {
@@ -100,11 +106,16 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setMounted(true)
     // マウント時にlocalStorageから状態を読み込む
-    const saved = localStorage.getItem('sidebar_is_open')
-    if (saved !== null) {
-      setIsOpen(saved === 'true')
+    if (hasFunctionalConsent()) {
+      const saved = localStorage.getItem('sidebar_is_open')
+      if (saved !== null) {
+        setIsOpen(saved === 'true')
+      } else {
+        // 初回アクセス時は開く
+        setIsOpen(true)
+      }
     } else {
-      // 初回アクセス時は開く
+      // 同意がない場合はデフォルト値
       setIsOpen(true)
     }
   }, [])
@@ -114,7 +125,12 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     setIsOpen(open)
     if (typeof window !== 'undefined') {
       try {
-        localStorage.setItem('sidebar_is_open', open ? 'true' : 'false')
+        // 機能Cookieの同意をチェック
+        if (hasFunctionalConsent()) {
+          localStorage.setItem('sidebar_is_open', open ? 'true' : 'false')
+        } else {
+          // 同意がない場合は保存しない（警告は出さない - UX向上のための機能なので）
+        }
       } catch (error) {
         console.error('Failed to save sidebar state:', error)
       }
@@ -232,7 +248,14 @@ export function Sidebar() {
           {/* フッター */}
           <div className="p-3 border-t border-blue-100/40 bg-blue-50/20">
             <AuthSection />
-            <p className="text-[10px] text-center text-slate-400 mt-2">Juristutor v1.0</p>
+            <div className="flex items-center justify-center gap-2 mt-2">
+              <p className="text-[10px] text-slate-400">Juristutor v1.0</p>
+              <Link href="/your-page/settings">
+                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="設定">
+                  <Settings className="h-3 w-3 text-slate-400" />
+                </Button>
+              </Link>
+            </div>
           </div>
         </div>
       </aside>

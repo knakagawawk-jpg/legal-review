@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { FIXED_SUBJECTS, getSubjectId } from "@/lib/subjects"
-import { BookOpen, FileText, StickyNote, Plus, Folder, ChevronRight, ChevronDown, ChevronLeft, X, Menu, MoreVertical, Edit, Maximize2 } from "lucide-react"
+import { BookOpen, FileText, StickyNote, Plus, Folder, ChevronRight, ChevronDown, ChevronLeft, X, Menu, MoreVertical, Edit, Maximize2, Trash2 } from "lucide-react"
 import { SortableRow } from "@/components/sortable-row"
 import Link from "next/link"
 import type { Notebook, NoteSection, NotePage } from "@/types/api"
@@ -24,6 +24,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { withAuth } from "@/components/auth/with-auth"
 import { apiClient } from "@/lib/api-client"
+import { hasRequiredConsent, hasFunctionalConsent } from "@/lib/cookie-consent"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -262,6 +263,10 @@ function SubjectPage() {
   // デフォルトは憲法、またはlocalStorageから直近アクセスした科目を取得
   const getDefaultSubject = () => {
     if (typeof window === 'undefined') return "憲法"
+    // 機能Cookieの同意をチェック
+    if (!hasFunctionalConsent()) {
+      return "憲法"
+    }
     try {
       const historyStr = localStorage.getItem('recent_subject_pages')
       if (historyStr) {
@@ -300,9 +305,12 @@ function SubjectPage() {
       if (urlTab === "study" || urlTab === "notes") {
         return urlTab
       }
-      const lastTab = localStorage.getItem('last_main_tab')
-      if (lastTab === "study" || lastTab === "notes") {
-        return lastTab
+      // 機能Cookieの同意をチェック
+      if (hasFunctionalConsent()) {
+        const lastTab = localStorage.getItem('last_main_tab')
+        if (lastTab === "study" || lastTab === "notes") {
+          return lastTab
+        }
       }
     } catch (error) {
       console.error('Failed to load last main tab:', error)
@@ -653,7 +661,7 @@ function SubjectPage() {
 
   // アクセス時にlocalStorageに保存（直近アクセス履歴）
   useEffect(() => {
-    if (selectedSubject && typeof window !== 'undefined') {
+    if (selectedSubject && typeof window !== 'undefined' && hasFunctionalConsent()) {
       try {
         const historyKey = 'recent_subject_pages'
         const historyStr = localStorage.getItem(historyKey)
@@ -1449,7 +1457,8 @@ function SubjectPage() {
           pageContentTimeoutRef.current = null
         }
         // keepalive: true でページ離脱後もリクエストを完了させる
-        const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+        // 必須Cookieの同意をチェック
+        const token = typeof window !== 'undefined' && hasRequiredConsent() ? localStorage.getItem('auth_token') : null
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
         if (token) headers['Authorization'] = `Bearer ${token}`
         
@@ -1514,6 +1523,8 @@ function SubjectPage() {
     if (!selectedSubject) return
     if (!selectedPageId) return
     if (!selectedPage) return
+    // 機能Cookieの同意をチェック
+    if (!hasFunctionalConsent()) return
 
     try {
       const historyKey = "recent_note_pages"
@@ -1589,11 +1600,13 @@ function SubjectPage() {
               <Tabs value={mainTab} onValueChange={(v) => {
                 if (v === "study" || v === "notes") {
                   setMainTab(v)
-                  // localStorageに保存
-                  try {
-                    localStorage.setItem('last_main_tab', v)
-                  } catch (error) {
-                    console.error('Failed to save last main tab:', error)
+                  // localStorageに保存（機能Cookieの同意をチェック）
+                  if (hasFunctionalConsent()) {
+                    try {
+                      localStorage.setItem('last_main_tab', v)
+                    } catch (error) {
+                      console.error('Failed to save last main tab:', error)
+                    }
                   }
                   // URLにも同期（notes以外ではpageIdを外す）
                   try {
