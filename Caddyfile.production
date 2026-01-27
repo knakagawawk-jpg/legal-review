@@ -39,12 +39,13 @@
 # βテスト環境
 {$CADDY_DOMAIN_BETA:beta.localhost} {
     # Basic auth (bcrypt hash) - ページリクエストのみに適用（APIは除外）
-    @not_api {
-        not path /api/* /_next/* /favicon.ico
-    }
-    basicauth @not_api {
-        {$BASIC_AUTH_USER_BETA} {$BASIC_AUTH_PASS_HASH_BETA}
-    }
+    # 一時的に無効化してテスト
+    # @not_api {
+    #     not path /api/* /_next/* /favicon.ico
+    # }
+    # basicauth @not_api {
+    #     {$BASIC_AUTH_USER_BETA} {$BASIC_AUTH_PASS_HASH_BETA}
+    # }
 
     # セキュリティヘッダー
     header {
