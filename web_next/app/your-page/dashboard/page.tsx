@@ -1165,11 +1165,11 @@ function YourPageDashboardInner() {
       <SortableRow
         key={item.id}
         item={item}
-        entryType={2}
         onDelete={deleteItem}
         onEditCreatedDate={(id) => {
           setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
         }}
+        showCreatedDateButton={true}
       >
         <TableCell className="py-1.5 px-0.5 w-14 align-top">
           <Select
