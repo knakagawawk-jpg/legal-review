@@ -260,7 +260,7 @@ function NormsPage() {
   const [masteryFilter, setMasteryFilter] = useState<string>("all")
   const [tagFilters, setTagFilters] = useState<string[]>([])
   
-  const saveTimeoutRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
+  const saveTimeoutRef = useRef<Record<number, number>>({})
   
   const decodeSubject = (encoded?: string | string[]): string | null => {
     if (!encoded) return null
