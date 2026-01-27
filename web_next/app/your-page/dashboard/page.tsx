@@ -423,7 +423,7 @@ function YourPageDashboardInner() {
   const flushPendingSaves = useCallback(async () => {
     // clear all timers
     for (const t of Object.values(saveTimeoutsRef.current)) {
-      clearTimeout(t)
+      window.clearTimeout(t)
     }
     saveTimeoutsRef.current = {}
 
@@ -598,7 +598,7 @@ function YourPageDashboardInner() {
 
         // タイマーをクリアして即座に保存を実行
         for (const [idStr, timeout] of Object.entries(saveTimeoutsRef.current)) {
-          clearTimeout(timeout)
+          window.clearTimeout(timeout)
           const id = Number(idStr)
           const patch = pendingUpdatesRef.current[id]
           if (patch && Object.keys(patch).length > 0) {
@@ -684,9 +684,9 @@ function YourPageDashboardInner() {
   const touchRecentReviewRow = useCallback((problemId: number) => {
     if (!recentReviewSavePendingRef.current.has(problemId)) return
     const t = recentReviewSaveTimersRef.current[problemId]
-    if (t) clearTimeout(t)
+    if (t) window.clearTimeout(t)
     // 既存のpendingを維持したまま、5秒後に再予約
-    recentReviewSaveTimersRef.current[problemId] = setTimeout(async () => {
+    recentReviewSaveTimersRef.current[problemId] = window.setTimeout(async () => {
       try {
         const resp = await apiClient.post<{ saved_id: number }>(`/api/recent-review-problems/problems/${problemId}/save`)
         setRecentReview(prev => {
@@ -900,10 +900,10 @@ function YourPageDashboardInner() {
 
     const existing = saveTimeoutsRef.current[itemId]
     if (existing) {
-      clearTimeout(existing)
+      window.clearTimeout(existing)
     }
 
-    saveTimeoutsRef.current[itemId] = setTimeout(async () => {
+    saveTimeoutsRef.current[itemId] = window.setTimeout(async () => {
       try {
         const patch = pendingUpdatesRef.current[itemId] || updateData
         delete pendingUpdatesRef.current[itemId]
