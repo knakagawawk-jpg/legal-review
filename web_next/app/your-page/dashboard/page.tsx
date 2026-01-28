@@ -1459,8 +1459,53 @@ function YourPageDashboardInner() {
 
       // 確定前にドラフトデータをキャプチャ（非同期処理中に変わる可能性があるため）
       const capturedDraft = { ...draft }
+      const capturedRowKey = rowKey
+
+      // === オプティミスティック更新（API完了前に即座にUIを更新）===
+      // 1. ドラフトを即座に削除
+      setDraftRows(prev => {
+        const newDraft = { ...prev }
+        delete newDraft[capturedRowKey]
+        return newDraft
+      })
+
+      // 2. 空行キーを即座に更新（確定したキーを削除、新しいキーを末尾に追加）
+      const newRowKey = `${entryType === 1 ? 'point' : 'task'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      const keysArray = entryType === 1 ? 'points' : 'tasks'
+      setEmptyRowKeys(prev => ({
+        ...prev,
+        [keysArray]: [
+          ...prev[keysArray].filter(k => k !== capturedRowKey),
+          newRowKey,
+        ],
+      }))
+
+      // 3. 仮アイテムをローカル状態に追加（APIレスポンス前に表示）
+      const tempId = -Date.now() // 仮のID（負数でAPIのIDと区別）
+      const tempItem: DashboardItem = {
+        id: tempId,
+        user_id: 0,
+        dashboard_date: currentDate,
+        entry_type: entryType,
+        subject: capturedDraft.subject !== undefined ? capturedDraft.subject : null,
+        item: capturedDraft.item || "",
+        due_date: capturedDraft.due_date || null,
+        status: capturedDraft.status !== undefined ? capturedDraft.status : 1,
+        memo: capturedDraft.memo || null,
+        position: 0,
+        created_at: new Date().toISOString().split("T")[0],
+        updated_at: new Date().toISOString(),
+        deleted_at: null,
+      }
+      
+      if (entryType === 1) {
+        setPoints(prev => [...prev, tempItem])
+      } else {
+        setTasks(prev => [...prev, tempItem])
+      }
 
       try {
+        // 4. APIリクエスト
         const newItem = await apiClient.post<DashboardItem>("/api/dashboard/items", {
           dashboard_date: currentDate,
           entry_type: entryType,
@@ -1473,33 +1518,33 @@ function YourPageDashboardInner() {
           created_at: new Date().toISOString().split("T")[0],
         })
 
-        // Remove only this draft（他の空行のドラフトは保持）
-        setDraftRows(prev => {
-          const newDraft = { ...prev }
-          delete newDraft[rowKey]
-          return newDraft
-        })
-
-        // ローカル状態を直接更新（loadDashboardItemsを呼ばず、順番がずれる問題を回避）
+        // 5. 仮アイテムを実際のアイテムに置き換え
         if (entryType === 1) {
-          setPoints(prev => [...prev, newItem])
+          setPoints(prev => prev.map(p => p.id === tempId ? newItem : p))
         } else {
-          setTasks(prev => [...prev, newItem])
+          setTasks(prev => prev.map(t => t.id === tempId ? newItem : t))
         }
-
-        // 確定したキーをemptyRowKeysから削除し、新しいキーを末尾に追加
-        const newRowKey = `${entryType === 1 ? 'point' : 'task'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-        const keysArray = entryType === 1 ? 'points' : 'tasks'
+      } catch (error) {
+        console.error("Failed to create item from draft:", error)
+        // エラー時はロールバック：仮アイテムを削除し、ドラフトを復元
+        if (entryType === 1) {
+          setPoints(prev => prev.filter(p => p.id !== tempId))
+        } else {
+          setTasks(prev => prev.filter(t => t.id !== tempId))
+        }
+        // ドラフトを復元
+        setDraftRows(prev => ({
+          ...prev,
+          [capturedRowKey]: capturedDraft,
+        }))
+        // 空行キーを復元
         setEmptyRowKeys(prev => ({
           ...prev,
           [keysArray]: [
-            ...prev[keysArray].filter(k => k !== rowKey),
-            newRowKey,
+            capturedRowKey,
+            ...prev[keysArray].filter(k => k !== newRowKey),
           ],
         }))
-      } catch (error) {
-        console.error("Failed to create item from draft:", error)
-        // Keep draft on error for retry
       }
     }
 
