@@ -1971,6 +1971,7 @@ function HistoryPage() {
   const [loading, setLoading] = useState(true)
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null)  // null = 全科目
   const [selectedYear, setSelectedYear] = useState<number | null>(null)  // null = 全年度
+  const [planLimits, setPlanLimits] = useState<PlanLimitUsage | null>(null)
 
   useEffect(() => {
     const loadReviewHistory = async () => {
@@ -1989,8 +1990,21 @@ function HistoryPage() {
       }
     }
 
+    const loadPlanLimits = async () => {
+      try {
+        const data = await apiClient.get<PlanLimitUsage>("/api/users/me/plan-limits")
+        setPlanLimits(data)
+      } catch (error) {
+        console.error("Failed to load plan limits:", error)
+        setPlanLimits(null)
+      }
+    }
+
     if (mainTab === "past-questions") {
       loadReviewHistory()
+    }
+    if (mainTab === "study") {
+      loadPlanLimits()
     }
   }, [mainTab])
 
