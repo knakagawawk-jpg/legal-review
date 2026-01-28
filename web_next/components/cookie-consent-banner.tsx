@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
@@ -66,10 +65,15 @@ export function CookieConsentBanner({ onConsent, showOnlyRequired = false }: Coo
                   プライバシーポリシーへの同意
                 </Label>
                 <p className="text-sm text-muted-foreground mt-1">
-                  <Link href="/privacy-policy" className="text-indigo-600 hover:underline inline-flex items-center gap-1">
+                  <a
+                    href="/privacy-policy"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-indigo-600 hover:underline inline-flex items-center gap-1"
+                  >
                     プライバシーポリシー・Cookieポリシー
                     <ExternalLink className="h-3 w-3" />
-                  </Link>
+                  </a>
                   を確認し、同意してください。
                 </p>
               </div>
@@ -218,9 +222,14 @@ export function CookieConsentBanner({ onConsent, showOnlyRequired = false }: Coo
               同意内容は1年間有効です。設定ページからいつでも変更・撤回できます。
             </p>
             <p>
-              <Link href="/privacy-policy" className="text-indigo-600 hover:underline">
+              <a
+                href="/privacy-policy"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-indigo-600 hover:underline"
+              >
                 プライバシーポリシー・Cookieポリシー
-              </Link>
+              </a>
               を確認してください。
             </p>
           </div>
