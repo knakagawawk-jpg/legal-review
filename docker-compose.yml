@@ -291,6 +291,8 @@ services:
       start_period: 10s
 
   # プロキシ - 開発環境用（単独起動時用、通常はproxyと統合）
+  # 本番 proxy が 80/443 を使う場合は、dev は本番 proxy 経由でアクセスすること。
+  # 単独起動時のみ 8081/8444 を使用（本番と同時起動時は proxy-dev のポートは使わない）。
   proxy-dev:
     env_file:
       - .env.dev

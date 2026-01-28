@@ -5,6 +5,7 @@
 # 動作説明:
 # - localhostの場合: ポートベース（:80）でHTTPのみ（環境変数を切り替える必要はありません）
 # - サーバー上の場合: ドメインベースで自動TLS（環境変数CADDY_DOMAIN_DEVを変更）
+#   ※ proxy-dev は 80/443 でリッスン。Let's Encrypt が 80 番を使うため、応答遅延を防ぎます。
 # Caddyは自動的に適切な設定を選択します。
 
 # ポートベースの設定（localhost用、HTTPのみ）
@@ -45,6 +46,7 @@
 # ドメインベースの設定（サーバー上で使用、dev.juristutor-ai.comなど）
 # CADDY_DOMAIN_DEV=dev.juristutor-ai.com のとき、このブロックが有効になり
 # Let's Encrypt で自動TLS（HTTPS）が有効になります。
+# アクセス: https://dev.juristutor-ai.com（ポート指定不要）。
 # localhostの場合は上記の:80ブロックが使用されます。
 {$CADDY_DOMAIN_DEV:dev.localhost} {
     # 自動TLS（Let's Encrypt）で HTTPS を提供
