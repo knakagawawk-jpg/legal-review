@@ -54,7 +54,8 @@ from .schemas import (
     OfficialQuestionYearsResponse, OfficialQuestionActiveResponse,
     LlmRequestResponse, LlmRequestListResponse,
     AdminUserResponse, AdminUserListResponse, AdminStatsResponse, AdminFeatureStatsResponse,
-    AdminUserUpdateRequest, AdminDatabaseInfoResponse
+    AdminUserUpdateRequest, AdminDatabaseInfoResponse,
+    PlanLimitUsageResponse
 )
 from pydantic import BaseModel
 from .llm_service import generate_review, chat_about_review, free_chat, generate_recent_review_problems, generate_chat_title
@@ -473,6 +474,29 @@ async def get_current_user_info(
         name=current_user.name,
         is_active=current_user.is_active,
         is_admin=current_user.is_admin
+    )
+
+@app.get("/v1/users/me/plan-limits", response_model=PlanLimitUsageResponse)
+async def get_plan_limits_usage(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db)
+):
+    """現在のユーザーのプラン制限と使用量を取得（認証必須）"""
+    plan = plan_limits_module.get_user_plan(db, current_user)
+    limits = plan_limits_module.get_plan_limits(plan)
+    
+    return PlanLimitUsageResponse(
+        plan_name=plan.name if plan else None,
+        plan_code=plan.plan_code if plan else None,
+        reviews_used=plan_limits_module.count_reviews_total(db, current_user.id),
+        reviews_limit=limits.get(plan_limits_module.LIMIT_MAX_REVIEWS_TOTAL),
+        review_chat_messages_used=plan_limits_module.count_review_chat_user_messages(db, current_user.id),
+        review_chat_messages_limit=limits.get(plan_limits_module.LIMIT_MAX_REVIEW_CHAT_MESSAGES_TOTAL),
+        free_chat_messages_used=plan_limits_module.count_free_chat_user_messages(db, current_user.id),
+        free_chat_messages_limit=limits.get(plan_limits_module.LIMIT_MAX_FREE_CHAT_MESSAGES_TOTAL),
+        recent_review_daily_limit=limits.get(plan_limits_module.LIMIT_RECENT_REVIEW_DAILY),
+        non_review_cost_yen_used=float(plan_limits_module.get_non_review_cost_yen_total(db, current_user.id)),
+        non_review_cost_yen_limit=limits.get(plan_limits_module.LIMIT_MAX_NON_REVIEW_COST_YEN_TOTAL),
     )
 
 @app.put("/v1/users/me", response_model=UserResponse)

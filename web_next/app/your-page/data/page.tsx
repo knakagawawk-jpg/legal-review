@@ -293,11 +293,27 @@ function ExamTable({ data, title }: { data: ExamRecord[]; title: string }) {
 }
 
 
+// プラン制限情報の型
+interface PlanLimitUsage {
+  plan_name: string | null
+  plan_code: string | null
+  reviews_used: number
+  reviews_limit: number | null
+  review_chat_messages_used: number
+  review_chat_messages_limit: number | null
+  free_chat_messages_used: number
+  free_chat_messages_limit: number | null
+  recent_review_daily_limit: number | null
+  non_review_cost_yen_used: number
+  non_review_cost_yen_limit: number | null
+}
+
 // 勉強管理ページコンポーネント
 function StudyManagementPage() {
   const [memoItems, setMemoItems] = useState<DashboardItem[]>([])
   const [topicItems, setTopicItems] = useState<DashboardItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [planLimits, setPlanLimits] = useState<PlanLimitUsage | null>(null)
   
   // 折りたたみ状態
   const [memoOpen, setMemoOpen] = useState(true)
@@ -352,14 +368,16 @@ function StudyManagementPage() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const [memoData, topicData] = await Promise.all([
+      const [memoData, topicData, limitsData] = await Promise.all([
         apiClient.get<{ items: DashboardItem[], total: number }>("/api/dashboard/items/all?entry_type=1"),
         apiClient.get<{ items: DashboardItem[], total: number }>("/api/dashboard/items/all?entry_type=2"),
+        apiClient.get<PlanLimitUsage>("/api/users/me/plan-limits"),
       ])
       console.log("MEMO data:", memoData)
       console.log("Topics data:", topicData)
       setMemoItems(memoData.items || [])
       setTopicItems(topicData.items || [])
+      setPlanLimits(limitsData)
       
       // スクロール位置を復元
       if (hasFunctionalConsent()) {
@@ -2129,7 +2147,12 @@ function HistoryPage() {
               <History className="h-4 w-4 text-amber-600" />
               <h1 className="text-base font-semibold text-amber-900">Your Data</h1>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              {mainTab === "study" && planLimits && planLimits.reviews_limit !== null && (
+                <div className="text-xs text-muted-foreground">
+                  講評: <span className="font-semibold text-amber-700">{planLimits.reviews_used}</span> / <span className="font-semibold">{planLimits.reviews_limit}</span>回
+                </div>
+              )}
               <Tabs value={mainTab} onValueChange={(v) => {
                 if (v === "study" || v === "past-questions") {
                   setMainTab(v)

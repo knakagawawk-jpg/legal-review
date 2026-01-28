@@ -716,3 +716,28 @@ class AdminDatabaseInfoResponse(BaseModel):
     """管理者用データベース情報レスポンス"""
     current_database_url: str
     available_databases: List[Dict[str, str]]
+
+
+class PlanLimitUsageResponse(BaseModel):
+    """プラン制限と使用量"""
+    plan_name: Optional[str] = None
+    plan_code: Optional[str] = None
+    
+    # Review制限
+    reviews_used: int
+    reviews_limit: Optional[int] = None
+    
+    # Review Chat制限
+    review_chat_messages_used: int
+    review_chat_messages_limit: Optional[int] = None
+    
+    # Free Chat制限
+    free_chat_messages_used: int
+    free_chat_messages_limit: Optional[int] = None
+    
+    # 復習問題生成制限（日次）
+    recent_review_daily_limit: Optional[int] = None
+    
+    # Review以外のコスト制限
+    non_review_cost_yen_used: float
+    non_review_cost_yen_limit: Optional[int] = None
