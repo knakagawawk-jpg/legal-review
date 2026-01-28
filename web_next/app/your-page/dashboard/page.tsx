@@ -17,6 +17,7 @@ import { SidebarToggle } from "@/components/sidebar"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { withAuth } from "@/components/auth/with-auth"
+import { getSubjectShortName } from "@/lib/subjects"
 import { Calendar, DatePickerCalendar } from "@/components/ui/calendar"
 import { apiClient } from "@/lib/api-client"
 import { authStorage } from "@/lib/auth-storage"
@@ -337,6 +338,15 @@ function YourPageDashboardInner() {
   // Draft state for empty rows (key: rowKey, value: draft data)
   const [draftRows, setDraftRows] = useState<Record<string, Partial<DashboardItem>>>({})
 
+  // 空行用の固定キー（UUIDベース）- インデックスベースだと確定時に順番がずれる問題を回避
+  const [emptyRowKeys, setEmptyRowKeys] = useState<{
+    points: string[]
+    tasks: string[]
+  }>({
+    points: [`point-${Date.now()}-0`, `point-${Date.now()}-1`],
+    tasks: [`task-${Date.now()}-0`, `task-${Date.now()}-1`],
+  })
+
   // Popover open state for date pickers (key: itemId, value: boolean)
   const [datePickerOpen, setDatePickerOpen] = useState<Record<number, boolean>>({})
 
@@ -350,13 +360,13 @@ function YourPageDashboardInner() {
     return 0
   }
 
-  // Get empty rows for Points
+  // Get empty rows for Points (固定キーを使用)
   const emptyPointsRowsCount = getEmptyRowsCount(points.length)
-  const emptyPointsRows = Array.from({ length: emptyPointsRowsCount }, (_, i) => i)
+  const emptyPointsRows = emptyRowKeys.points.slice(0, emptyPointsRowsCount)
 
-  // Get empty rows for Tasks
+  // Get empty rows for Tasks (固定キーを使用)
   const emptyTasksRowsCount = getEmptyRowsCount(tasks.length)
-  const emptyTasksRows = Array.from({ length: emptyTasksRowsCount }, (_, i) => i)
+  const emptyTasksRows = emptyRowKeys.tasks.slice(0, emptyTasksRowsCount)
 
   // Subjects
   const [subjects, setSubjects] = useState<Subject[]>([])
@@ -1113,7 +1123,7 @@ function YourPageDashboardInner() {
                 const color = SUBJECT_COLORS[s.name] || ""
                 return (
                   <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
-                    <span className={color ? `px-1.5 py-0.5 rounded ${color}` : ""}>{s.name}</span>
+                    <span className={color ? `px-1.5 py-0.5 rounded ${color}` : ""}>{getSubjectShortName(s.name)}</span>
                   </SelectItem>
                 )
               })}
@@ -1178,9 +1188,9 @@ function YourPageDashboardInner() {
           >
             <SelectTrigger className="h-7 text-[10px] border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
               {selectedSubject && subjectColor ? (
-                <span className={`px-1.5 py-0.5 rounded ${subjectColor}`}>{selectedSubject.name}</span>
+                <span className={`px-1.5 py-0.5 rounded ${subjectColor}`}>{getSubjectShortName(selectedSubject.name)}</span>
               ) : selectedSubject ? (
-                <span>{selectedSubject.name}</span>
+                <span>{getSubjectShortName(selectedSubject.name)}</span>
               ) : (
                 <SelectValue placeholder="--" />
               )}
@@ -1191,9 +1201,9 @@ function YourPageDashboardInner() {
                 return (
                   <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
                     {color ? (
-                      <span className={`px-1.5 py-0.5 rounded ${color}`}>{s.name}</span>
+                      <span className={`px-1.5 py-0.5 rounded ${color}`}>{getSubjectShortName(s.name)}</span>
                     ) : (
-                      s.name
+                      getSubjectShortName(s.name)
                     )}
                   </SelectItem>
                 )
@@ -1309,9 +1319,9 @@ function YourPageDashboardInner() {
           >
             <SelectTrigger className="h-7 text-[10px] border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
               {selectedSubject && subjectColor ? (
-                <span className={`px-1.5 py-0.5 rounded ${subjectColor}`}>{selectedSubject.name}</span>
+                <span className={`px-1.5 py-0.5 rounded ${subjectColor}`}>{getSubjectShortName(selectedSubject.name)}</span>
               ) : selectedSubject ? (
-                <span>{selectedSubject.name}</span>
+                <span>{getSubjectShortName(selectedSubject.name)}</span>
               ) : (
                 <SelectValue placeholder="--" />
               )}
@@ -1322,9 +1332,9 @@ function YourPageDashboardInner() {
                 return (
                   <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
                     {color ? (
-                      <span className={`px-1.5 py-0.5 rounded ${color}`}>{s.name}</span>
+                      <span className={`px-1.5 py-0.5 rounded ${color}`}>{getSubjectShortName(s.name)}</span>
                     ) : (
-                      s.name
+                      getSubjectShortName(s.name)
                     )}
                   </SelectItem>
                 )
@@ -1418,8 +1428,8 @@ function YourPageDashboardInner() {
   }
 
   // Render empty row (draft row)
-  const renderEmptyRow = (entryType: number, index: number) => {
-    const rowKey = `${entryType}-${index}`
+  // rowKeyは固定キー（UUIDベース）を使用し、確定時に順番がずれる問題を回避
+  const renderEmptyRow = (entryType: number, rowKey: string) => {
     const draft = draftRows[rowKey] || {}
 
     // Update draft state
@@ -1443,37 +1453,50 @@ function YourPageDashboardInner() {
     // Confirm draft and create item
     const confirmDraft = async () => {
       if (!hasValidDraft()) {
-        // Cancel draft if empty
-        setDraftRows(prev => {
-          const newDraft = { ...prev }
-          delete newDraft[rowKey]
-          return newDraft
-        })
+        // Cancel draft if empty - ドラフトデータは削除しない（他のフィールドの入力を保持）
         return
       }
+
+      // 確定前にドラフトデータをキャプチャ（非同期処理中に変わる可能性があるため）
+      const capturedDraft = { ...draft }
 
       try {
         const newItem = await apiClient.post<DashboardItem>("/api/dashboard/items", {
           dashboard_date: currentDate,
           entry_type: entryType,
-          item: draft.item || "",
-          subject: draft.subject || null,
-          status: draft.status || 1,
-          memo: draft.memo || null,
-          due_date: draft.due_date || null,
+          item: capturedDraft.item || "",
+          subject: capturedDraft.subject !== undefined ? capturedDraft.subject : null,
+          status: capturedDraft.status !== undefined ? capturedDraft.status : 1,
+          memo: capturedDraft.memo || null,
+          due_date: capturedDraft.due_date || null,
           position: null,
           created_at: new Date().toISOString().split("T")[0],
         })
 
-        // Remove draft
+        // Remove only this draft（他の空行のドラフトは保持）
         setDraftRows(prev => {
           const newDraft = { ...prev }
           delete newDraft[rowKey]
           return newDraft
         })
 
-        // Reload items
-        await loadDashboardItems()
+        // ローカル状態を直接更新（loadDashboardItemsを呼ばず、順番がずれる問題を回避）
+        if (entryType === 1) {
+          setPoints(prev => [...prev, newItem])
+        } else {
+          setTasks(prev => [...prev, newItem])
+        }
+
+        // 確定したキーをemptyRowKeysから削除し、新しいキーを末尾に追加
+        const newRowKey = `${entryType === 1 ? 'point' : 'task'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        const keysArray = entryType === 1 ? 'points' : 'tasks'
+        setEmptyRowKeys(prev => ({
+          ...prev,
+          [keysArray]: [
+            ...prev[keysArray].filter(k => k !== rowKey),
+            newRowKey,
+          ],
+        }))
       } catch (error) {
         console.error("Failed to create item from draft:", error)
         // Keep draft on error for retry
@@ -1498,24 +1521,18 @@ function YourPageDashboardInner() {
       const selectedDraftSubject = subjects.find(s => s.id === draft.subject)
       const draftSubjectColor = selectedDraftSubject ? SUBJECT_COLORS[selectedDraftSubject.name] || "" : ""
       return (
-        <TableRow key={`empty-point-${index}`}>
+        <TableRow key={rowKey}>
           <TableCell className="py-1.5 px-1 w-6"></TableCell>
           <TableCell className="py-1.5 px-0.5 w-14 align-top">
             <Select
               value={draft.subject?.toString() || undefined}
               onValueChange={(value) => updateDraft("subject", value ? parseInt(value) : null)}
-              onOpenChange={(open) => {
-                if (!open) {
-                  // Blur when select closes
-                  setTimeout(handleBlur, 100)
-                }
-              }}
             >
               <SelectTrigger className="h-7 text-[10px] border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
                 {selectedDraftSubject && draftSubjectColor ? (
-                  <span className={`px-1.5 py-0.5 rounded ${draftSubjectColor}`}>{selectedDraftSubject.name}</span>
+                  <span className={`px-1.5 py-0.5 rounded ${draftSubjectColor}`}>{getSubjectShortName(selectedDraftSubject.name)}</span>
                 ) : selectedDraftSubject ? (
-                  <span>{selectedDraftSubject.name}</span>
+                  <span>{getSubjectShortName(selectedDraftSubject.name)}</span>
                 ) : (
                   <SelectValue placeholder="--" />
                 )}
@@ -1526,9 +1543,9 @@ function YourPageDashboardInner() {
                   return (
                     <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
                       {color ? (
-                        <span className={`px-1.5 py-0.5 rounded ${color}`}>{s.name}</span>
+                        <span className={`px-1.5 py-0.5 rounded ${color}`}>{getSubjectShortName(s.name)}</span>
                       ) : (
-                        s.name
+                        getSubjectShortName(s.name)
                       )}
                     </SelectItem>
                   )
@@ -1550,12 +1567,6 @@ function YourPageDashboardInner() {
             <Select
               value={draft.status?.toString() || undefined}
               onValueChange={(value) => updateDraft("status", parseInt(value))}
-              onOpenChange={(open) => {
-                if (!open) {
-                  // Blur when select closes
-                  setTimeout(handleBlur, 100)
-                }
-              }}
             >
               <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-14">
                 <SelectValue placeholder="論文" />
@@ -1584,24 +1595,18 @@ function YourPageDashboardInner() {
       const selectedDraftSubject = subjects.find(s => s.id === draft.subject)
       const draftSubjectColor = selectedDraftSubject ? SUBJECT_COLORS[selectedDraftSubject.name] || "" : ""
       return (
-        <TableRow key={`empty-task-${index}`}>
+        <TableRow key={rowKey}>
           <TableCell className="py-1.5 px-1 w-6"></TableCell>
           <TableCell className="py-1.5 px-0.5 w-14 align-top">
             <Select
               value={draft.subject?.toString() || undefined}
               onValueChange={(value) => updateDraft("subject", value ? parseInt(value) : null)}
-              onOpenChange={(open) => {
-                if (!open) {
-                  // Blur when select closes
-                  setTimeout(handleBlur, 100)
-                }
-              }}
             >
               <SelectTrigger className="h-7 text-[10px] border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
                 {selectedDraftSubject && draftSubjectColor ? (
-                  <span className={`px-1.5 py-0.5 rounded ${draftSubjectColor}`}>{selectedDraftSubject.name}</span>
+                  <span className={`px-1.5 py-0.5 rounded ${draftSubjectColor}`}>{getSubjectShortName(selectedDraftSubject.name)}</span>
                 ) : selectedDraftSubject ? (
-                  <span>{selectedDraftSubject.name}</span>
+                  <span>{getSubjectShortName(selectedDraftSubject.name)}</span>
                 ) : (
                   <SelectValue placeholder="--" />
                 )}
@@ -1612,9 +1617,9 @@ function YourPageDashboardInner() {
                   return (
                     <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
                       {color ? (
-                        <span className={`px-1.5 py-0.5 rounded ${color}`}>{s.name}</span>
+                        <span className={`px-1.5 py-0.5 rounded ${color}`}>{getSubjectShortName(s.name)}</span>
                       ) : (
-                        s.name
+                        getSubjectShortName(s.name)
                       )}
                     </SelectItem>
                   )
@@ -1664,12 +1669,6 @@ function YourPageDashboardInner() {
             <Select
               value={draft.status?.toString() || undefined}
               onValueChange={(value) => updateDraft("status", parseInt(value))}
-              onOpenChange={(open) => {
-                if (!open) {
-                  // Blur when select closes
-                  setTimeout(handleBlur, 100)
-                }
-              }}
             >
               <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-14">
                 <SelectValue placeholder="未了" />
@@ -1829,7 +1828,7 @@ function YourPageDashboardInner() {
                       <SortableContext items={points.map(p => p.id.toString())} strategy={verticalListSortingStrategy}>
                         <tbody>
                           {points.map(renderPointRow)}
-                          {emptyPointsRows.map((index) => renderEmptyRow(1, index))}
+                          {emptyPointsRows.map((rowKey) => renderEmptyRow(1, rowKey))}
                         </tbody>
                       </SortableContext>
                     </table>
@@ -1879,7 +1878,7 @@ function YourPageDashboardInner() {
                       <SortableContext items={tasks.map(t => t.id.toString())} strategy={verticalListSortingStrategy}>
                         <tbody>
                           {tasks.map(renderTaskRow)}
-                          {emptyTasksRows.map((index) => renderEmptyRow(2, index))}
+                          {emptyTasksRows.map((rowKey) => renderEmptyRow(2, rowKey))}
                         </tbody>
                       </SortableContext>
                     </table>
@@ -2080,7 +2079,7 @@ function YourPageDashboardInner() {
                                   <TableCell className="align-top py-2 w-32">
                                     {subj ? (
                                       <span className={cn("text-[10px] px-2 py-0.5 rounded", SUBJECT_COLORS[subj.name] || "bg-muted text-muted-foreground")}>
-                                        {subj.name}
+                                        {getSubjectShortName(subj.name)}
                                       </span>
                                     ) : (
                                       <span className="text-[10px] text-muted-foreground">--</span>

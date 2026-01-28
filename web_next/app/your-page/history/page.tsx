@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
-import { FIXED_SUBJECTS, getSubjectName, getSubjectId, getSubjectShortName } from "@/lib/subjects"
+import { FIXED_SUBJECTS, getSubjectName, getSubjectId } from "@/lib/subjects"
 import { withAuth } from "@/components/auth/with-auth"
 import { apiClient } from "@/lib/api-client"
 import { hasFunctionalConsent } from "@/lib/cookie-consent"
@@ -293,65 +293,49 @@ function ExamTable({ data, title }: { data: ExamRecord[]; title: string }) {
 }
 
 
-// プラン制限情報の型
-interface PlanLimitUsage {
-  plan_name: string | null
-  plan_code: string | null
-  reviews_used: number
-  reviews_limit: number | null
-  review_chat_messages_used: number
-  review_chat_messages_limit: number | null
-  free_chat_messages_used: number
-  free_chat_messages_limit: number | null
-  recent_review_daily_limit: number | null
-  non_review_cost_yen_used: number
-  non_review_cost_yen_limit: number | null
-}
-
 // 勉強管理ページコンポーネント
 function StudyManagementPage() {
   const [memoItems, setMemoItems] = useState<DashboardItem[]>([])
   const [topicItems, setTopicItems] = useState<DashboardItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [planLimits, setPlanLimits] = useState<PlanLimitUsage | null>(null)
-  
+
   // 折りたたみ状態
   const [memoOpen, setMemoOpen] = useState(true)
   const [topicOpen, setTopicOpen] = useState(true)
-  
+
   // MEMO用フィルター
   const [memoSubjectFilter, setMemoSubjectFilter] = useState<string | null>(null)
   const [memoStatusFilter, setMemoStatusFilter] = useState<number | null>(null)
   const [memoStartDate, setMemoStartDate] = useState<Date | undefined>(undefined)
   const [memoEndDate, setMemoEndDate] = useState<Date | undefined>(undefined)
   const [memoFavoriteFilter, setMemoFavoriteFilter] = useState<"fav-only" | "fav-except" | "all">("all")
-  
+
   // Topics用フィルター
   const [topicSubjectFilter, setTopicSubjectFilter] = useState<string | null>(null)
   const [topicStatusFilter, setTopicStatusFilter] = useState<number | null>(null)
   const [topicStartDate, setTopicStartDate] = useState<Date | undefined>(undefined)
   const [topicEndDate, setTopicEndDate] = useState<Date | undefined>(undefined)
   const [topicFavoriteFilter, setTopicFavoriteFilter] = useState<"fav-only" | "fav-except" | "all">("all")
-  
+
   // スクロール位置保持用
   const memoScrollRef = useRef<HTMLDivElement>(null)
   const topicScrollRef = useRef<HTMLDivElement>(null)
-  
+
   // favorite更新用のタイマー
   const favoriteUpdateTimers = useRef<Record<number, NodeJS.Timeout>>({})
-  
+
   // メモ更新用のタイマー
   const memoUpdateTimers = useRef<Record<number, NodeJS.Timeout>>({})
   const pendingMemoUpdates = useRef<Record<number, string>>({})
-  
+
   // 項目・科目・種類更新用のタイマー
   const itemUpdateTimers = useRef<Record<number, NodeJS.Timeout>>({})
   const pendingItemUpdates = useRef<Record<number, Partial<DashboardItem>>>({})
-  
+
   // 作成日編集用のPopover状態
   const [memoCreatedDatePickerOpen, setMemoCreatedDatePickerOpen] = useState<Record<number, boolean>>({})
   const [topicCreatedDatePickerOpen, setTopicCreatedDatePickerOpen] = useState<Record<number, boolean>>({})
-  
+
   // Sensors for drag and drop
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -363,22 +347,20 @@ function StudyManagementPage() {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   )
-  
+
   // データ取得
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const [memoData, topicData, limitsData] = await Promise.all([
+      const [memoData, topicData] = await Promise.all([
         apiClient.get<{ items: DashboardItem[], total: number }>("/api/dashboard/items/all?entry_type=1"),
         apiClient.get<{ items: DashboardItem[], total: number }>("/api/dashboard/items/all?entry_type=2"),
-        apiClient.get<PlanLimitUsage>("/api/users/me/plan-limits"),
       ])
       console.log("MEMO data:", memoData)
       console.log("Topics data:", topicData)
       setMemoItems(memoData.items || [])
       setTopicItems(topicData.items || [])
-      setPlanLimits(limitsData)
-      
+
       // スクロール位置を復元
       if (hasFunctionalConsent()) {
         const memoScrollPos = localStorage.getItem("study-memo-scroll")
@@ -404,7 +386,7 @@ function StudyManagementPage() {
   useEffect(() => {
     loadData()
   }, [loadData])
-  
+
   // 新しいMEMOアイテムを作成
   const createMemoItem = useCallback(async () => {
     try {
@@ -422,7 +404,7 @@ function StudyManagementPage() {
       console.error("Failed to create memo item:", error)
     }
   }, [loadData])
-  
+
   // 新しいTopicsアイテムを作成
   const createTopicItem = useCallback(async () => {
     try {
@@ -440,7 +422,7 @@ function StudyManagementPage() {
       console.error("Failed to create topic item:", error)
     }
   }, [loadData])
-  
+
   // アイテム削除
   const deleteItem = useCallback(async (itemId: number) => {
     try {
@@ -450,7 +432,7 @@ function StudyManagementPage() {
       console.error("Failed to delete item:", error)
     }
   }, [loadData])
-  
+
   // MEMOのドラッグ終了処理
   const handleDragEndMemo = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event
@@ -488,7 +470,7 @@ function StudyManagementPage() {
       }
     }
   }, [memoItems, loadData])
-  
+
   // Topicsのドラッグ終了処理
   const handleDragEndTopic = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event
@@ -526,31 +508,31 @@ function StudyManagementPage() {
       }
     }
   }, [topicItems, loadData])
-  
+
   // スクロール位置を保存
   const handleMemoScroll = useCallback(() => {
     if (memoScrollRef.current && hasFunctionalConsent()) {
       localStorage.setItem("study-memo-scroll", memoScrollRef.current.scrollTop.toString())
     }
   }, [])
-  
+
   const handleTopicScroll = useCallback(() => {
     if (topicScrollRef.current && hasFunctionalConsent()) {
       localStorage.setItem("study-topic-scroll", topicScrollRef.current.scrollTop.toString())
     }
   }, [])
-  
+
   // favorite更新（5秒バッファ付き）
   const updateFavorite = useCallback(async (itemId: number, favorite: number) => {
     // 既存のタイマーをクリア
     if (favoriteUpdateTimers.current[itemId]) {
       clearTimeout(favoriteUpdateTimers.current[itemId])
     }
-    
+
     // 楽観的更新
     setMemoItems(prev => prev.map(item => item.id === itemId ? { ...item, favorite } : item))
     setTopicItems(prev => prev.map(item => item.id === itemId ? { ...item, favorite } : item))
-    
+
     // 5秒後にDBに保存
     favoriteUpdateTimers.current[itemId] = setTimeout(async () => {
       try {
@@ -564,7 +546,7 @@ function StudyManagementPage() {
       }
     }, 5000)
   }, [])
-  
+
   // メモ更新（debounce付き）
   const updateMemo = useCallback(async (itemId: number, memo: string, entryType: number) => {
     // 楽観的更新
@@ -573,15 +555,15 @@ function StudyManagementPage() {
     } else {
       setTopicItems(prev => prev.map(item => item.id === itemId ? { ...item, memo } : item))
     }
-    
+
     // 既存のタイマーをクリア
     if (memoUpdateTimers.current[itemId]) {
       clearTimeout(memoUpdateTimers.current[itemId])
     }
-    
+
     // 更新内容を保存
     pendingMemoUpdates.current[itemId] = memo
-    
+
     // 5秒後にDBに保存
     memoUpdateTimers.current[itemId] = setTimeout(async () => {
       try {
@@ -596,7 +578,7 @@ function StudyManagementPage() {
       }
     }, 5000)
   }, [])
-  
+
   // 項目・科目・種類更新（debounce付き）
   const updateItemField = useCallback(async (itemId: number, field: keyof DashboardItem, value: any, entryType: number) => {
     // 楽観的更新
@@ -605,18 +587,18 @@ function StudyManagementPage() {
     } else {
       setTopicItems(prev => prev.map(item => item.id === itemId ? { ...item, [field]: value } : item))
     }
-    
+
     // 既存のタイマーをクリア
     if (itemUpdateTimers.current[itemId]) {
       clearTimeout(itemUpdateTimers.current[itemId])
     }
-    
+
     // 更新内容を保存
     pendingItemUpdates.current[itemId] = {
       ...pendingItemUpdates.current[itemId],
       [field]: value
     }
-    
+
     // 0.8秒後にDBに保存
     itemUpdateTimers.current[itemId] = setTimeout(async () => {
       try {
@@ -633,11 +615,11 @@ function StudyManagementPage() {
       }
     }, 800)
   }, [loadData])
-  
+
   // フィルター適用後のMEMO
   const filteredMemoItems = useMemo(() => {
     let filtered = [...memoItems]
-    
+
     // 科目フィルター
     if (memoSubjectFilter !== null) {
       const subjectId = getSubjectId(memoSubjectFilter)
@@ -648,12 +630,12 @@ function StudyManagementPage() {
         return getSubjectName(item.subject || 0) === memoSubjectFilter
       })
     }
-    
+
     // 種類フィルター
     if (memoStatusFilter !== null) {
       filtered = filtered.filter(item => item.status === memoStatusFilter)
     }
-    
+
     // 期間フィルター
     if (memoStartDate) {
       // JST 4:00区切り（=28時の「今日」）と整合するため、JSTの暦日で比較する
@@ -674,14 +656,14 @@ function StudyManagementPage() {
         return item.created_at <= endStr
       })
     }
-    
+
     // favoriteフィルター
     if (memoFavoriteFilter === "fav-only") {
       filtered = filtered.filter(item => item.favorite === 1)
     } else if (memoFavoriteFilter === "fav-except") {
       filtered = filtered.filter(item => item.favorite === 0)
     }
-    
+
     // ソート: favoriteのうち作成日が新しい順→favoriteじゃないもので作成日が新しい順
     filtered.sort((a, b) => {
       if (a.favorite !== b.favorite) {
@@ -691,14 +673,14 @@ function StudyManagementPage() {
       const bDate = b.created_at || ""
       return bDate.localeCompare(aDate)
     })
-    
+
     return filtered
   }, [memoItems, memoSubjectFilter, memoStatusFilter, memoStartDate, memoEndDate, memoFavoriteFilter])
-  
+
   // フィルター適用後のTopics
   const filteredTopicItems = useMemo(() => {
     let filtered = [...topicItems]
-    
+
     // 科目フィルター
     if (topicSubjectFilter !== null) {
       const subjectId = getSubjectId(topicSubjectFilter)
@@ -709,12 +691,12 @@ function StudyManagementPage() {
         return getSubjectName(item.subject || 0) === topicSubjectFilter
       })
     }
-    
+
     // 種類フィルター
     if (topicStatusFilter !== null) {
       filtered = filtered.filter(item => item.status === topicStatusFilter)
     }
-    
+
     // 期間フィルター
     if (topicStartDate) {
       const startStr = new Date(topicStartDate.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }))
@@ -734,14 +716,14 @@ function StudyManagementPage() {
         return item.created_at <= endStr
       })
     }
-    
+
     // favoriteフィルター
     if (topicFavoriteFilter === "fav-only") {
       filtered = filtered.filter(item => item.favorite === 1)
     } else if (topicFavoriteFilter === "fav-except") {
       filtered = filtered.filter(item => item.favorite === 0)
     }
-    
+
     // ソート: favoriteのうち作成日が新しい順→favoriteじゃないもので作成日が新しい順
     filtered.sort((a, b) => {
       if (a.favorite !== b.favorite) {
@@ -751,41 +733,32 @@ function StudyManagementPage() {
       const bDate = b.created_at || ""
       return bDate.localeCompare(aDate)
     })
-    
+
     return filtered
   }, [topicItems, topicSubjectFilter, topicStatusFilter, topicStartDate, topicEndDate, topicFavoriteFilter])
-  
+
   // 日付フォーマット
   const formatDate = (dateString: string | null) => {
     if (!dateString) return ""
     const date = new Date(dateString)
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
   }
-  
+
   // 科目リスト
   const subjects = FIXED_SUBJECTS.map(name => ({
     id: getSubjectId(name),
     name,
   })).filter(s => s.id !== null) as Array<{ id: number; name: string }>
-  
+
   return (
     <div className="space-y-4">
-      {/* 講評回数（使用/上限） */}
+      {/* 今月の講評回数（右上） */}
       <div className="flex justify-end mb-2">
         <div className="text-sm text-muted-foreground">
-          講評回数：
-          {planLimits?.reviews_limit != null ? (
-            <span className="font-semibold text-amber-700">{planLimits.reviews_used}</span>
-          ) : (
-            <span className="font-semibold">{planLimits?.reviews_used ?? "-"}</span>
-          )}
-          {planLimits?.reviews_limit != null && (
-            <> / <span className="font-semibold">{planLimits.reviews_limit}</span></>
-          )}
-          回
+          今月の講評回数：<span className="font-semibold">-回</span>
         </div>
       </div>
-      
+
       {/* Your MEMO */}
       <Card className="shadow-sm border-amber-200/60">
         <CardHeader className="py-1.5 px-3">
@@ -831,250 +804,250 @@ function StudyManagementPage() {
         <Collapsible open={memoOpen} onOpenChange={setMemoOpen}>
           <CollapsibleContent>
             <CardContent className="px-3 pb-2">
-          {/* MEMO用フィルター */}
-          <div className="mb-2 flex items-center gap-2 flex-wrap">
-            {/* 科目 */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className={cn(
-                  "flex items-center gap-1.5 text-xs transition-colors px-2 py-1 rounded-md hover:opacity-80",
-                  memoSubjectFilter 
-                    ? (SUBJECT_COLORS[memoSubjectFilter] || "bg-amber-100 text-amber-900")
-                    : "bg-gray-100 text-gray-700"
-                )}>
-                  <span>{memoSubjectFilter ? getSubjectShortName(memoSubjectFilter) : "全科目"}</span>
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" side="bottom" className="w-32">
-                <DropdownMenuItem
-                  onClick={() => setMemoSubjectFilter(null)}
-                  className={cn(
-                    "text-xs cursor-pointer rounded-sm",
-                    "bg-gray-100 text-gray-700",
-                    memoSubjectFilter === null && "ring-2 ring-offset-1 ring-amber-500 font-medium"
-                  )}
+              {/* MEMO用フィルター */}
+              <div className="mb-2 flex items-center gap-2 flex-wrap">
+                {/* 科目 */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className={cn(
+                      "flex items-center gap-1.5 text-xs transition-colors px-2 py-1 rounded-md hover:opacity-80",
+                      memoSubjectFilter
+                        ? (SUBJECT_COLORS[memoSubjectFilter] || "bg-amber-100 text-amber-900")
+                        : "bg-gray-100 text-gray-700"
+                    )}>
+                      <span>{memoSubjectFilter || "全科目"}</span>
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" side="bottom" className="w-32">
+                    <DropdownMenuItem
+                      onClick={() => setMemoSubjectFilter(null)}
+                      className={cn(
+                        "text-xs cursor-pointer rounded-sm",
+                        "bg-gray-100 text-gray-700",
+                        memoSubjectFilter === null && "ring-2 ring-offset-1 ring-amber-500 font-medium"
+                      )}
+                    >
+                      全科目
+                    </DropdownMenuItem>
+                    {FIXED_SUBJECTS.map((subject) => (
+                      <DropdownMenuItem
+                        key={subject}
+                        onClick={() => setMemoSubjectFilter(subject)}
+                        className={cn(
+                          "text-xs cursor-pointer rounded-sm",
+                          SUBJECT_COLORS[subject] || "bg-gray-100 text-gray-700",
+                          memoSubjectFilter === subject && "ring-2 ring-offset-1 ring-amber-500 font-medium"
+                        )}
+                      >
+                        {subject}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* 種類 */}
+                <Select
+                  value={memoStatusFilter?.toString() || "all"}
+                  onValueChange={(value) => {
+                    if (value === "all") {
+                      setMemoStatusFilter(null)
+                    } else {
+                      setMemoStatusFilter(parseInt(value))
+                    }
+                  }}
                 >
-                  全科目
-                </DropdownMenuItem>
-                {FIXED_SUBJECTS.map((subject) => (
-                  <DropdownMenuItem
-                    key={subject}
-                    onClick={() => setMemoSubjectFilter(subject)}
-                    className={cn(
-                      "text-xs cursor-pointer rounded-sm",
-                      SUBJECT_COLORS[subject] || "bg-gray-100 text-gray-700",
-                      memoSubjectFilter === subject && "ring-2 ring-offset-1 ring-amber-500 font-medium"
-                    )}
-                  >
-                    {getSubjectShortName(subject)}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            
-            {/* 種類 */}
-            <Select 
-              value={memoStatusFilter?.toString() || "all"} 
-              onValueChange={(value) => {
-                if (value === "all") {
-                  setMemoStatusFilter(null)
-                } else {
-                  setMemoStatusFilter(parseInt(value))
-                }
-              }}
-            >
-              <SelectTrigger className="h-7 text-xs w-24">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all" className="text-xs">全種類</SelectItem>
-                {POINT_STATUS_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            
-            {/* 期間 */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-7 text-xs">
-                  <CalendarIcon className="h-3 w-3 mr-1" />
-                  {memoStartDate ? formatDate(memoStartDate.toISOString()) : "開始日"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <DatePickerCalendar
-                  selectedDate={memoStartDate || null}
-                  onSelect={(date) => setMemoStartDate(date || undefined)}
-                />
-              </PopoverContent>
-            </Popover>
-            <span className="text-xs text-muted-foreground">～</span>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-7 text-xs">
-                  <CalendarIcon className="h-3 w-3 mr-1" />
-                  {memoEndDate ? formatDate(memoEndDate.toISOString()) : "終了日"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <DatePickerCalendar
-                  selectedDate={memoEndDate || null}
-                  onSelect={(date) => setMemoEndDate(date || undefined)}
-                />
-              </PopoverContent>
-            </Popover>
-            
-            {/* fav */}
-            <Select 
-              value={memoFavoriteFilter} 
-              onValueChange={(value) => {
-                setMemoFavoriteFilter(value as "fav-only" | "fav-except" | "all")
-              }}
-            >
-              <SelectTrigger className="h-7 text-xs w-28">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="fav-only" className="text-xs">favのみ</SelectItem>
-                <SelectItem value="fav-except" className="text-xs">fav以外</SelectItem>
-                <SelectItem value="all" className="text-xs">フィルターなし</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          
-          {/* MEMOテーブル */}
-          <div 
-            ref={memoScrollRef}
-            onScroll={handleMemoScroll}
-            className="overflow-y-auto"
-            style={{ maxHeight: "480px" }} // 20行分（1.5rem * 20）
-          >
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleDragEndMemo}
-            >
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-xs text-muted-foreground sticky top-0 bg-white">
-                    <th className="py-1 px-1 w-6"></th>
-                    <th className="py-1 px-0.5 w-14 text-left font-medium">科目</th>
-                    <th className="py-1 px-1 w-[120px] text-left font-medium">項目</th>
-                    <th className="py-1 px-0 w-14 text-left font-medium">種類</th>
-                    <th className="py-1 px-1 text-left font-medium">メモ</th>
-                    <th className="py-1 px-1 w-8 text-center font-medium">♡</th>
-                  </tr>
-                </thead>
-                <SortableContext items={filteredMemoItems.map(p => p.id.toString())} strategy={verticalListSortingStrategy}>
-                  <tbody>
-                    {loading ? (
-                      <tr>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground py-6 text-sm">
-                          読み込み中...
-                        </TableCell>
+                  <SelectTrigger className="h-7 text-xs w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="text-xs">全種類</SelectItem>
+                    {POINT_STATUS_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* 期間 */}
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-7 text-xs">
+                      <CalendarIcon className="h-3 w-3 mr-1" />
+                      {memoStartDate ? formatDate(memoStartDate.toISOString()) : "開始日"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <DatePickerCalendar
+                      selectedDate={memoStartDate || null}
+                      onSelect={(date) => setMemoStartDate(date || undefined)}
+                    />
+                  </PopoverContent>
+                </Popover>
+                <span className="text-xs text-muted-foreground">～</span>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-7 text-xs">
+                      <CalendarIcon className="h-3 w-3 mr-1" />
+                      {memoEndDate ? formatDate(memoEndDate.toISOString()) : "終了日"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <DatePickerCalendar
+                      selectedDate={memoEndDate || null}
+                      onSelect={(date) => setMemoEndDate(date || undefined)}
+                    />
+                  </PopoverContent>
+                </Popover>
+
+                {/* fav */}
+                <Select
+                  value={memoFavoriteFilter}
+                  onValueChange={(value) => {
+                    setMemoFavoriteFilter(value as "fav-only" | "fav-except" | "all")
+                  }}
+                >
+                  <SelectTrigger className="h-7 text-xs w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="fav-only" className="text-xs">favのみ</SelectItem>
+                    <SelectItem value="fav-except" className="text-xs">fav以外</SelectItem>
+                    <SelectItem value="all" className="text-xs">フィルターなし</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* MEMOテーブル */}
+              <div
+                ref={memoScrollRef}
+                onScroll={handleMemoScroll}
+                className="overflow-y-auto"
+                style={{ maxHeight: "480px" }} // 20行分（1.5rem * 20）
+              >
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEndMemo}
+                >
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-xs text-muted-foreground sticky top-0 bg-white">
+                        <th className="py-1 px-1 w-6"></th>
+                        <th className="py-1 px-0.5 w-14 text-left font-medium">科目</th>
+                        <th className="py-1 px-1 w-[120px] text-left font-medium">項目</th>
+                        <th className="py-1 px-0 w-14 text-left font-medium">種類</th>
+                        <th className="py-1 px-1 text-left font-medium">メモ</th>
+                        <th className="py-1 px-1 w-8 text-center font-medium">♡</th>
                       </tr>
-                    ) : filteredMemoItems.length === 0 ? (
-                      <tr>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground py-6 text-sm">
-                          データがありません
-                        </TableCell>
-                      </tr>
-                    ) : (
-                      filteredMemoItems.map((item) => {
-                    const statusOption = POINT_STATUS_OPTIONS.find((s) => s.value === item.status)
-                    const selectedSubject = subjects.find(s => s.id === item.subject)
-                    return (
-                      <SortableRow key={item.id} item={item} onDelete={deleteItem}>
-                        <TableCell className="py-1.5 px-0.5 w-14 align-top">
-                          <Select
-                            value={item.subject?.toString() || undefined}
-                            onValueChange={(value) => updateItemField(item.id, "subject", value ? parseInt(value) : null, 1)}
-                          >
-                            <SelectTrigger className="h-7 text-[10px] border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
-                              {selectedSubject ? (
-                                <span className={cn("text-xs px-1.5 py-0.5 rounded", SUBJECT_COLORS[selectedSubject.name] || "")}>
-                                  {getSubjectShortName(selectedSubject.name)}
-                                </span>
-                              ) : (
-                                <SelectValue placeholder="--" />
-                              )}
-                            </SelectTrigger>
-                            <SelectContent>
-                              {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => {
-                                const color = SUBJECT_COLORS[s.name] || ""
-                                return (
-                                  <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
-                                    <span className={color ? `px-1.5 py-0.5 rounded ${color}` : ""}>{getSubjectShortName(s.name)}</span>
-                                  </SelectItem>
-                                )
-                              })}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell className="py-1.5 px-1 w-[120px] align-top">
-                          <ItemField
-                            value={item.item}
-                            onChange={(e) => updateItemField(item.id, "item", e.target.value, 1)}
-                          />
-                        </TableCell>
-                        <TableCell className="py-1.5 px-0 w-14 align-top">
-                          <Select
-                            value={item.status.toString()}
-                            onValueChange={(value) => updateItemField(item.id, "status", parseInt(value), 1)}
-                          >
-                            <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-14">
-                              {statusOption ? (
-                                <span className={cn("text-xs px-1.5 py-0.5 rounded", statusOption.color)}>
-                                  {statusOption.label}
-                                </span>
-                              ) : (
-                                <SelectValue />
-                              )}
-                            </SelectTrigger>
-                            <SelectContent>
-                              {POINT_STATUS_OPTIONS.filter(opt => opt.value != null && opt.value.toString() !== "").map((opt) => (
-                                <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
-                                  <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell className="py-1.5 px-1 align-top">
-                          <MemoField
-                            value={item.memo || ""}
-                            onChange={(e) => updateMemo(item.id, e.target.value, 1)}
-                          />
-                        </TableCell>
-                        <TableCell className="py-1.5 px-1 w-8 align-top text-center">
-                          <button
-                            onClick={() => updateFavorite(item.id, item.favorite === 1 ? 0 : 1)}
-                            className={cn(
-                              "text-lg transition-colors",
-                              item.favorite === 1 ? "text-red-500" : "text-gray-300"
-                            )}
-                          >
-                            <Heart className={cn("h-4 w-4", item.favorite === 1 && "fill-current")} />
-                          </button>
-                        </TableCell>
-                      </SortableRow>
-                    )
-                  })
-                )}
-                  </tbody>
-                </SortableContext>
-              </table>
-            </DndContext>
-          </div>
+                    </thead>
+                    <SortableContext items={filteredMemoItems.map(p => p.id.toString())} strategy={verticalListSortingStrategy}>
+                      <tbody>
+                        {loading ? (
+                          <tr>
+                            <TableCell colSpan={6} className="text-center text-muted-foreground py-6 text-sm">
+                              読み込み中...
+                            </TableCell>
+                          </tr>
+                        ) : filteredMemoItems.length === 0 ? (
+                          <tr>
+                            <TableCell colSpan={6} className="text-center text-muted-foreground py-6 text-sm">
+                              データがありません
+                            </TableCell>
+                          </tr>
+                        ) : (
+                          filteredMemoItems.map((item) => {
+                            const statusOption = POINT_STATUS_OPTIONS.find((s) => s.value === item.status)
+                            const selectedSubject = subjects.find(s => s.id === item.subject)
+                            return (
+                              <SortableRow key={item.id} item={item} onDelete={deleteItem}>
+                                <TableCell className="py-1.5 px-0.5 w-14 align-top">
+                                  <Select
+                                    value={item.subject?.toString() || undefined}
+                                    onValueChange={(value) => updateItemField(item.id, "subject", value ? parseInt(value) : null, 1)}
+                                  >
+                                    <SelectTrigger className="h-7 text-[10px] border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
+                                      {selectedSubject ? (
+                                        <span className={cn("text-xs px-1.5 py-0.5 rounded", SUBJECT_COLORS[selectedSubject.name] || "")}>
+                                          {selectedSubject.name}
+                                        </span>
+                                      ) : (
+                                        <SelectValue placeholder="--" />
+                                      )}
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => {
+                                        const color = SUBJECT_COLORS[s.name] || ""
+                                        return (
+                                          <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
+                                            <span className={color ? `px-1.5 py-0.5 rounded ${color}` : ""}>{s.name}</span>
+                                          </SelectItem>
+                                        )
+                                      })}
+                                    </SelectContent>
+                                  </Select>
+                                </TableCell>
+                                <TableCell className="py-1.5 px-1 w-[120px] align-top">
+                                  <ItemField
+                                    value={item.item}
+                                    onChange={(e) => updateItemField(item.id, "item", e.target.value, 1)}
+                                  />
+                                </TableCell>
+                                <TableCell className="py-1.5 px-0 w-14 align-top">
+                                  <Select
+                                    value={item.status.toString()}
+                                    onValueChange={(value) => updateItemField(item.id, "status", parseInt(value), 1)}
+                                  >
+                                    <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-14">
+                                      {statusOption ? (
+                                        <span className={cn("text-xs px-1.5 py-0.5 rounded", statusOption.color)}>
+                                          {statusOption.label}
+                                        </span>
+                                      ) : (
+                                        <SelectValue />
+                                      )}
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {POINT_STATUS_OPTIONS.filter(opt => opt.value != null && opt.value.toString() !== "").map((opt) => (
+                                        <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                                          <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </TableCell>
+                                <TableCell className="py-1.5 px-1 align-top">
+                                  <MemoField
+                                    value={item.memo || ""}
+                                    onChange={(e) => updateMemo(item.id, e.target.value, 1)}
+                                  />
+                                </TableCell>
+                                <TableCell className="py-1.5 px-1 w-8 align-top text-center">
+                                  <button
+                                    onClick={() => updateFavorite(item.id, item.favorite === 1 ? 0 : 1)}
+                                    className={cn(
+                                      "text-lg transition-colors",
+                                      item.favorite === 1 ? "text-red-500" : "text-gray-300"
+                                    )}
+                                  >
+                                    <Heart className={cn("h-4 w-4", item.favorite === 1 && "fill-current")} />
+                                  </button>
+                                </TableCell>
+                              </SortableRow>
+                            )
+                          })
+                        )}
+                      </tbody>
+                    </SortableContext>
+                  </table>
+                </DndContext>
+              </div>
             </CardContent>
           </CollapsibleContent>
         </Collapsible>
       </Card>
-      
+
       {/* Your Topics */}
       <Card className="shadow-sm border-amber-200/60">
         <CardHeader className="py-1.5 px-3">
@@ -1120,295 +1093,295 @@ function StudyManagementPage() {
         <Collapsible open={topicOpen} onOpenChange={setTopicOpen}>
           <CollapsibleContent>
             <CardContent className="px-3 pb-2">
-          {/* Topics用フィルター */}
-          <div className="mb-2 flex items-center gap-2 flex-wrap">
-            {/* 科目 */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className={cn(
-                  "flex items-center gap-1.5 text-xs transition-colors px-2 py-1 rounded-md hover:opacity-80",
-                  topicSubjectFilter 
-                    ? (SUBJECT_COLORS[topicSubjectFilter] || "bg-amber-100 text-amber-900")
-                    : "bg-gray-100 text-gray-700"
-                )}>
-                  <span>{topicSubjectFilter ? getSubjectShortName(topicSubjectFilter) : "全科目"}</span>
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" side="bottom" className="w-32">
-                <DropdownMenuItem
-                  onClick={() => setTopicSubjectFilter(null)}
-                  className={cn(
-                    "text-xs cursor-pointer rounded-sm",
-                    "bg-gray-100 text-gray-700",
-                    topicSubjectFilter === null && "ring-2 ring-offset-1 ring-amber-500 font-medium"
-                  )}
-                >
-                  全科目
-                </DropdownMenuItem>
-                {FIXED_SUBJECTS.map((subject) => (
-                  <DropdownMenuItem
-                    key={subject}
-                    onClick={() => setTopicSubjectFilter(subject)}
-                    className={cn(
-                      "text-xs cursor-pointer rounded-sm",
-                      SUBJECT_COLORS[subject] || "bg-gray-100 text-gray-700",
-                      topicSubjectFilter === subject && "ring-2 ring-offset-1 ring-amber-500 font-medium"
-                    )}
-                  >
-                    {getSubjectShortName(subject)}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            
-            {/* 種類 */}
-            <Select 
-              value={topicStatusFilter?.toString() || "all"} 
-              onValueChange={(value) => {
-                if (value === "all") {
-                  setTopicStatusFilter(null)
-                } else {
-                  setTopicStatusFilter(parseInt(value))
-                }
-              }}
-            >
-              <SelectTrigger className="h-7 text-xs w-24">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all" className="text-xs">全状態</SelectItem>
-                {TASK_STATUS_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            
-            {/* 期間 */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-7 text-xs">
-                  <CalendarIcon className="h-3 w-3 mr-1" />
-                  {topicStartDate ? formatDate(topicStartDate.toISOString()) : "開始日"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <DatePickerCalendar
-                  selectedDate={topicStartDate || null}
-                  onSelect={(date) => setTopicStartDate(date || undefined)}
-                />
-              </PopoverContent>
-            </Popover>
-            <span className="text-xs text-muted-foreground">～</span>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-7 text-xs">
-                  <CalendarIcon className="h-3 w-3 mr-1" />
-                  {topicEndDate ? formatDate(topicEndDate.toISOString()) : "終了日"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <DatePickerCalendar
-                  selectedDate={topicEndDate || null}
-                  onSelect={(date) => setTopicEndDate(date || undefined)}
-                />
-              </PopoverContent>
-            </Popover>
-            
-            {/* fav */}
-            <Select 
-              value={topicFavoriteFilter} 
-              onValueChange={(value) => {
-                setTopicFavoriteFilter(value as "fav-only" | "fav-except" | "all")
-              }}
-            >
-              <SelectTrigger className="h-7 text-xs w-28">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="fav-only" className="text-xs">favのみ</SelectItem>
-                <SelectItem value="fav-except" className="text-xs">fav以外</SelectItem>
-                <SelectItem value="all" className="text-xs">フィルターなし</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          
-          {/* Topicsテーブル */}
-          <div 
-            ref={topicScrollRef}
-            onScroll={handleTopicScroll}
-            className="overflow-y-auto"
-            style={{ maxHeight: "480px" }} // 20行分（1.5rem * 20）
-          >
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleDragEndTopic}
-            >
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-xs text-muted-foreground sticky top-0 bg-white">
-                    <th className="py-1 px-1 w-6"></th>
-                    <th className="py-1 px-0.5 w-14 text-left font-medium">科目</th>
-                    <th className="py-1 px-1 text-left font-medium">項目</th>
-                    <th className="py-1 px-1 w-12 text-center font-medium">作成</th>
-                    <th className="py-1 px-0 w-14 text-left font-medium">期限</th>
-                    <th className="py-1 px-0 w-14 text-left font-medium">状態</th>
-                    <th className="py-1 px-1 text-left font-medium">メモ</th>
-                    <th className="py-1 px-1 w-8 text-center font-medium">♡</th>
-                  </tr>
-                </thead>
-                <SortableContext items={filteredTopicItems.map(p => p.id.toString())} strategy={verticalListSortingStrategy}>
-                  <tbody>
-                    {loading ? (
-                      <tr>
-                        <TableCell colSpan={8} className="text-center text-muted-foreground py-6 text-sm">
-                          読み込み中...
-                        </TableCell>
-                      </tr>
-                    ) : filteredTopicItems.length === 0 ? (
-                      <tr>
-                        <TableCell colSpan={8} className="text-center text-muted-foreground py-6 text-sm">
-                          データがありません
-                        </TableCell>
-                      </tr>
-                    ) : (
-                      filteredTopicItems.map((item) => {
-                    const statusOption = TASK_STATUS_OPTIONS.find((s) => s.value === item.status)
-                    const selectedSubject = subjects.find(s => s.id === item.subject)
-                    const createdDate = item.created_at ? formatDate(item.created_at) : ""
-                    return (
-                      <SortableRow 
-                        key={item.id} 
-                        item={item} 
-                        onDelete={deleteItem}
-                        onEditCreatedDate={(id) => {
-                          setTopicCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
-                        }}
-                        showCreatedDateButton={true}
+              {/* Topics用フィルター */}
+              <div className="mb-2 flex items-center gap-2 flex-wrap">
+                {/* 科目 */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className={cn(
+                      "flex items-center gap-1.5 text-xs transition-colors px-2 py-1 rounded-md hover:opacity-80",
+                      topicSubjectFilter
+                        ? (SUBJECT_COLORS[topicSubjectFilter] || "bg-amber-100 text-amber-900")
+                        : "bg-gray-100 text-gray-700"
+                    )}>
+                      <span>{topicSubjectFilter || "全科目"}</span>
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" side="bottom" className="w-32">
+                    <DropdownMenuItem
+                      onClick={() => setTopicSubjectFilter(null)}
+                      className={cn(
+                        "text-xs cursor-pointer rounded-sm",
+                        "bg-gray-100 text-gray-700",
+                        topicSubjectFilter === null && "ring-2 ring-offset-1 ring-amber-500 font-medium"
+                      )}
+                    >
+                      全科目
+                    </DropdownMenuItem>
+                    {FIXED_SUBJECTS.map((subject) => (
+                      <DropdownMenuItem
+                        key={subject}
+                        onClick={() => setTopicSubjectFilter(subject)}
+                        className={cn(
+                          "text-xs cursor-pointer rounded-sm",
+                          SUBJECT_COLORS[subject] || "bg-gray-100 text-gray-700",
+                          topicSubjectFilter === subject && "ring-2 ring-offset-1 ring-amber-500 font-medium"
+                        )}
                       >
-                        <TableCell className="py-1.5 px-0.5 w-14 align-top">
-                          <Select
-                            value={item.subject?.toString() || undefined}
-                            onValueChange={(value) => updateItemField(item.id, "subject", value ? parseInt(value) : null, 2)}
-                          >
-                            <SelectTrigger className="h-7 text-[10px] border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
-                              {selectedSubject ? (
-                                <span className={cn("text-xs px-1.5 py-0.5 rounded", SUBJECT_COLORS[selectedSubject.name] || "")}>
-                                  {getSubjectShortName(selectedSubject.name)}
-                                </span>
-                              ) : (
-                                <SelectValue placeholder="--" />
-                              )}
-                            </SelectTrigger>
-                            <SelectContent>
-                              {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => {
-                                const color = SUBJECT_COLORS[s.name] || ""
-                                return (
-                                  <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
-                                    <span className={color ? `px-1.5 py-0.5 rounded ${color}` : ""}>{getSubjectShortName(s.name)}</span>
-                                  </SelectItem>
-                                )
-                              })}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell className="py-1.5 px-1 w-[120px] align-top">
-                          <ItemField
-                            value={item.item}
-                            onChange={(e) => updateItemField(item.id, "item", e.target.value, 2)}
-                          />
-                        </TableCell>
-                        <TableCell className="py-1.5 px-1 w-12 text-xs text-muted-foreground text-center relative align-top">
-                          <Popover
-                            open={topicCreatedDatePickerOpen[item.id] || false}
-                            onOpenChange={(open) => setTopicCreatedDatePickerOpen(prev => ({ ...prev, [item.id]: open }))}
-                          >
-                            <PopoverTrigger asChild>
-                              <button className="w-full h-full hover:bg-muted/50 rounded px-1">
-                                {createdDate}
-                              </button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-3" align="start">
-                              <DatePickerCalendar
-                                selectedDate={item.created_at ? new Date(item.created_at) : null}
-                                onSelect={(date) => {
-                                  if (date) {
-                                    const dateStr = date.toISOString().split("T")[0]
-                                    updateItemField(item.id, "created_at", dateStr, 2)
-                                  }
-                                  setTopicCreatedDatePickerOpen(prev => ({ ...prev, [item.id]: false }))
+                        {subject}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* 種類 */}
+                <Select
+                  value={topicStatusFilter?.toString() || "all"}
+                  onValueChange={(value) => {
+                    if (value === "all") {
+                      setTopicStatusFilter(null)
+                    } else {
+                      setTopicStatusFilter(parseInt(value))
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-7 text-xs w-24">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="text-xs">全状態</SelectItem>
+                    {TASK_STATUS_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* 期間 */}
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-7 text-xs">
+                      <CalendarIcon className="h-3 w-3 mr-1" />
+                      {topicStartDate ? formatDate(topicStartDate.toISOString()) : "開始日"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <DatePickerCalendar
+                      selectedDate={topicStartDate || null}
+                      onSelect={(date) => setTopicStartDate(date || undefined)}
+                    />
+                  </PopoverContent>
+                </Popover>
+                <span className="text-xs text-muted-foreground">～</span>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-7 text-xs">
+                      <CalendarIcon className="h-3 w-3 mr-1" />
+                      {topicEndDate ? formatDate(topicEndDate.toISOString()) : "終了日"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <DatePickerCalendar
+                      selectedDate={topicEndDate || null}
+                      onSelect={(date) => setTopicEndDate(date || undefined)}
+                    />
+                  </PopoverContent>
+                </Popover>
+
+                {/* fav */}
+                <Select
+                  value={topicFavoriteFilter}
+                  onValueChange={(value) => {
+                    setTopicFavoriteFilter(value as "fav-only" | "fav-except" | "all")
+                  }}
+                >
+                  <SelectTrigger className="h-7 text-xs w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="fav-only" className="text-xs">favのみ</SelectItem>
+                    <SelectItem value="fav-except" className="text-xs">fav以外</SelectItem>
+                    <SelectItem value="all" className="text-xs">フィルターなし</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Topicsテーブル */}
+              <div
+                ref={topicScrollRef}
+                onScroll={handleTopicScroll}
+                className="overflow-y-auto"
+                style={{ maxHeight: "480px" }} // 20行分（1.5rem * 20）
+              >
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEndTopic}
+                >
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-xs text-muted-foreground sticky top-0 bg-white">
+                        <th className="py-1 px-1 w-6"></th>
+                        <th className="py-1 px-0.5 w-14 text-left font-medium">科目</th>
+                        <th className="py-1 px-1 text-left font-medium">項目</th>
+                        <th className="py-1 px-1 w-12 text-center font-medium">作成</th>
+                        <th className="py-1 px-0 w-14 text-left font-medium">期限</th>
+                        <th className="py-1 px-0 w-14 text-left font-medium">状態</th>
+                        <th className="py-1 px-1 text-left font-medium">メモ</th>
+                        <th className="py-1 px-1 w-8 text-center font-medium">♡</th>
+                      </tr>
+                    </thead>
+                    <SortableContext items={filteredTopicItems.map(p => p.id.toString())} strategy={verticalListSortingStrategy}>
+                      <tbody>
+                        {loading ? (
+                          <tr>
+                            <TableCell colSpan={8} className="text-center text-muted-foreground py-6 text-sm">
+                              読み込み中...
+                            </TableCell>
+                          </tr>
+                        ) : filteredTopicItems.length === 0 ? (
+                          <tr>
+                            <TableCell colSpan={8} className="text-center text-muted-foreground py-6 text-sm">
+                              データがありません
+                            </TableCell>
+                          </tr>
+                        ) : (
+                          filteredTopicItems.map((item) => {
+                            const statusOption = TASK_STATUS_OPTIONS.find((s) => s.value === item.status)
+                            const selectedSubject = subjects.find(s => s.id === item.subject)
+                            const createdDate = item.created_at ? formatDate(item.created_at) : ""
+                            return (
+                              <SortableRow
+                                key={item.id}
+                                item={item}
+                                onDelete={deleteItem}
+                                onEditCreatedDate={(id) => {
+                                  setTopicCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
                                 }}
-                              />
-                            </PopoverContent>
-                          </Popover>
-                        </TableCell>
-                        <TableCell className="py-1.5 px-0 w-14 align-top">
-                          {item.due_date ? (
-                            <span className="text-xs text-muted-foreground">{formatDate(item.due_date)}</span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">--</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="py-1.5 px-0 w-14 align-top">
-                          <Select
-                            value={item.status.toString()}
-                            onValueChange={(value) => updateItemField(item.id, "status", parseInt(value), 2)}
-                          >
-                            <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-14">
-                              {statusOption ? (
-                                <span className={cn("text-xs px-1.5 py-0.5 rounded", statusOption.color)}>
-                                  {statusOption.label}
-                                </span>
-                              ) : (
-                                <SelectValue />
-                              )}
-                            </SelectTrigger>
-                            <SelectContent>
-                              {TASK_STATUS_OPTIONS.filter(opt => opt.value != null && opt.value.toString() !== "").map((opt) => (
-                                <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
-                                  <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell className="py-1.5 px-1 align-top">
-                          <MemoField
-                            value={item.memo || ""}
-                            onChange={(e) => updateMemo(item.id, e.target.value, 2)}
-                          />
-                        </TableCell>
-                        <TableCell className="py-1.5 px-1 w-8 align-top text-center">
-                          <button
-                            onClick={() => updateFavorite(item.id, item.favorite === 1 ? 0 : 1)}
-                            className={cn(
-                              "text-lg transition-colors",
-                              item.favorite === 1 ? "text-red-500" : "text-gray-300"
-                            )}
-                          >
-                            <Heart className={cn("h-4 w-4", item.favorite === 1 && "fill-current")} />
-                          </button>
-                        </TableCell>
-                      </SortableRow>
-                    )
-                  })
-                )}
-                  </tbody>
-                </SortableContext>
-              </table>
-            </DndContext>
-          </div>
+                                showCreatedDateButton={true}
+                              >
+                                <TableCell className="py-1.5 px-0.5 w-14 align-top">
+                                  <Select
+                                    value={item.subject?.toString() || undefined}
+                                    onValueChange={(value) => updateItemField(item.id, "subject", value ? parseInt(value) : null, 2)}
+                                  >
+                                    <SelectTrigger className="h-7 text-[10px] border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
+                                      {selectedSubject ? (
+                                        <span className={cn("text-xs px-1.5 py-0.5 rounded", SUBJECT_COLORS[selectedSubject.name] || "")}>
+                                          {selectedSubject.name}
+                                        </span>
+                                      ) : (
+                                        <SelectValue placeholder="--" />
+                                      )}
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {subjects.filter(s => s.id != null && s.id.toString() !== "").map((s) => {
+                                        const color = SUBJECT_COLORS[s.name] || ""
+                                        return (
+                                          <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
+                                            <span className={color ? `px-1.5 py-0.5 rounded ${color}` : ""}>{s.name}</span>
+                                          </SelectItem>
+                                        )
+                                      })}
+                                    </SelectContent>
+                                  </Select>
+                                </TableCell>
+                                <TableCell className="py-1.5 px-1 w-[120px] align-top">
+                                  <ItemField
+                                    value={item.item}
+                                    onChange={(e) => updateItemField(item.id, "item", e.target.value, 2)}
+                                  />
+                                </TableCell>
+                                <TableCell className="py-1.5 px-1 w-12 text-xs text-muted-foreground text-center relative align-top">
+                                  <Popover
+                                    open={topicCreatedDatePickerOpen[item.id] || false}
+                                    onOpenChange={(open) => setTopicCreatedDatePickerOpen(prev => ({ ...prev, [item.id]: open }))}
+                                  >
+                                    <PopoverTrigger asChild>
+                                      <button className="w-full h-full hover:bg-muted/50 rounded px-1">
+                                        {createdDate}
+                                      </button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-3" align="start">
+                                      <DatePickerCalendar
+                                        selectedDate={item.created_at ? new Date(item.created_at) : null}
+                                        onSelect={(date) => {
+                                          if (date) {
+                                            const dateStr = date.toISOString().split("T")[0]
+                                            updateItemField(item.id, "created_at", dateStr, 2)
+                                          }
+                                          setTopicCreatedDatePickerOpen(prev => ({ ...prev, [item.id]: false }))
+                                        }}
+                                      />
+                                    </PopoverContent>
+                                  </Popover>
+                                </TableCell>
+                                <TableCell className="py-1.5 px-0 w-14 align-top">
+                                  {item.due_date ? (
+                                    <span className="text-xs text-muted-foreground">{formatDate(item.due_date)}</span>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">--</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="py-1.5 px-0 w-14 align-top">
+                                  <Select
+                                    value={item.status.toString()}
+                                    onValueChange={(value) => updateItemField(item.id, "status", parseInt(value), 2)}
+                                  >
+                                    <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-14">
+                                      {statusOption ? (
+                                        <span className={cn("text-xs px-1.5 py-0.5 rounded", statusOption.color)}>
+                                          {statusOption.label}
+                                        </span>
+                                      ) : (
+                                        <SelectValue />
+                                      )}
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {TASK_STATUS_OPTIONS.filter(opt => opt.value != null && opt.value.toString() !== "").map((opt) => (
+                                        <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                                          <span className={`px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </TableCell>
+                                <TableCell className="py-1.5 px-1 align-top">
+                                  <MemoField
+                                    value={item.memo || ""}
+                                    onChange={(e) => updateMemo(item.id, e.target.value, 2)}
+                                  />
+                                </TableCell>
+                                <TableCell className="py-1.5 px-1 w-8 align-top text-center">
+                                  <button
+                                    onClick={() => updateFavorite(item.id, item.favorite === 1 ? 0 : 1)}
+                                    className={cn(
+                                      "text-lg transition-colors",
+                                      item.favorite === 1 ? "text-red-500" : "text-gray-300"
+                                    )}
+                                  >
+                                    <Heart className={cn("h-4 w-4", item.favorite === 1 && "fill-current")} />
+                                  </button>
+                                </TableCell>
+                              </SortableRow>
+                            )
+                          })
+                        )}
+                      </tbody>
+                    </SortableContext>
+                  </table>
+                </DndContext>
+              </div>
             </CardContent>
           </CollapsibleContent>
         </Collapsible>
       </Card>
-      
+
       {/* 勉強時間カード */}
       <StudyTimeCard />
-      
+
       {/* 過去のチャット履歴 */}
       <ChatHistorySection />
     </div>
@@ -1425,7 +1398,7 @@ function StudyTimeSection() {
   const [yearStats, setYearStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [openCollapsibles, setOpenCollapsibles] = useState<Record<string, boolean>>({})
-  
+
   useEffect(() => {
     const loadStats = async () => {
       try {
@@ -1459,26 +1432,26 @@ function StudyTimeSection() {
     }
     loadStats()
   }, [])
-  
+
   // 時間フォーマット（時間と分）
   const formatTime = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600)
     const minutes = Math.floor((seconds % 3600) / 60)
     return `${hours}時間${minutes.toString().padStart(2, "0")}分`
   }
-  
+
   // 日付フォーマット（M/D）
   const formatDateShort = (dateString: string): string => {
     const date = new Date(dateString)
     return `${date.getMonth() + 1}/${date.getDate()}`
   }
-  
+
   // 曜日名
   const getWeekdayName = (index: number): string => {
     const weekdays = ["月", "火", "水", "木", "金", "土", "日"]
     return weekdays[index]
   }
-  
+
   // 今週の開始日（月曜日）を取得
   const getWeekStartDate = (): Date => {
     const today = new Date()
@@ -1487,7 +1460,7 @@ function StudyTimeSection() {
     const monday = new Date(today.setDate(diff))
     return monday
   }
-  
+
   // 週の日付をmm/dd形式で取得
   const getWeekDateLabel = (index: number): string => {
     const weekStart = getWeekStartDate()
@@ -1495,11 +1468,11 @@ function StudyTimeSection() {
     date.setDate(weekStart.getDate() + index)
     return `${date.getMonth() + 1}/${date.getDate()}`
   }
-  
+
   const toggleCollapsible = (key: string) => {
     setOpenCollapsibles(prev => ({ ...prev, [key]: !prev[key] }))
   }
-  
+
   return (
     <Card className="shadow-sm border-amber-200/60">
       <CardHeader className="py-1.5 px-3">
@@ -1538,7 +1511,7 @@ function StudyTimeSection() {
                 </div>
               </CollapsibleContent>
             </Collapsible>
-            
+
             {/* This Week */}
             <Collapsible open={openCollapsibles["week"]} onOpenChange={() => toggleCollapsible("week")}>
               <CollapsibleTrigger className="w-full flex items-center justify-between py-1.5 px-2 hover:bg-amber-50/40 rounded text-sm">
@@ -1555,7 +1528,7 @@ function StudyTimeSection() {
                 </div>
               </CollapsibleContent>
             </Collapsible>
-            
+
             {/* This 5days */}
             <Collapsible open={openCollapsibles["5days"]} onOpenChange={() => toggleCollapsible("5days")}>
               <CollapsibleTrigger className="w-full flex items-center justify-between py-1.5 px-2 hover:bg-amber-50/40 rounded text-sm">
@@ -1572,7 +1545,7 @@ function StudyTimeSection() {
                 </div>
               </CollapsibleContent>
             </Collapsible>
-            
+
             {/* This Month */}
             <Collapsible open={openCollapsibles["month"]} onOpenChange={() => toggleCollapsible("month")}>
               <CollapsibleTrigger className="w-full flex items-center justify-between py-1.5 px-2 hover:bg-amber-50/40 rounded text-sm">
@@ -1589,7 +1562,7 @@ function StudyTimeSection() {
                 </div>
               </CollapsibleContent>
             </Collapsible>
-            
+
             {/* This Year */}
             <Collapsible open={openCollapsibles["year"]} onOpenChange={() => toggleCollapsible("year")}>
               <CollapsibleTrigger className="w-full flex items-center justify-between py-1.5 px-2 hover:bg-amber-50/40 rounded text-sm">
@@ -1617,20 +1590,20 @@ function StudyTimeSection() {
 function ChatHistorySection() {
   const [threads, setThreads] = useState<Thread[]>([])
   const [loading, setLoading] = useState(true)
-  
+
   // フィルター
   const [typeFilter, setTypeFilter] = useState<string | null>(null)  // null = 全タイプ
   const [startDate, setStartDate] = useState<Date | undefined>(undefined)
   const [endDate, setEndDate] = useState<Date | undefined>(undefined)
   const [favoriteFilter, setFavoriteFilter] = useState<"fav-only" | "fav-except" | "all">("all")
-  
+
   // タイトル編集
   const [editingThreadId, setEditingThreadId] = useState<number | null>(null)
   const [editingTitle, setEditingTitle] = useState<string>("")
-  
+
   // favorite更新用のタイマー
   const favoriteUpdateTimers = useRef<Record<number, NodeJS.Timeout>>({})
-  
+
   // データ取得
   useEffect(() => {
     const loadThreads = async () => {
@@ -1648,7 +1621,7 @@ function ChatHistorySection() {
     }
     loadThreads()
   }, [])
-  
+
   // タイトル更新
   const updateTitle = useCallback(async (threadId: number, newTitle: string) => {
     try {
@@ -1661,17 +1634,17 @@ function ChatHistorySection() {
       setEditingTitle("")
     }
   }, [])
-  
+
   // favorite更新（5秒バッファ付き）
   const updateFavorite = useCallback(async (threadId: number, favorite: number) => {
     // 既存のタイマーをクリア
     if (favoriteUpdateTimers.current[threadId]) {
       clearTimeout(favoriteUpdateTimers.current[threadId])
     }
-    
+
     // 楽観的更新
     setThreads(prev => prev.map(thread => thread.id === threadId ? { ...thread, favorite } : thread))
-    
+
     // 5秒後にDBに保存
     favoriteUpdateTimers.current[threadId] = setTimeout(async () => {
       try {
@@ -1684,16 +1657,16 @@ function ChatHistorySection() {
       }
     }, 5000)
   }, [])
-  
+
   // フィルター適用後のスレッド
   const filteredThreads = useMemo(() => {
     let filtered = [...threads]
-    
+
     // タイプフィルター
     if (typeFilter !== null) {
       filtered = filtered.filter(thread => thread.type === typeFilter)
     }
-    
+
     // 期間フィルター（last_message_atベース）
     if (startDate) {
       const startStr = startDate.toISOString()
@@ -1709,31 +1682,31 @@ function ChatHistorySection() {
         return thread.last_message_at <= endStr
       })
     }
-    
+
     // favoriteフィルター
     if (favoriteFilter === "fav-only") {
       filtered = filtered.filter(thread => thread.favorite === 1)
     } else if (favoriteFilter === "fav-except") {
       filtered = filtered.filter(thread => thread.favorite === 0)
     }
-    
+
     // ソート: created_atの新しい順
     filtered.sort((a, b) => {
       const aDate = a.created_at || ""
       const bDate = b.created_at || ""
       return bDate.localeCompare(aDate)
     })
-    
+
     return filtered
   }, [threads, typeFilter, startDate, endDate, favoriteFilter])
-  
+
   // 日付フォーマット
   const formatDate = (dateString: string | null) => {
     if (!dateString) return ""
     const date = new Date(dateString)
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
   }
-  
+
   // タイプ名の表示
   const getTypeLabel = (type: string) => {
     switch (type) {
@@ -1747,7 +1720,7 @@ function ChatHistorySection() {
         return type
     }
   }
-  
+
   // リンク先を取得
   const getThreadLink = async (thread: Thread): Promise<string> => {
     if (thread.type === "free_chat") {
@@ -1761,7 +1734,7 @@ function ChatHistorySection() {
     }
     return "#"
   }
-  
+
   return (
     <Card className="shadow-sm border-amber-200/60">
       <CardHeader className="py-1.5 px-3">
@@ -1773,8 +1746,8 @@ function ChatHistorySection() {
         {/* フィルター */}
         <div className="mb-2 flex items-center gap-2 flex-wrap">
           {/* タイプ */}
-          <Select 
-            value={typeFilter || "all"} 
+          <Select
+            value={typeFilter || "all"}
             onValueChange={(value) => {
               if (value === "all") {
                 setTypeFilter(null)
@@ -1793,7 +1766,7 @@ function ChatHistorySection() {
               <SelectItem value="short_answer_chat" className="text-xs">短答</SelectItem>
             </SelectContent>
           </Select>
-          
+
           {/* 期間 */}
           <Popover>
             <PopoverTrigger asChild>
@@ -1824,10 +1797,10 @@ function ChatHistorySection() {
               />
             </PopoverContent>
           </Popover>
-          
+
           {/* fav */}
-          <Select 
-            value={favoriteFilter} 
+          <Select
+            value={favoriteFilter}
             onValueChange={(value) => {
               setFavoriteFilter(value as "fav-only" | "fav-except" | "all")
             }}
@@ -1842,7 +1815,7 @@ function ChatHistorySection() {
             </SelectContent>
           </Select>
         </div>
-        
+
         {/* テーブル */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -1876,15 +1849,15 @@ function ChatHistorySection() {
                     link = `/free-chat/${thread.id}`
                   } else if (thread.type === "review_chat") {
                     // review_idがある場合はレビューページ、ない場合はフリーチャットとして開く
-                    link = thread.review_id 
+                    link = thread.review_id
                       ? `/your-page/review/${thread.review_id}`
                       : `/free-chat/${thread.id}`
                   } else {
                     link = `/short-answer/${thread.id}`
                   }
-                  
+
                   const isEditing = editingThreadId === thread.id
-                  
+
                   return (
                     <tr key={thread.id} className="hover:bg-amber-50/40">
                       <TableCell className="py-1.5 px-1 align-top">
@@ -2065,7 +2038,7 @@ function HistoryPage() {
       // その他の試験の場合は従来通り
       subjectName = resolveSubjectName(item)
     }
-    
+
     if (item.year) {
       // 年度から元号記号を計算（2019年以降はR、1989年以降はH）
       let eraYear = item.year
@@ -2133,7 +2106,7 @@ function HistoryPage() {
   }, [reviewHistory])
 
   return (
-    <div 
+    <div
       className="min-h-screen bg-gradient-to-b from-amber-50/80 to-orange-50/30 transition-all duration-300"
       style={{
         marginLeft: isOpen ? '208px' : '0',
@@ -2202,11 +2175,11 @@ function HistoryPage() {
                   <DropdownMenuTrigger asChild>
                     <button className={cn(
                       "flex items-center gap-1.5 text-xs transition-colors px-2 py-1 rounded-md hover:opacity-80",
-                      selectedSubject 
+                      selectedSubject
                         ? (SUBJECT_COLORS[selectedSubject] || "bg-amber-100 text-amber-900")
                         : "bg-gray-100 text-gray-700"
                     )}>
-                      <span>{selectedSubject ? getSubjectShortName(selectedSubject) : "全科目"}</span>
+                      <span>{selectedSubject || "全科目"}</span>
                       <ChevronDown className="h-3.5 w-3.5" />
                     </button>
                   </DropdownMenuTrigger>
@@ -2231,7 +2204,7 @@ function HistoryPage() {
                           selectedSubject === subject && "ring-2 ring-offset-1 ring-amber-500 font-medium"
                         )}
                       >
-                        {getSubjectShortName(subject)}
+                        {subject}
                       </DropdownMenuItem>
                     ))}
                   </DropdownMenuContent>
@@ -2241,8 +2214,8 @@ function HistoryPage() {
               {/* 年度フィルター */}
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">年度</span>
-                <Select 
-                  value={selectedYear?.toString() || "all"} 
+                <Select
+                  value={selectedYear?.toString() || "all"}
                   onValueChange={(value) => {
                     if (value === "all") {
                       setSelectedYear(null)

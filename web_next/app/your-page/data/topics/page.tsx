@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
-import { FIXED_SUBJECTS, getSubjectName, getSubjectId } from "@/lib/subjects"
+import { FIXED_SUBJECTS, getSubjectName, getSubjectId, getSubjectShortName } from "@/lib/subjects"
 import { withAuth } from "@/components/auth/with-auth"
 import { apiClient } from "@/lib/api-client"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -602,7 +602,7 @@ function TopicsPage() {
                   ? (SUBJECT_COLORS[subjectFilter] || "bg-amber-100 text-amber-900")
                   : "bg-gray-100 text-gray-700"
               )}>
-                <span>{subjectFilter || "全科目"}</span>
+                <span>{subjectFilter ? getSubjectShortName(subjectFilter) : "全科目"}</span>
                 <ChevronDown className="h-3.5 w-3.5" />
               </button>
             </DropdownMenuTrigger>
@@ -627,7 +627,7 @@ function TopicsPage() {
                     subjectFilter === subject && "ring-2 ring-offset-1 ring-amber-500 font-medium"
                   )}
                 >
-                  {subject}
+                  {getSubjectShortName(subject)}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -762,7 +762,7 @@ function TopicsPage() {
                                 <SelectTrigger className="h-7 text-[10px] border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-20">
                                   {selectedSubject ? (
                                     <span className={cn("text-xs px-1.5 py-0.5 rounded", SUBJECT_COLORS[selectedSubject.name] || "")}>
-                                      {selectedSubject.name}
+                                      {getSubjectShortName(selectedSubject.name)}
                                     </span>
                                   ) : (
                                     <SelectValue placeholder="--" />
@@ -773,7 +773,7 @@ function TopicsPage() {
                                     const color = SUBJECT_COLORS[s.name] || ""
                                     return (
                                       <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
-                                        <span className={color ? `px-1.5 py-0.5 rounded ${color}` : ""}>{s.name}</span>
+                                        <span className={color ? `px-1.5 py-0.5 rounded ${color}` : ""}>{getSubjectShortName(s.name)}</span>
                                       </SelectItem>
                                     )
                                   })}

@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
-import { FIXED_SUBJECTS, getSubjectId } from "@/lib/subjects"
+import { FIXED_SUBJECTS, getSubjectId, getSubjectShortName } from "@/lib/subjects"
 import { BookOpen, FileText, StickyNote, Plus, Folder, ChevronRight, ChevronDown, ChevronLeft, X, Menu, MoreVertical, Edit, Maximize2, Trash2 } from "lucide-react"
 import { SortableRow } from "@/components/sortable-row"
 import Link from "next/link"
@@ -1577,7 +1577,7 @@ function SubjectPage() {
                     "flex items-center gap-1.5 text-xs transition-colors px-2 py-1 rounded-md hover:opacity-80",
                     SUBJECT_COLORS[selectedSubject] || "bg-amber-100 text-amber-900"
                   )}>
-                    <span>{selectedSubject}</span>
+                    <span>{getSubjectShortName(selectedSubject)}</span>
                     <ChevronDown className="h-3.5 w-3.5" />
                   </button>
                 </DropdownMenuTrigger>
@@ -1592,7 +1592,7 @@ function SubjectPage() {
                         selectedSubject === subject && "ring-2 ring-offset-1 ring-amber-500 font-medium"
                       )}
                     >
-                      {subject}
+                      {getSubjectShortName(subject)}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>

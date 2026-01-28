@@ -45,14 +45,14 @@ function YourPageSectionInner() {
   const isHistoryActive = pathname === "/your-page/data" || pathname?.startsWith("/your-page/data")
   const isSubjectsActive = pathname?.startsWith("/your-page/subjects/")
   const isYourPageActive = isDashboardActive || isHistoryActive || isSubjectsActive
-  
+
   // 過去5日分は常にデフォルトで閉じた状態
   const [isDateListOpen, setIsDateListOpen] = useState(false)
-  
+
   // 直近アクセスしたノートページ（最大5件）
   const [recentNotePages, setRecentNotePages] = useState<Array<{ subject: string; pageId: number; title: string; timestamp: number }>>([])
   const [isRecentNotePagesOpen, setIsRecentNotePagesOpen] = useState(false)
-  
+
   useEffect(() => {
     if (typeof window !== 'undefined' && hasFunctionalConsent()) {
       try {
@@ -110,7 +110,7 @@ function YourPageSectionInner() {
           const isDashboard = item.href === "/your-page/dashboard"
           const isSubjectsNavItem = item.href.startsWith("/your-page/subjects/")
           const Icon = item.icon
-          
+
           return (
             <div key={item.href}>
               <Link
@@ -168,7 +168,7 @@ function YourPageSectionInner() {
                   )}
                 />
               </Link>
-            
+
               {/* Dashboard用の折りたたみエリア */}
               {isDashboard && isYourPageActive && (
                 <Collapsible open={isDateListOpen} onOpenChange={setIsDateListOpen} className="ml-4">
@@ -199,7 +199,7 @@ function YourPageSectionInner() {
                   </CollapsibleContent>
                 </Collapsible>
               )}
-            
+
               {/* Your Notes用の折りたたみエリア */}
               {isSubjectsNavItem && (
                 <Collapsible open={isRecentNotePagesOpen} onOpenChange={setIsRecentNotePagesOpen} className="ml-4">

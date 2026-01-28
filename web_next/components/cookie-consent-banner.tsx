@@ -125,9 +125,9 @@ export function CookieConsentBanner({ onConsent, showOnlyRequired = false }: Coo
                 <div className="pt-2 border-t border-slate-200">
                   <p className="text-xs text-slate-600">
                     Googleのプライバシーポリシーについては、
-                    <a 
-                      href="https://policies.google.com/privacy" 
-                      target="_blank" 
+                    <a
+                      href="https://policies.google.com/privacy"
+                      target="_blank"
                       rel="noopener noreferrer"
                       className="text-indigo-600 hover:underline inline-flex items-center gap-1 ml-1"
                     >

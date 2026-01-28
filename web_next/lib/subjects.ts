@@ -101,3 +101,22 @@ export function sortSubjectsByFixedOrder(subjects: string[]): string[] {
 
   return sorted
 }
+
+/**
+ * 科目名を短縮表示に変換（ドロップダウン表示用）
+ * @param subjectName 科目名
+ * @returns 短縮表示された科目名
+ */
+export function getSubjectShortName(subjectName: string): string {
+  const shortNameMap: Record<string, string> = {
+    "民事訴訟法": "民訴法",
+    "刑事訴訟法": "刑訴法",
+    "一般教養科目": "般教",
+    "実務基礎（民事）": "民事実務",
+    "実務基礎（刑事）": "刑事実務",
+    "知的財産法": "知財法",
+    "国際関係法（公法系）": "国際公法",
+    "国際関係法（私法系）": "国際私法",
+  }
+  return shortNameMap[subjectName] || subjectName
+}
