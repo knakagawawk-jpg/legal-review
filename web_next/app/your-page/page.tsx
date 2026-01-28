@@ -82,14 +82,16 @@ export default function YourPage() {
     return `${date}（${weekday}）`
   }
 
-  // ローディング中
-  if (isLoading) {
+  // ローディング中、または認証済みでリダイレクト中
+  if (isLoading || isAuthenticated) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50">
         <div className="text-center space-y-4">
           <Loader2 className="w-10 h-10 animate-spin mx-auto text-indigo-600" />
           <div className="space-y-2">
-            <p className="text-lg font-medium text-slate-800">認証情報を確認中...</p>
+            <p className="text-lg font-medium text-slate-800">
+              {isLoading ? "認証情報を確認中..." : "ダッシュボードに移動中..."}
+            </p>
             <p className="text-sm text-slate-500">しばらくお待ちください</p>
           </div>
         </div>

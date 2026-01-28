@@ -145,13 +145,13 @@ function MemoField({
       onChange={(e) => {
         const newValue = e.target.value
         const cursorPosition = e.target.selectionStart
-        
+
         setLocalValue(newValue)
-        
+
         if (!isComposing) {
           onChange(e)
         }
-        
+
         requestAnimationFrame(() => {
           adjustHeight()
           if (textareaRef.current && cursorPosition !== null) {
@@ -174,7 +174,7 @@ function MemoField({
             cancelable: true,
           } as React.ChangeEvent<HTMLTextAreaElement>
           onChange(syntheticEvent)
-          
+
           requestAnimationFrame(() => {
             adjustHeight()
             if (textareaRef.current && cursorPosition !== null) {
@@ -253,16 +253,16 @@ function PointsPage() {
   const [tagsPopoverOpen, setTagsPopoverOpen] = useState<Record<number, boolean>>({})
   const [createdDatePickerOpen, setCreatedDatePickerOpen] = useState<Record<number, boolean>>({})
   const [tagFilterOpen, setTagFilterOpen] = useState(false)
-  
+
   const itemsPerPage = 20
-  
+
   // フィルター
   const [importanceFilter, setImportanceFilter] = useState<string>("all")
   const [masteryFilter, setMasteryFilter] = useState<string>("all")
   const [tagFilters, setTagFilters] = useState<string[]>([])
-  
+
   const saveTimeoutRef = useRef<Record<number, number>>({})
-  
+
   const decodeSubject = (encoded?: string | string[]): string | null => {
     if (!encoded) return null
     const str = Array.isArray(encoded) ? encoded[0] : encoded
@@ -276,9 +276,9 @@ function PointsPage() {
     }
     return null
   }
-  
+
   const selectedSubject = decodeSubject(params.subject) || "憲法"
-  
+
   const formatCreatedAtMmDd = useCallback((createdDateIso: string): string => {
     try {
       const d = new Date(createdDateIso)
@@ -471,7 +471,7 @@ function PointsPage() {
   // さらに読み込む
   const loadMore = useCallback(() => {
     if (loadingMore || !hasMore) return
-    
+
     setLoadingMore(true)
     setTimeout(() => {
       const currentLength = displayedItems.length
@@ -542,7 +542,7 @@ function PointsPage() {
   }
 
   return (
-    <div 
+    <div
       className="min-h-screen bg-gradient-to-b from-amber-50/80 to-orange-50/30 transition-all duration-300"
       style={{
         marginLeft: isOpen ? '208px' : '0',
@@ -557,7 +557,7 @@ function PointsPage() {
           <Menu className="h-4 w-4 text-amber-600" />
         </button>
       )}
-      
+
       {/* Fixed Header */}
       <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-amber-200/60 shadow-sm">
         <div className="container mx-auto px-20 py-3 max-w-6xl">
@@ -684,7 +684,7 @@ function PointsPage() {
             </Button>
           </div>
         </div>
-        
+
         {/* テーブル */}
         <Card className="shadow-sm border-amber-200/60">
           <CardContent className="p-4">
@@ -734,9 +734,9 @@ function PointsPage() {
                             const pointTags = item.tags || []
                             const allTags = Array.from(new Set([...(availableTags.map(t => t.name)), ...pointTags])).sort()
                             return (
-                              <SortableRow 
-                                key={item.id} 
-                                item={item} 
+                              <SortableRow
+                                key={item.id}
+                                item={item}
                                 onDelete={deleteItem}
                                 onEditCreatedDate={(id) => {
                                   setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
@@ -982,7 +982,7 @@ function PointsPage() {
                     </Table>
                   </div>
                 </DndContext>
-                
+
                 {/* さらに読み込むボタン */}
                 {hasMore && (
                   <div className="mt-4 text-center">

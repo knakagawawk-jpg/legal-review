@@ -22,8 +22,8 @@ const yourPageNav = [
     icon: BookOpen,
   },
   {
-    name: "Your History",
-    href: "/your-page/history",
+    name: "Your Data",
+    href: "/your-page/data",
     icon: History,
   },
 ]
@@ -42,7 +42,7 @@ function YourPageSectionInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const isDashboardActive = pathname === "/your-page/dashboard" || pathname?.startsWith("/your-page/dashboard")
-  const isHistoryActive = pathname === "/your-page/history" || pathname?.startsWith("/your-page/history")
+  const isHistoryActive = pathname === "/your-page/data" || pathname?.startsWith("/your-page/data")
   const isSubjectsActive = pathname?.startsWith("/your-page/subjects/")
   const isYourPageActive = isDashboardActive || isHistoryActive || isSubjectsActive
   
@@ -101,7 +101,7 @@ function YourPageSectionInner() {
         {yourPageNav.map((item) => {
           const isActive = (() => {
             if (item.href === "/your-page/dashboard") return isDashboardActive
-            if (item.href === "/your-page/history") return isHistoryActive
+            if (item.href === "/your-page/data") return isHistoryActive
             // `yourPageNav`上はデフォルトのリンク先が「/your-page/subjects/憲法」だが、
             // アクティブ判定は「各科目ページ配下」全体で行う
             if (item.href.startsWith("/your-page/subjects/")) return isSubjectsActive

@@ -620,7 +620,7 @@ function YourPageDashboardInner() {
     }
 
     window.addEventListener('beforeunload', handleBeforeUnload)
-    
+
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
       // アンマウント時にも未保存の変更をフラッシュ
@@ -777,15 +777,15 @@ function YourPageDashboardInner() {
 
     // ②表記上ONにする
     setTimerEnabled(true)
-    
+
     // ④詳細のログの開始時間を入れる（レスポンスから取得したsessionsを設定）
     setTimerSessions(response.sessions)
     setTimerDailyStats(response.daily_stats)
-    
+
     // セッション情報を設定
     setActiveSessionId(response.active_session_id)
     setActiveSessionStartTime(parseUtcDateString(response.active_started_at_utc))
-    
+
     // カウントアップ用のelapsedTimeをリセット
     setElapsedTime(0)
   }
@@ -816,11 +816,11 @@ function YourPageDashboardInner() {
 
     // ②表記上OFFにする
     setTimerEnabled(false)
-    
+
     // ③詳細のログの終了時間を埋める（レスポンスから取得したsessionsを設定）
     setTimerSessions(response.sessions)
     setTimerDailyStats(response.daily_stats)
-    
+
     // セッション情報をクリア
     setActiveSessionId(null)
     setActiveSessionStartTime(null)

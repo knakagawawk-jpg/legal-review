@@ -329,43 +329,43 @@ function SubjectPage() {
   const [loadingNotebooks, setLoadingNotebooks] = useState(false)
   const [expandedNotebooks, setExpandedNotebooks] = useState<Set<number>>(new Set())
   const [expandedSections, setExpandedSections] = useState<Set<number>>(new Set())
-  
+
   // ノートブック作成ダイアログ
   const [createNotebookDialogOpen, setCreateNotebookDialogOpen] = useState(false)
   const [newNotebook, setNewNotebook] = useState({ title: "", description: "" })
   const [creatingNotebook, setCreatingNotebook] = useState(false)
-  
+
   // ノートブック編集ダイアログ
   const [editNotebookDialogOpen, setEditNotebookDialogOpen] = useState(false)
   const [editingNotebookId, setEditingNotebookId] = useState<number | null>(null)
   const [editingNotebookData, setEditingNotebookData] = useState({ title: "", description: "" })
   const [updatingNotebook, setUpdatingNotebook] = useState(false)
-  
+
   // セクション作成ダイアログ
   const [createSectionDialogOpen, setCreateSectionDialogOpen] = useState(false)
   const [newSection, setNewSection] = useState({ notebook_id: 0, title: "" })
   const [creatingSection, setCreatingSection] = useState(false)
-  
+
   // セクション編集ダイアログ
   const [editSectionDialogOpen, setEditSectionDialogOpen] = useState(false)
   const [editingSectionId, setEditingSectionId] = useState<number | null>(null)
   const [editingSectionTitle, setEditingSectionTitle] = useState("")
   const [updatingSection, setUpdatingSection] = useState(false)
-  
+
   // ページ作成ダイアログ
   const [createPageDialogOpen, setCreatePageDialogOpen] = useState(false)
   const [newPage, setNewPage] = useState({ section_id: 0, title: "", content: "" })
   const [creatingPage, setCreatingPage] = useState(false)
-  
+
   // ページ編集用
   const [editingPageTitle, setEditingPageTitle] = useState("")
   const [editingPageContent, setEditingPageContent] = useState("")
   const [savingPage, setSavingPage] = useState(false)
   const pageContentTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  
+
   // 保留中の保存を追跡（ページ切り替え前にフラッシュするため）
   const pendingPageSaveRef = useRef<{ pageId: number; title: string; content: string } | null>(null)
-  
+
   const getInitialSelectedPageId = (): number | null => {
     if (typeof window === "undefined") return null
     try {
@@ -1435,7 +1435,7 @@ function SubjectPage() {
       clearTimeout(pageContentTimeoutRef.current)
       pageContentTimeoutRef.current = null
     }
-    
+
     // 保留中の保存があればフラッシュ
     const pending = pendingPageSaveRef.current
     if (pending) {
@@ -1461,18 +1461,18 @@ function SubjectPage() {
         const token = typeof window !== 'undefined' && hasRequiredConsent() ? localStorage.getItem('auth_token') : null
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
         if (token) headers['Authorization'] = `Bearer ${token}`
-        
+
         fetch(`/api/note-pages/${pending.pageId}`, {
           method: 'PUT',
           headers,
           body: JSON.stringify({ title: pending.title || null, content: pending.content || null }),
           keepalive: true,
-        }).catch(() => {})
+        }).catch(() => { })
       }
     }
 
     window.addEventListener('beforeunload', handleBeforeUnload)
-    
+
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
       // アンマウント時にもフラッシュ
@@ -1491,21 +1491,21 @@ function SubjectPage() {
   // コンテンツ変更時（デバウンス自動保存）
   const handlePageContentChange = (newContent: string) => {
     setEditingPageContent(newContent)
-    
+
     // 既存のタイマーをクリア
     if (pageContentTimeoutRef.current) {
       clearTimeout(pageContentTimeoutRef.current)
     }
-    
+
     // タイマー設定時点でページIDをキャプチャ（クロージャの問題を回避）
     const currentPageId = selectedPageId
     const currentTitle = editingPageTitle
-    
+
     if (!currentPageId) return
-    
+
     // 保留中の保存を更新
     pendingPageSaveRef.current = { pageId: currentPageId, title: currentTitle, content: newContent }
-    
+
     // 1秒後に自動保存
     pageContentTimeoutRef.current = setTimeout(() => {
       if (pendingPageSaveRef.current && pendingPageSaveRef.current.pageId === currentPageId) {
@@ -2545,8 +2545,8 @@ function SubjectPage() {
             <div className="flex-1 overflow-y-auto p-3">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-medium text-amber-900/80">{selectedSubject}のノート</span>
-                <Button 
-                  size="sm" 
+                <Button
+                  size="sm"
                   className="h-6 text-xs px-2"
                   onClick={() => setCreateNotebookDialogOpen(true)}
                 >
@@ -2559,8 +2559,8 @@ function SubjectPage() {
               ) : notebooks.length === 0 ? (
                 <div className="text-center py-8 border border-amber-200/60 rounded-lg">
                   <p className="text-muted-foreground mb-3 text-xs">ノートブックがありません</p>
-                  <Button 
-                    size="sm" 
+                  <Button
+                    size="sm"
                     className="h-6 text-xs px-2"
                     onClick={() => setCreateNotebookDialogOpen(true)}
                   >

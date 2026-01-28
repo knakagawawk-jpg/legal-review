@@ -777,7 +777,7 @@ function StudyManagementPage() {
                 <Plus className="h-3 w-3" />
                 追加
               </Button>
-              <Link href="/your-page/history/memo">
+              <Link href="/your-page/data/memo">
                 <Button
                   size="sm"
                   variant="ghost"
@@ -1066,7 +1066,7 @@ function StudyManagementPage() {
                 <Plus className="h-3 w-3" />
                 追加
               </Button>
-              <Link href="/your-page/history/topics">
+              <Link href="/your-page/data/topics">
                 <Button
                   size="sm"
                   variant="ghost"
@@ -2127,7 +2127,7 @@ function HistoryPage() {
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <History className="h-4 w-4 text-amber-600" />
-              <h1 className="text-base font-semibold text-amber-900">Your History</h1>
+              <h1 className="text-base font-semibold text-amber-900">Your Data</h1>
             </div>
             <div className="flex items-center gap-2">
               <Tabs value={mainTab} onValueChange={(v) => {

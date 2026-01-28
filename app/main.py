@@ -60,6 +60,7 @@ from pydantic import BaseModel
 from .llm_service import generate_review, chat_about_review, free_chat, generate_recent_review_problems, generate_chat_title
 from .llm_usage import build_llm_request_row
 from .auth import get_current_user, get_current_user_required, get_current_admin, verify_google_token, get_or_create_user, create_access_token
+from . import plan_limits as plan_limits_module
 from config.settings import AUTH_ENABLED
 from .timer_api import register_timer_routes
 from .timer_utils import get_study_date as get_study_date_4am
@@ -207,6 +208,15 @@ def _startup_migrate_reviews():
         logger.info("✓ Startup llm_requests migration completed")
     except Exception as e:
         logger.warning(f"Startup llm_requests migration skipped/failed: {str(e)}")
+
+    # beta用 SubscriptionPlan を投入（既存ならスキップ）
+    try:
+        from .seed_beta_plan import seed_beta_plan
+
+        seed_beta_plan()
+        logger.info("✓ Startup beta plan seed completed")
+    except Exception as e:
+        logger.warning(f"Startup beta plan seed skipped/failed: {str(e)}")
 
 # グローバルエラーハンドラーを追加（HTTPExceptionは除外）
 @app.exception_handler(Exception)
@@ -713,7 +723,10 @@ async def create_review(
         
         # 科目IDが未設定の場合も許可（NULL可）
         # subject_idがNoneの場合はそのままNULLとして保存
-        
+
+        # プラン制限: 講評の合計回数
+        plan_limits_module.check_review_limit(db, current_user)
+
         # 2) Submission保存（認証されている場合はuser_idを設定）
         sub = Submission(
             user_id=current_user.id if current_user else None,
@@ -1064,6 +1077,8 @@ async def chat_review(
     db: Session = Depends(get_db)
 ):
     """講評に関する質問に答える（認証必須）"""
+    plan_limits_module.check_non_review_cost_limit(db, current_user)
+
     # review_id優先（現行）
     if req.review_id is not None:
         review = db.query(Review).filter(Review.id == req.review_id).first()
@@ -2293,7 +2308,14 @@ async def create_message(
     
     if thread.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
-    
+
+    # プラン制限: チャットメッセージ数（user）と Review 以外のコスト
+    if thread.type == "review_chat":
+        plan_limits_module.check_review_chat_message_limit(db, current_user, after_add=1)
+    else:
+        plan_limits_module.check_free_chat_message_limit(db, current_user, after_add=1)
+    plan_limits_module.check_non_review_cost_limit(db, current_user)
+
     # 1. ユーザーメッセージを保存
     user_message = Message(
         thread_id=thread_id,
@@ -4070,13 +4092,15 @@ async def list_recent_review_problem_sessions(
             )
 
         used = _count_recent_review_success_sessions(db, current_user.id, sd)
-        remaining = max(0, RECENT_REVIEW_DAILY_LIMIT - used)
+        daily_limit = plan_limits_module.get_recent_review_daily_limit(db, current_user)
+        effective_daily_limit = daily_limit if daily_limit is not None else RECENT_REVIEW_DAILY_LIMIT
+        remaining = max(0, effective_daily_limit - used)
 
         return RecentReviewProblemSessionsResponse(
             study_date=sd,
             used_count=used,
             remaining_count=remaining,
-            daily_limit=RECENT_REVIEW_DAILY_LIMIT,
+            daily_limit=effective_daily_limit,
             sessions=session_resps,
             total=len(session_resps),
         )
@@ -4095,9 +4119,14 @@ async def create_recent_review_problem_session(
     db: Session = Depends(get_db),
 ):
     try:
+        plan_limits_module.check_recent_review_daily_limit(db, current_user)
+        plan_limits_module.check_non_review_cost_limit(db, current_user)
+
         sd = _get_current_study_date_4am()
+        daily_limit = plan_limits_module.get_recent_review_daily_limit(db, current_user)
+        effective_daily_limit = daily_limit if daily_limit is not None else RECENT_REVIEW_DAILY_LIMIT
         used = _count_recent_review_success_sessions(db, current_user.id, sd)
-        if used >= RECENT_REVIEW_DAILY_LIMIT:
+        if used >= effective_daily_limit:
             raise HTTPException(status_code=429, detail="本日の制限に達しました。")
 
         mode = "regenerate" if payload.source_session_id else "generate"

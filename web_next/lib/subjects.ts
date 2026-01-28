@@ -86,7 +86,7 @@ export function sortSubjectsByFixedOrder(subjects: string[]): string[] {
   // FIXED_SUBJECTSの順序に従って並べ替え
   const sorted: string[] = []
   const subjectSet = new Set(subjects)
-  
+
   // FIXED_SUBJECTSに含まれる科目を順序通りに追加
   for (const subject of FIXED_SUBJECTS) {
     if (subjectSet.has(subject)) {
@@ -94,10 +94,10 @@ export function sortSubjectsByFixedOrder(subjects: string[]): string[] {
       subjectSet.delete(subject)
     }
   }
-  
+
   // FIXED_SUBJECTSにない科目も追加（後方互換性）
   const additional = Array.from(subjectSet).sort()
   sorted.push(...additional)
-  
+
   return sorted
 }
