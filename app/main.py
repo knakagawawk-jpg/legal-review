@@ -3627,11 +3627,25 @@ def _build_candidate_pool(db: Session, user_id: int, study_date: str) -> list[Ca
     candidates = []
     
     # 各ソースタイプから取得
-    candidates.extend(_fetch_dashboard_item_candidates(db, user_id, study_date))
-    candidates.extend(_fetch_review_candidates(db, user_id, study_date))
-    candidates.extend(_fetch_review_thread_candidates(db, user_id, study_date))
-    candidates.extend(_fetch_free_thread_candidates(db, user_id, study_date))
-    candidates.extend(_fetch_note_candidates(db, user_id, study_date))
+    dashboard_items = _fetch_dashboard_item_candidates(db, user_id, study_date)
+    review_items = _fetch_review_candidates(db, user_id, study_date)
+    review_thread_items = _fetch_review_thread_candidates(db, user_id, study_date)
+    free_thread_items = _fetch_free_thread_candidates(db, user_id, study_date)
+    note_items = _fetch_note_candidates(db, user_id, study_date)
+    
+    candidates.extend(dashboard_items)
+    candidates.extend(review_items)
+    candidates.extend(review_thread_items)
+    candidates.extend(free_thread_items)
+    candidates.extend(note_items)
+    
+    # デバッグログ
+    logger.info(
+        f"Candidate pool built for user_id={user_id}, study_date={study_date}: "
+        f"dashboard={len(dashboard_items)}, review={len(review_items)}, "
+        f"review_thread={len(review_thread_items)}, free_thread={len(free_thread_items)}, "
+        f"note={len(note_items)}, total={len(candidates)}"
+    )
     
     return candidates
 
@@ -4166,7 +4180,39 @@ async def create_recent_review_problem_session(
             candidate_pool = _build_candidate_pool(db, current_user.id, sd)
         
         if not candidate_pool:
-            raise HTTPException(status_code=400, detail="復習問題を生成するためのデータがありません")
+            # より詳細なエラーメッセージを生成
+            error_details = []
+            dashboard_count = len(_fetch_dashboard_item_candidates(db, current_user.id, sd))
+            review_count = len(_fetch_review_candidates(db, current_user.id, sd))
+            review_thread_count = len(_fetch_review_thread_candidates(db, current_user.id, sd))
+            free_thread_count = len(_fetch_free_thread_candidates(db, current_user.id, sd))
+            note_count = len(_fetch_note_candidates(db, current_user.id, sd))
+            
+            if dashboard_count == 0:
+                error_details.append("ダッシュボード項目（過去5日間）")
+            if review_count == 0:
+                error_details.append("講評データ（過去2週間）")
+            if review_thread_count == 0:
+                error_details.append("講評チャット（過去2週間）")
+            if free_thread_count == 0:
+                error_details.append("フリーチャット（過去2週間）")
+            if note_count == 0:
+                error_details.append("ノート（過去5日間）")
+            
+            detail_msg = "復習問題を生成するためのデータがありません。"
+            if error_details:
+                detail_msg += f" 以下のデータが見つかりませんでした: {', '.join(error_details)}"
+            else:
+                detail_msg += " データは存在しますが、すべて使用済みの可能性があります。"
+            
+            logger.warning(
+                f"No candidate pool for user_id={current_user.id}, study_date={sd}: "
+                f"dashboard={dashboard_count}, review={review_count}, "
+                f"review_thread={review_thread_count}, free_thread={free_thread_count}, "
+                f"note={note_count}"
+            )
+            
+            raise HTTPException(status_code=400, detail=detail_msg)
         
         # 優先度計算
         for candidate in candidate_pool:
