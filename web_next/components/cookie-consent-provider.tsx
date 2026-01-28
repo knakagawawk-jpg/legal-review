@@ -1,12 +1,14 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { usePathname } from "next/navigation"
 import { CookieConsentBanner } from "@/components/cookie-consent-banner"
 import { needsConsent } from "@/lib/cookie-consent"
 
 export function CookieConsentProvider({ children }: { children: React.ReactNode }) {
   const [showBanner, setShowBanner] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const pathname = usePathname()
 
   useEffect(() => {
     setMounted(true)
@@ -20,13 +22,16 @@ export function CookieConsentProvider({ children }: { children: React.ReactNode 
     setShowBanner(false)
   }
 
+  // プライバシーポリシーページではバナーを出さない（リンクで開いたタブでポリシーを読めるようにする）
+  const hideBannerOnPrivacyPage = pathname === "/privacy-policy"
+
   if (!mounted) {
     return <>{children}</>
   }
 
   return (
     <>
-      {showBanner && (
+      {showBanner && !hideBannerOnPrivacyPage && (
         <CookieConsentBanner
           onConsent={handleConsent}
           showOnlyRequired={false}
