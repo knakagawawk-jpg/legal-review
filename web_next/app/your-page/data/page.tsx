@@ -770,10 +770,19 @@ function StudyManagementPage() {
   
   return (
     <div className="space-y-4">
-      {/* 今月の講評回数（右上） */}
+      {/* 講評回数（使用/上限） */}
       <div className="flex justify-end mb-2">
         <div className="text-sm text-muted-foreground">
-          今月の講評回数：<span className="font-semibold">-回</span>
+          講評回数：
+          {planLimits?.reviews_limit != null ? (
+            <span className="font-semibold text-amber-700">{planLimits.reviews_used}</span>
+          ) : (
+            <span className="font-semibold">{planLimits?.reviews_used ?? "-"}</span>
+          )}
+          {planLimits?.reviews_limit != null && (
+            <> / <span className="font-semibold">{planLimits.reviews_limit}</span></>
+          )}
+          回
         </div>
       </div>
       
@@ -1971,7 +1980,6 @@ function HistoryPage() {
   const [loading, setLoading] = useState(true)
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null)  // null = 全科目
   const [selectedYear, setSelectedYear] = useState<number | null>(null)  // null = 全年度
-  const [planLimits, setPlanLimits] = useState<PlanLimitUsage | null>(null)
 
   useEffect(() => {
     const loadReviewHistory = async () => {
@@ -1990,21 +1998,8 @@ function HistoryPage() {
       }
     }
 
-    const loadPlanLimits = async () => {
-      try {
-        const data = await apiClient.get<PlanLimitUsage>("/api/users/me/plan-limits")
-        setPlanLimits(data)
-      } catch (error) {
-        console.error("Failed to load plan limits:", error)
-        setPlanLimits(null)
-      }
-    }
-
     if (mainTab === "past-questions") {
       loadReviewHistory()
-    }
-    if (mainTab === "study") {
-      loadPlanLimits()
     }
   }, [mainTab])
 
@@ -2161,12 +2156,7 @@ function HistoryPage() {
               <History className="h-4 w-4 text-amber-600" />
               <h1 className="text-base font-semibold text-amber-900">Your Data</h1>
             </div>
-            <div className="flex items-center gap-3">
-              {mainTab === "study" && planLimits && planLimits.reviews_limit !== null && (
-                <div className="text-xs text-muted-foreground">
-                  講評: <span className="font-semibold text-amber-700">{planLimits.reviews_used}</span> / <span className="font-semibold">{planLimits.reviews_limit}</span>回
-                </div>
-              )}
+            <div className="flex items-center gap-2">
               <Tabs value={mainTab} onValueChange={(v) => {
                 if (v === "study" || v === "past-questions") {
                   setMainTab(v)
