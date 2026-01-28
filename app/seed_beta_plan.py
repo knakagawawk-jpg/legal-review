@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from app.db import SessionLocal
-from app.models import Base, SubscriptionPlan, engine
+from app.db import SessionLocal, engine
+from app.models import Base, SubscriptionPlan
 
 BETA_PLAN_CODE = "beta-for-260128"
 BETA_PLAN_NAME = "beta-for-260128"
