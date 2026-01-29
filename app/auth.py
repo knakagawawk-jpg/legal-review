@@ -13,7 +13,8 @@ from .db import SessionLocal
 from .models import User
 from config.settings import (
     AUTH_ENABLED, GOOGLE_CLIENT_ID, SECRET_KEY, ALGORITHM,
-    TOKEN_CACHE_TTL, TOKEN_CACHE_MAX_SIZE, JWT_ACCESS_TOKEN_EXPIRE_DAYS
+    TOKEN_CACHE_TTL, TOKEN_CACHE_MAX_SIZE, JWT_ACCESS_TOKEN_EXPIRE_DAYS,
+    BETA_EMAIL_RESTRICTION_ENABLED, ALLOWED_BETA_EMAILS
 )
 
 logger = logging.getLogger(__name__)
@@ -159,6 +160,17 @@ def get_or_create_user(google_info: dict, db: Session) -> User:
         from sqlalchemy.sql import func
         user.last_login_at = func.now()
     else:
+        # 新規ユーザー登録時: β環境メール制限チェック
+        if BETA_EMAIL_RESTRICTION_ENABLED:
+            email_lower = email.lower()
+            if email_lower not in ALLOWED_BETA_EMAILS:
+                logger.warning(f"Beta registration rejected for email: {email}")
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="このメールアドレスはβテスト環境への登録が許可されていません。"
+                )
+            logger.info(f"Beta registration allowed for email: {email}")
+        
         # 新規ユーザーを作成（デフォルトは無料プラン）
         user = User(
             google_id=google_id,

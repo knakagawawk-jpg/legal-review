@@ -39,3 +39,33 @@ TOKEN_CACHE_MAX_SIZE = int(os.getenv("TOKEN_CACHE_MAX_SIZE", "1000"))  # デフ�
 
 # JWTトークン設定
 JWT_ACCESS_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_DAYS", "30"))  # デフォルト30日
+
+# β環境メール制限設定
+# BETA_EMAIL_RESTRICTION_ENABLED=true の場合、許可リストにあるメールアドレスのみ新規登録可能
+BETA_EMAIL_RESTRICTION_ENABLED = os.getenv("BETA_EMAIL_RESTRICTION_ENABLED", "false").lower() == "true"
+
+def load_allowed_beta_emails() -> set:
+    """
+    β環境で許可されたメールアドレスのリストを読み込む
+    config/allowed_beta_emails.txt から読み込み
+    """
+    allowed_emails = set()
+    emails_file = Path(__file__).parent / "allowed_beta_emails.txt"
+    
+    if not emails_file.exists():
+        return allowed_emails
+    
+    try:
+        with open(emails_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                # 空行とコメント行をスキップ
+                if line and not line.startswith('#'):
+                    allowed_emails.add(line.lower())  # 小文字で統一
+    except Exception:
+        pass
+    
+    return allowed_emails
+
+# 起動時に許可メールリストをロード
+ALLOWED_BETA_EMAILS = load_allowed_beta_emails()
