@@ -69,3 +69,11 @@ def load_allowed_beta_emails() -> set:
 
 # 起動時に許可メールリストをロード
 ALLOWED_BETA_EMAILS = load_allowed_beta_emails()
+
+# デバッグ: 起動時に設定状態をログ出力
+import logging
+_settings_logger = logging.getLogger(__name__)
+_settings_logger.info(f"BETA_EMAIL_RESTRICTION_ENABLED: {BETA_EMAIL_RESTRICTION_ENABLED}")
+_settings_logger.info(f"ALLOWED_BETA_EMAILS count: {len(ALLOWED_BETA_EMAILS)}")
+if ALLOWED_BETA_EMAILS:
+    _settings_logger.info(f"ALLOWED_BETA_EMAILS: {ALLOWED_BETA_EMAILS}")
