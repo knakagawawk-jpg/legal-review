@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import or_, cast, String, func
+from sqlalchemy.exc import OperationalError as SQLAlchemyOperationalError
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import datetime, timedelta, timezone
@@ -218,6 +219,20 @@ def _startup_migrate_reviews():
         logger.info("✓ Startup beta plan seed completed")
     except Exception as e:
         logger.warning(f"Startup beta plan seed skipped/failed: {str(e)}")
+
+# DBロックなど（複数ユーザー同時アクセス時）→ ユーザー向けメッセージで表示
+@app.exception_handler(SQLAlchemyOperationalError)
+async def db_operational_error_handler(request: Request, exc: SQLAlchemyOperationalError):
+    import traceback
+    error_detail = traceback.format_exc()
+    logger.warning(f"DB操作エラー（同時アクセス等）: {exc}\n{error_detail}")
+    msg = str(exc).lower()
+    if "locked" in msg or "busy" in msg or "timeout" in msg:
+        detail = "データベースが一時的に使用中です。しばらく待ってから再試行してください。"
+    else:
+        detail = f"データベースの処理中にエラーが発生しました: {str(exc)}"
+    return JSONResponse(status_code=503, content={"detail": detail})
+
 
 # グローバルエラーハンドラーを追加（HTTPExceptionは除外）
 @app.exception_handler(Exception)
@@ -2506,6 +2521,14 @@ async def create_message(
         
         return MessageResponse.model_validate(assistant_message)
         
+    except SQLAlchemyOperationalError as e:
+        db.rollback()
+        msg = str(e).lower()
+        if "locked" in msg or "busy" in msg or "timeout" in msg:
+            detail = "データベースが一時的に使用中です。しばらく待ってから再試行してください。"
+        else:
+            detail = f"データベースの処理中にエラーが発生しました: {str(e)}"
+        raise HTTPException(status_code=503, detail=detail)
     except Exception as e:
         # エラーが発生した場合もユーザーメッセージは保存済み
         db.rollback()
