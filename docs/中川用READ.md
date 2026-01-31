@@ -157,16 +157,25 @@ docker compose --profile local up -d --build
 #    git pull origin main
 
 # 2) 対象環境のコンテナでインポートスクリプトを実行
-#    scripts/ と data/ だけをマウントする（/app 全体をマウントすると entrypoint.sh が消えてエラーになる）
-# 本番（dev.db に追加）:
-#    docker compose --profile production run --rm -v /opt/law-review/scripts:/app/scripts:ro -v /opt/law-review/data:/app/data backend python /app/scripts/import_all_json_to_db.py --years R4
+#    scripts/, data/, config/ をマウントする（H21/H22の公法系・刑事系・民事系対応に config が必要）
+# 本番（prod.db に追加）:
+#    docker compose --profile production run --rm -v /opt/law-review/scripts:/app/scripts:ro -v /opt/law-review/data:/app/data -v /opt/law-review/config:/app/config:ro backend python /app/scripts/import_all_json_to_db.py
 # β（beta.db に追加）:
-#    docker compose --profile beta run --rm -v /opt/law-review/scripts:/app/scripts:ro -v /opt/law-review/data:/app/data backend-beta python /app/scripts/import_all_json_to_db.py --years R4
+#    docker compose --profile beta run --rm -v /opt/law-review/scripts:/app/scripts:ro -v /opt/law-review/data:/app/data -v /opt/law-review/config:/app/config:ro backend-beta python /app/scripts/import_all_json_to_db.py
 # 開発（dev.db に追加）:
-#    docker compose --profile dev run --rm -v /opt/law-review/scripts:/app/scripts:ro -v /opt/law-review/data:/app/data backend-dev python /app/scripts/import_all_json_to_db.py --years R4
+#    docker compose --profile dev run --rm -v /opt/law-review/scripts:/app/scripts:ro -v /opt/law-review/data:/app/data -v /opt/law-review/config:/app/config:ro backend-dev python /app/scripts/import_all_json_to_db.py
+
+# 特定年度のみインポートする場合は --years を付ける（例: --years R4 R6）
+#    docker compose --profile production run --rm -v /opt/law-review/scripts:/app/scripts:ro -v /opt/law-review/data:/app/data -v /opt/law-review/config:/app/config:ro backend python /app/scripts/import_all_json_to_db.py --years R4 R6
 
 # 既存データを上書きしたい場合は --update を付ける
-#    docker compose --profile production run --rm -v /opt/law-review/scripts:/app/scripts:ro -v /opt/law-review/data:/app/data backend python /app/scripts/import_all_json_to_db.py --years R4 --update
+#    docker compose --profile production run --rm -v /opt/law-review/scripts:/app/scripts:ro -v /opt/law-review/data:/app/data -v /opt/law-review/config:/app/config:ro backend python /app/scripts/import_all_json_to_db.py --update
+
+# --- 司法試験データを dev/beta/本番 すべてに反映する場合 ---
+# 上記1)の後に、各環境で順に実行:
+#    docker compose --profile production run --rm -v /opt/law-review/scripts:/app/scripts:ro -v /opt/law-review/data:/app/data -v /opt/law-review/config:/app/config:ro backend python /app/scripts/import_all_json_to_db.py
+#    docker compose --profile beta run --rm -v /opt/law-review/scripts:/app/scripts:ro -v /opt/law-review/data:/app/data -v /opt/law-review/config:/app/config:ro backend-beta python /app/scripts/import_all_json_to_db.py
+#    docker compose --profile dev run --rm -v /opt/law-review/scripts:/app/scripts:ro -v /opt/law-review/data:/app/data -v /opt/law-review/config:/app/config:ro backend-dev python /app/scripts/import_all_json_to_db.py
 
 # ============================================
 # DBにデータが入っているか確認するコマンド
@@ -175,7 +184,7 @@ docker compose --profile local up -d --build
 # 本番/β/開発ではコンテナ内の /data/dev.db や /data/beta.db など。
 
 # 方法1) コンテナ内で sqlite3 で確認（サーバー上でDBファイルに直接アクセスする場合）
-# 本番: docker exec -it law-review-backend sqlite3 /data/dev.db "SELECT id, shiken_type, nendo, subject_id, status, substr(text,1,40) FROM official_questions WHERE shiken_type='yobi' AND nendo=2022 ORDER BY subject_id;"
+# 本番: docker exec -it law-review-backend sqlite3 /data/prod.db "SELECT id, shiken_type, nendo, subject_id, status, substr(text,1,40) FROM official_questions WHERE shiken_type='shihou' ORDER BY nendo DESC, subject_id LIMIT 20;"
 # β:   docker exec -it law-review-backend-beta sqlite3 /data/beta.db "SELECT id, shiken_type, nendo, subject_id, status FROM official_questions WHERE shiken_type='yobi' AND nendo=2022 ORDER BY subject_id;"
 # 開発: docker exec -it law-review-backend-dev sqlite3 /data/dev.db "SELECT id, shiken_type, nendo, subject_id, status FROM official_questions WHERE shiken_type='yobi' AND nendo=2022 ORDER BY subject_id;"
 
