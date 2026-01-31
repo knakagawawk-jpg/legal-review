@@ -28,6 +28,14 @@ SUBJECT_MAP = {
 # 科目名 → 科目IDの逆マッピング
 SUBJECT_NAME_TO_ID = {name: id for id, name in SUBJECT_MAP.items()}
 
+# H21/H22司法試験の複合科目エイリアス（1-18にマッピング）
+# 公法系=憲法+行政法, 刑事系=刑法+刑事訴訟法, 民事系=民法+商法+民事訴訟法
+SUBJECT_ALIASES = {
+    "公法系": 1,   # 憲法を代表に
+    "刑事系": 6,   # 刑法を代表に
+    "民事系": 3,   # 民法を代表に
+}
+
 # 科目IDのリスト（表示順序）
 SUBJECT_IDS = list(SUBJECT_MAP.keys())
 
@@ -56,6 +64,9 @@ def get_subject_id(subject_name: str) -> int | None:
     for name, sid in SUBJECT_NAME_TO_ID.items():
         if name.replace("（", "").replace("）", "") == s2:
             return sid
+    # H21/H22の複合科目エイリアス
+    if s2 in SUBJECT_ALIASES:
+        return SUBJECT_ALIASES[s2]
     return None
 
 
