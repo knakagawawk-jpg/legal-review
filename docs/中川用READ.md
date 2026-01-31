@@ -149,6 +149,53 @@ docker compose --profile production up -d
 docker compose --profile local up -d --build
 
 # ============================================
+# サーバーのDBにJSONを追加（インポート）する
+# ============================================
+# 1) サーバーに入り、最新コード（JSON含む）を取得
+#    ssh -i $HOME\.ssh\id_ed25519_sakura ubuntu@160.16.50.238
+#    cd /opt/law-review
+#    git pull origin main
+
+# 2) 対象環境のコンテナでインポートスクリプトを実行
+#    scripts/ と data/ だけをマウントする（/app 全体をマウントすると entrypoint.sh が消えてエラーになる）
+# 本番（dev.db に追加）:
+#    docker compose --profile production run --rm -v /opt/law-review/scripts:/app/scripts:ro -v /opt/law-review/data:/app/data backend python /app/scripts/import_all_json_to_db.py --years R4
+# β（beta.db に追加）:
+#    docker compose --profile beta run --rm -v /opt/law-review/scripts:/app/scripts:ro -v /opt/law-review/data:/app/data backend-beta python /app/scripts/import_all_json_to_db.py --years R4
+# 開発（dev.db に追加）:
+#    docker compose --profile dev run --rm -v /opt/law-review/scripts:/app/scripts:ro -v /opt/law-review/data:/app/data backend-dev python /app/scripts/import_all_json_to_db.py --years R4
+
+# 既存データを上書きしたい場合は --update を付ける
+#    docker compose --profile production run --rm -v /opt/law-review/scripts:/app/scripts:ro -v /opt/law-review/data:/app/data backend python /app/scripts/import_all_json_to_db.py --years R4 --update
+
+# ============================================
+# DBにデータが入っているか確認するコマンド
+# ============================================
+# 環境変数 DATABASE_URL で指定したDBを使う。例: sqlite:///./data/dev.db → data/dev.db
+# 本番/β/開発ではコンテナ内の /data/dev.db や /data/beta.db など。
+
+# 方法1) コンテナ内で sqlite3 で確認（サーバー上でDBファイルに直接アクセスする場合）
+# 本番: docker exec -it law-review-backend sqlite3 /data/dev.db "SELECT id, shiken_type, nendo, subject_id, status, substr(text,1,40) FROM official_questions WHERE shiken_type='yobi' AND nendo=2022 ORDER BY subject_id;"
+# β:   docker exec -it law-review-backend-beta sqlite3 /data/beta.db "SELECT id, shiken_type, nendo, subject_id, status FROM official_questions WHERE shiken_type='yobi' AND nendo=2022 ORDER BY subject_id;"
+# 開発: docker exec -it law-review-backend-dev sqlite3 /data/dev.db "SELECT id, shiken_type, nendo, subject_id, status FROM official_questions WHERE shiken_type='yobi' AND nendo=2022 ORDER BY subject_id;"
+
+# 方法2) プロジェクトルートで Python から確認（アプリと同じ DATABASE_URL を使用）
+# cd /opt/law-review  のうえで:
+# python -c "
+# from app.db import SessionLocal
+# from app.models import OfficialQuestion
+# from config.subjects import get_subject_name
+# db = SessionLocal()
+# rows = db.query(OfficialQuestion).filter(OfficialQuestion.shiken_type=='yobi', OfficialQuestion.nendo==2022, OfficialQuestion.status=='active').order_by(OfficialQuestion.subject_id).all()
+# for r in rows: print(r.id, get_subject_name(r.subject_id), r.nendo)
+# db.close()
+# "
+
+# ローカル（PowerShell）で確認する例（data/dev.db を使う場合）
+# cd law-review
+# python -c "from app.db import SessionLocal; from app.models import OfficialQuestion; from config.subjects import get_subject_name; db = SessionLocal(); [print(r.id, get_subject_name(r.subject_id)) for r in db.query(OfficialQuestion).filter(OfficialQuestion.shiken_type=='yobi', OfficialQuestion.nendo==2022).order_by(OfficialQuestion.subject_id).all()]; db.close()"
+
+# ============================================
 # その他の便利なコマンド
 # ============================================
 # 依存関係が怪しい時（本番環境）
