@@ -4626,21 +4626,21 @@ async def get_admin_databases(
         
         normalized_current_url = normalize_database_url(current_db_url)
         
-        # 利用可能なデータベースの候補リスト
+        # 利用可能なデータベースの候補リスト（相対パスで統一＝バックエンドのCWDで解決され一貫する）
         candidate_databases = [
             {
                 "name": "dev",
-                "url": "sqlite:////data/dev.db",
+                "url": "sqlite:///./data/dev.db",
                 "description": "開発環境"
             },
             {
                 "name": "beta",
-                "url": "sqlite:////data/beta.db",
+                "url": "sqlite:///./data/beta.db",
                 "description": "βテスト環境"
             },
             {
                 "name": "本番",
-                "url": "sqlite:////data/prod.db",
+                "url": "sqlite:///./data/prod.db",
                 "description": "本番環境"
             },
         ]
