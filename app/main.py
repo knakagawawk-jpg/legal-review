@@ -979,85 +979,100 @@ async def get_review_legacy(
 @app.get("/v1/reviews/{review_id}", response_model=ReviewResponse)
 async def get_review_by_id(
     review_id: int,
+    database_url: Optional[str] = Query(None, description="管理者用: データベースURL（指定時はそのDBから取得、管理者のみ）"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db)
 ):
-    """review_idで講評を取得（認証必須）"""
-    review = db.query(Review).filter(Review.id == review_id).first()
-    if not review:
-        raise HTTPException(status_code=404, detail="Review not found")
-    
-    # ユーザー所有チェック
-    if review.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
-    
+    """review_idで講評を取得（認証必須）。database_url指定時は管理者のみ・指定DBから取得し所有チェックを省略。"""
+    use_db = db
+    db_gen = None
+
+    if database_url:
+        if not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="管理者のみデータベースを指定できます")
+        if not database_url.startswith("sqlite:///"):
+            raise HTTPException(status_code=400, detail="現在はSQLiteデータベースのみサポートしています")
+        db_gen = get_db_session_for_url(database_url)
+        use_db = next(db_gen)
+
     try:
-        # kouhyo_kekkaからJSONを取得
-        if isinstance(review.kouhyo_kekka, str):
-            review_json = json.loads(review.kouhyo_kekka)
-        else:
-            review_json = review.kouhyo_kekka
-    except (json.JSONDecodeError, TypeError):
-        raise HTTPException(status_code=500, detail="Review JSON is invalid")
-    
-    # 問題情報を取得
-    question_text = review.custom_question_text or ""
-    purpose_text = None
-    grading_impression_text = None
-    subject_id = None
-    subject_name = None
-    question_title = None
-    reference_text = None
-    
-    # 既存問題の場合：OfficialQuestionから全情報を取得
-    if review.official_question_id:
-        official_q = db.query(OfficialQuestion).filter(OfficialQuestion.id == review.official_question_id).first()
-        if official_q:
-            question_text = official_q.text
-            purpose_text = official_q.syutudaisyusi
-            if official_q.subject_id:
-                subject_id = official_q.subject_id  # 科目ID（1-18）
+        review = use_db.query(Review).filter(Review.id == review_id).first()
+        if not review:
+            raise HTTPException(status_code=404, detail="Review not found")
+
+        # database_url未指定時はユーザー所有チェック
+        if not database_url and review.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        try:
+            if isinstance(review.kouhyo_kekka, str):
+                review_json = json.loads(review.kouhyo_kekka)
+            else:
+                review_json = review.kouhyo_kekka
+        except (json.JSONDecodeError, TypeError):
+            raise HTTPException(status_code=500, detail="Review JSON is invalid")
+
+        # 問題情報を取得
+        question_text = review.custom_question_text or ""
+        purpose_text = None
+        grading_impression_text = None
+        subject_id = None
+        subject_name = None
+        question_title = None
+        reference_text = None
+
+        # 既存問題の場合：OfficialQuestionから全情報を取得
+        if review.official_question_id:
+            official_q = use_db.query(OfficialQuestion).filter(OfficialQuestion.id == review.official_question_id).first()
+            if official_q:
+                question_text = official_q.text
+                purpose_text = official_q.syutudaisyusi
+                if official_q.subject_id:
+                    subject_id = official_q.subject_id  # 科目ID（1-18）
+                    subject_name = get_subject_name(subject_id)
+                # 司法試験のみ採点実感を返す（存在する場合）
+                if official_q.shiken_type == "shihou":
+                    grading_impression_text = official_q.grading_impression_text
+
+        # 新規問題の場合：UserReviewHistoryからタイトルと参照文章を取得
+        history = use_db.query(UserReviewHistory).filter(UserReviewHistory.review_id == review_id).first()
+        if history:
+            if subject_id is None and history.subject:
+                subject_id = history.subject  # 科目ID（1-18）
                 subject_name = get_subject_name(subject_id)
-            # 司法試験のみ採点実感を返す（存在する場合）
-            if official_q.shiken_type == "shihou":
-                grading_impression_text = official_q.grading_impression_text
-    
-    # 新規問題の場合：UserReviewHistoryからタイトルと参照文章を取得
-    history = db.query(UserReviewHistory).filter(UserReviewHistory.review_id == review_id).first()
-    if history:
-        if subject_id is None and history.subject:
-            subject_id = history.subject  # 科目ID（1-18）
-            subject_name = get_subject_name(subject_id)
-        # 新規問題（custom）の場合、question_titleとreference_textを取得
-        if review.source_type == "custom":
-            if history.question_title:
-                question_title = history.question_title
-            if history.reference_text:
-                purpose_text = history.reference_text
-                reference_text = history.reference_text
-    
-    # review_markdownを生成（JSONから）
-    # llm_serviceの_format_markdown関数を使用
-    from .llm_service import _format_markdown
-    review_markdown = _format_markdown(subject_name or "不明", review_json)
-    
-    # submission_idは後方互換性のため、review_idを使用（存在しない場合は0）
-    # 実際にはReviewResponseのsubmission_idは必須なので、ダミー値を設定
-    return ReviewResponse(
-        review_id=review.id,
-        submission_id=0,  # review_idベースの場合は使用しない
-        review_markdown=review_markdown,
-        review_json=review_json,
-        answer_text=review.answer_text,
-        question_text=question_text,
-        subject=subject_id,  # 科目ID（1-18）
-        subject_name=subject_name,  # 科目名（表示用）
-        purpose=purpose_text,
-        question_title=question_title,
-        source_type=review.source_type,
-        reference_text=reference_text if review.source_type == "custom" else None,
-        grading_impression_text=grading_impression_text,
-    )
+            # 新規問題（custom）の場合、question_titleとreference_textを取得
+            if review.source_type == "custom":
+                if history.question_title:
+                    question_title = history.question_title
+                if history.reference_text:
+                    purpose_text = history.reference_text
+                    reference_text = history.reference_text
+
+        # review_markdownを生成（JSONから）
+        from .llm_service import _format_markdown
+        review_markdown = _format_markdown(subject_name or "不明", review_json)
+
+        return ReviewResponse(
+            review_id=review.id,
+            submission_id=0,  # review_idベースの場合は使用しない
+            review_markdown=review_markdown,
+            review_json=review_json,
+            answer_text=review.answer_text,
+            question_text=question_text,
+            subject=subject_id,  # 科目ID（1-18）
+            subject_name=subject_name,  # 科目名（表示用）
+            purpose=purpose_text,
+            question_title=question_title,
+            source_type=review.source_type,
+            reference_text=reference_text if review.source_type == "custom" else None,
+            grading_impression_text=grading_impression_text,
+        )
+    finally:
+        if db_gen is not None:
+            try:
+                next(db_gen, None)
+            except StopIteration:
+                pass
 
 
 @app.post("/v1/reviews/{review_id}/thread", response_model=ThreadResponse)
@@ -1453,9 +1468,10 @@ def get_all_submissions_dev(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
     limit: int = Query(100, ge=1, le=500),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
+    database_url: Optional[str] = Query(None, description="データベースURL（指定時はそのDBから取得）"),
 ):
-    """開発用：全投稿一覧を取得（認証必須、dev環境のみ）"""
+    """開発用：全投稿一覧を取得（認証必須、dev環境のみ）。database_url指定時はそのDBを使用。"""
     # dev環境以外ではアクセス不可
     enable_dev_page = os.getenv("ENABLE_DEV_PAGE", "false").lower() == "true"
     if not enable_dev_page:
@@ -1463,22 +1479,39 @@ def get_all_submissions_dev(
             status_code=403,
             detail="開発者用ページはdev環境でのみ利用可能です"
         )
-    submissions = db.query(Submission).order_by(Submission.created_at.desc()).offset(offset).limit(limit).all()
-    
-    result = []
-    for sub in submissions:
-        # Reviewはreview_id中心で、Submissionとは紐付けない設計のためここでは返さない
-        review_data = None
-        result.append(SubmissionHistoryResponse(
-            id=sub.id,
-            subject=sub.subject,
-            question_text=sub.question_text,
-            answer_text=sub.answer_text,
-            created_at=sub.created_at,
-            review=review_data
-        ))
-    
-    return result
+
+    use_db = db
+    db_gen = None
+    if database_url:
+        if not database_url.startswith("sqlite:///"):
+            raise HTTPException(status_code=400, detail="現在はSQLiteデータベースのみサポートしています")
+        db_gen = get_db_session_for_url(database_url)
+        use_db = next(db_gen)
+
+    try:
+        submissions = use_db.query(Submission).order_by(Submission.created_at.desc()).offset(offset).limit(limit).all()
+
+        result = []
+        for sub in submissions:
+            # Reviewはreview_id中心で、Submissionとは紐付けない設計のためここでは返さない
+            review_data = None
+            result.append(SubmissionHistoryResponse(
+                id=sub.id,
+                subject=sub.subject,
+                question_text=sub.question_text,
+                answer_text=sub.answer_text,
+                created_at=sub.created_at,
+                review=review_data
+            ))
+
+        return result
+    finally:
+        if db_gen is not None:
+            try:
+                next(db_gen, None)
+            except StopIteration:
+                pass
+
 
 @app.get("/v1/users/me/short-answer-sessions", response_model=List[ShortAnswerHistoryResponse])
 async def get_my_short_answer_sessions(

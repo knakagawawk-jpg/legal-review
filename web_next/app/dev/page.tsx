@@ -127,7 +127,7 @@ function DevPage() {
             <TabsTrigger value="users">👥 ユーザー管理</TabsTrigger>
             <TabsTrigger value="stats">📈 統計情報</TabsTrigger>
             <TabsTrigger value="llm">🧾 LLMログ</TabsTrigger>
-            <TabsTrigger value="dev">🔧 開発ツール</TabsTrigger>
+            <TabsTrigger value="dev">📋 講評データ</TabsTrigger>
           </TabsList>
 
           <TabsContent value="dashboard">
@@ -147,7 +147,7 @@ function DevPage() {
           </TabsContent>
 
           <TabsContent value="dev">
-            <DevTools />
+            <DevTools databaseUrl={selectedDatabaseUrl || undefined} />
           </TabsContent>
         </Tabs>
       </div>
@@ -155,7 +155,7 @@ function DevPage() {
   )
 }
 
-function ReviewResultVerify() {
+function ReviewResultVerify({ databaseUrl }: { databaseUrl?: string }) {
   const router = useRouter()
   const [data, setData] = useState<DevReviewData>({
     answer_text: "",
@@ -181,8 +181,20 @@ function ReviewResultVerify() {
     setError(null)
 
     try {
-      // review_idベースで取得
-      const reviewData: ReviewResponse = await (await fetch(`/api/reviews/${data.review_id}`)).json()
+      // review_idベースで取得（管理者時は選択中のDBを使用）
+      const url = databaseUrl
+        ? `/api/reviews/${data.review_id}?database_url=${encodeURIComponent(databaseUrl)}`
+        : `/api/reviews/${data.review_id}`
+      const res = await fetch(url)
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        const message =
+          (typeof errorData.error === "string" ? errorData.error : null) ||
+          (typeof errorData.detail === "string" ? errorData.detail : null) ||
+          "講評の取得に失敗しました"
+        throw new Error(message)
+      }
+      const reviewData: ReviewResponse = await res.json()
       setData({
         review_id: data.review_id,
         answer_text: reviewData.answer_text || "",
@@ -663,7 +675,7 @@ function DevChatSection({ reviewId }: { reviewId: number }) {
   )
 }
 
-function SubmissionList() {
+function SubmissionList({ databaseUrl }: { databaseUrl?: string }) {
   const router = useRouter()
   const [submissions, setSubmissions] = useState<SubmissionHistory[]>([])
   const [loading, setLoading] = useState(false)
@@ -672,15 +684,24 @@ function SubmissionList() {
 
   useEffect(() => {
     loadSubmissions()
-  }, [])
+  }, [databaseUrl])
 
   const loadSubmissions = async () => {
     setLoading(true)
     setError(null)
 
     try {
-      const res = await fetch("/api/dev/submissions?limit=100")
-      if (!res.ok) throw new Error("投稿一覧の取得に失敗しました")
+      const params = new URLSearchParams({ limit: "100" })
+      if (databaseUrl) params.append("database_url", databaseUrl)
+      const res = await fetch(`/api/dev/submissions?${params.toString()}`)
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        const message =
+          (typeof errorData.error === "string" ? errorData.error : null) ||
+          (typeof errorData.detail === "string" ? errorData.detail : null) ||
+          "投稿一覧の取得に失敗しました"
+        throw new Error(message)
+      }
 
       const data = await res.json()
       setSubmissions(data || [])
@@ -976,6 +997,9 @@ function LlmRequestTable({ databaseUrl }: { databaseUrl?: string }) {
       params.set("offset", String(offset))
       if (!params.get("limit")) {
         params.set("limit", "50")
+      }
+      if (databaseUrl) {
+        params.append("database_url", databaseUrl)
       }
 
       // 管理者用APIを使用
@@ -1820,7 +1844,7 @@ function AdminStats({ databaseUrl }: { databaseUrl?: string }) {
   )
 }
 
-function DevTools() {
+function DevTools({ databaseUrl }: { databaseUrl?: string }) {
   const [activeSubTab, setActiveSubTab] = useState("verify")
 
   return (
@@ -1832,11 +1856,11 @@ function DevTools() {
         </TabsList>
 
         <TabsContent value="verify">
-          <ReviewResultVerify />
+          <ReviewResultVerify databaseUrl={databaseUrl} />
         </TabsContent>
 
         <TabsContent value="list">
-          <SubmissionList />
+          <SubmissionList databaseUrl={databaseUrl} />
         </TabsContent>
       </Tabs>
     </div>

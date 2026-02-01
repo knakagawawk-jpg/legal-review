@@ -28,7 +28,13 @@ export async function GET(
       )
     }
 
-    const response = await fetch(`${BACKEND_URL}/v1/reviews/${reviewId}`, {
+    const searchParams = request.nextUrl.searchParams
+    const databaseUrl = searchParams.get("database_url")
+    const url = databaseUrl
+      ? `${BACKEND_URL}/v1/reviews/${reviewId}?database_url=${encodeURIComponent(databaseUrl)}`
+      : `${BACKEND_URL}/v1/reviews/${reviewId}`
+
+    const response = await fetch(url, {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${token}`,
@@ -38,8 +44,14 @@ export async function GET(
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
+      const message =
+        typeof errorData.detail === "string"
+          ? errorData.detail
+          : Array.isArray(errorData.detail)
+            ? errorData.detail.map((e: { msg?: string }) => e?.msg || String(e)).join(", ")
+            : "講評の取得に失敗しました"
       return NextResponse.json(
-        { error: errorData.detail || "講評の取得に失敗しました" },
+        { error: message || "講評の取得に失敗しました" },
         { status: response.status }
       )
     }

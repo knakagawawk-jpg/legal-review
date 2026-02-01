@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
 
-const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:8000"
+const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || process.env.BACKEND_URL || "http://localhost:8000"
 
 // 動的ルートとしてマーク（request.urlを使用するため）
 export const dynamic = 'force-dynamic'
@@ -31,10 +31,12 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const limit = searchParams.get("limit") || "100"
     const offset = searchParams.get("offset") || "0"
+    const databaseUrl = searchParams.get("database_url")
 
     const params = new URLSearchParams()
     params.append("limit", limit)
     params.append("offset", offset)
+    if (databaseUrl) params.append("database_url", databaseUrl)
 
     const url = `${BACKEND_URL}/v1/dev/submissions?${params.toString()}`
 
