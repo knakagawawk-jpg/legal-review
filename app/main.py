@@ -1450,10 +1450,11 @@ async def get_my_submissions(
     result = []
     for sub in submissions:
         # Reviewはreview_id中心で、Submissionとは紐付けない設計のためここでは返さない
+        # subjectはDBに文字列（科目名）が混入している場合があるため正規化する
         review_data = None
         result.append(SubmissionHistoryResponse(
             id=sub.id,
-            subject=sub.subject,
+            subject=_normalize_subject_id(sub.subject),
             question_text=sub.question_text,
             answer_text=sub.answer_text,
             created_at=sub.created_at,
@@ -1494,10 +1495,11 @@ def get_all_submissions_dev(
         result = []
         for sub in submissions:
             # Reviewはreview_id中心で、Submissionとは紐付けない設計のためここでは返さない
+            # subjectはDBに文字列（科目名）が混入している場合があるため正規化する
             review_data = None
             result.append(SubmissionHistoryResponse(
                 id=sub.id,
-                subject=sub.subject,
+                subject=_normalize_subject_id(sub.subject),
                 question_text=sub.question_text,
                 answer_text=sub.answer_text,
                 created_at=sub.created_at,
