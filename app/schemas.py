@@ -312,6 +312,32 @@ class UserReviewHistoryResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+class AdminReviewHistoryItemResponse(BaseModel):
+    """管理者用：全ユーザー講評履歴1件（user_id, user_email 付き）"""
+    id: int
+    review_id: int
+    user_id: int
+    user_email: Optional[str] = None
+    subject: Optional[int] = None  # 科目ID（1-18）
+    subject_name: Optional[str] = None  # 科目名（表示用）
+    exam_type: Optional[str] = None
+    year: Optional[int] = None
+    score: Optional[float] = None
+    attempt_count: int = 1
+    question_title: Optional[str] = None
+    reference_text: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AdminReviewHistoryListResponse(BaseModel):
+    """管理者用：全ユーザー講評履歴一覧"""
+    items: List[AdminReviewHistoryItemResponse]
+    total: int
+
 # フリーチャット用スキーマ（threads/messagesベース）
 class ThreadCreate(BaseModel):
     """スレッド作成用スキーマ"""

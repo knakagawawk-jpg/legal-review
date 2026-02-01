@@ -43,6 +43,7 @@ from .schemas import (
     NotePageCreate,
     AdminUserResponse, AdminUserListResponse, AdminStatsResponse, AdminFeatureStatsResponse, AdminUserUpdateRequest, NotePageUpdate, NotePageResponse,
     SubmissionHistoryResponse, ShortAnswerHistoryResponse, UserReviewHistoryResponse,
+    AdminReviewHistoryItemResponse, AdminReviewHistoryListResponse,
     ThreadCreate, ThreadResponse, ThreadListResponse,
     MessageCreate, MessageResponse, MessageListResponse, ThreadMessageCreate,
     UserUpdate, UserResponse,
@@ -1587,14 +1588,15 @@ async def get_my_review_history(
     
     histories = query.order_by(UserReviewHistory.created_at.desc()).offset(offset).limit(limit).all()
     
-    # レスポンスにsubject_nameを追加
+    # レスポンスにsubject_nameを追加（subjectはDBに文字列が混入し得るため正規化）
     result = []
     for h in histories:
+        subject_id = _normalize_subject_id(h.subject)
         history_dict = {
             "id": h.id,
             "review_id": h.review_id,
-            "subject": h.subject,  # 科目ID（1-18）
-            "subject_name": get_subject_name(h.subject) if h.subject else None,  # 科目名（表示用）
+            "subject": subject_id,
+            "subject_name": get_subject_name(subject_id) if subject_id else None,
             "exam_type": h.exam_type,
             "year": h.year,
             "score": float(h.score) if h.score else None,
@@ -1606,6 +1608,67 @@ async def get_my_review_history(
         result.append(UserReviewHistoryResponse(**history_dict))
     
     return result
+
+
+@app.get("/v1/admin/review-history", response_model=AdminReviewHistoryListResponse)
+async def get_admin_review_history(
+    database_url: Optional[str] = Query(None, description="データベースURL（指定時はそのDBから取得）"),
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    subject: Optional[int] = Query(None, description="科目ID（1-18）でフィルタ"),
+    exam_type: Optional[str] = Query(None, description="試験種別でフィルタ"),
+):
+    """管理者用：全ユーザーの講評履歴一覧を取得"""
+    use_db = db
+    db_gen = None
+    if database_url:
+        if not database_url.startswith("sqlite:///"):
+            raise HTTPException(status_code=400, detail="現在はSQLiteデータベースのみサポートしています")
+        db_gen = get_db_session_for_url(database_url)
+        use_db = next(db_gen)
+
+    try:
+        query = use_db.query(UserReviewHistory)
+        if subject is not None:
+            # subject はDBに文字列が混入し得るため、正規化したIDと一致する行も取得するには
+            # ここでは整数フィルタのみ（正規化済みのsubject_idと一致）
+            query = query.filter(UserReviewHistory.subject == subject)
+        if exam_type:
+            query = query.filter(UserReviewHistory.exam_type == exam_type)
+
+        total = query.count()
+        rows = query.order_by(UserReviewHistory.created_at.desc()).offset(offset).limit(limit).all()
+
+        items = []
+        for h in rows:
+            subject_id = _normalize_subject_id(h.subject)
+            user = use_db.query(User).filter(User.id == h.user_id).first()
+            user_email = user.email if user else None
+            items.append(AdminReviewHistoryItemResponse(
+                id=h.id,
+                review_id=h.review_id,
+                user_id=h.user_id,
+                user_email=user_email,
+                subject=subject_id,
+                subject_name=get_subject_name(subject_id) if subject_id else None,
+                exam_type=h.exam_type,
+                year=h.year,
+                score=float(h.score) if h.score else None,
+                attempt_count=h.attempt_count,
+                question_title=h.question_title,
+                reference_text=h.reference_text,
+                created_at=h.created_at,
+            ))
+
+        return AdminReviewHistoryListResponse(items=items, total=total)
+    finally:
+        if db_gen is not None:
+            try:
+                next(db_gen, None)
+            except StopIteration:
+                pass
 
 
 @app.get("/v1/llm-requests", response_model=LlmRequestListResponse)

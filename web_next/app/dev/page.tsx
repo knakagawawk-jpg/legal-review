@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
 import { AlertCircle, Loader2, Search, Eye, Trash2, Shield, ShieldOff, UserCheck, UserX } from "lucide-react"
-import type { ReviewResponse, SubmissionHistory, LlmRequestListResponse } from "@/types/api"
+import type { ReviewResponse, LlmRequestListResponse, AdminReviewHistoryItem, AdminReviewHistoryListResponse } from "@/types/api"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { getSubjectName } from "@/lib/subjects"
@@ -155,7 +155,7 @@ function DevPage() {
   )
 }
 
-function ReviewResultVerify({ databaseUrl }: { databaseUrl?: string }) {
+function ReviewResultVerify({ databaseUrl, initialReviewId }: { databaseUrl?: string; initialReviewId?: number | null }) {
   const router = useRouter()
   const [data, setData] = useState<DevReviewData>({
     answer_text: "",
@@ -170,6 +170,12 @@ function ReviewResultVerify({ databaseUrl }: { databaseUrl?: string }) {
   const [error, setError] = useState<string | null>(null)
   const [inputTab, setInputTab] = useState("answer")
   const [panelRatio, setPanelRatio] = useState(4)
+
+  useEffect(() => {
+    if (initialReviewId != null && initialReviewId > 0) {
+      setData((prev) => ({ ...prev, review_id: initialReviewId }))
+    }
+  }, [initialReviewId])
 
   const handleLoadReview = async () => {
     if (!data.review_id) {
@@ -675,36 +681,42 @@ function DevChatSection({ reviewId }: { reviewId: number }) {
   )
 }
 
-function SubmissionList({ databaseUrl }: { databaseUrl?: string }) {
-  const router = useRouter()
-  const [submissions, setSubmissions] = useState<SubmissionHistory[]>([])
+function ReviewHistoryList({
+  databaseUrl,
+  onSelectReview,
+}: {
+  databaseUrl?: string
+  onSelectReview: (reviewId: number) => void
+}) {
+  const [data, setData] = useState<AdminReviewHistoryListResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [searchTerm, setSearchTerm] = useState("")
+  const [offset, setOffset] = useState(0)
+  const limit = 100
 
   useEffect(() => {
-    loadSubmissions()
-  }, [databaseUrl])
+    loadHistory()
+  }, [databaseUrl, offset])
 
-  const loadSubmissions = async () => {
+  const loadHistory = async () => {
     setLoading(true)
     setError(null)
-
     try {
-      const params = new URLSearchParams({ limit: "100" })
+      const params = new URLSearchParams()
+      params.set("limit", String(limit))
+      params.set("offset", String(offset))
       if (databaseUrl) params.append("database_url", databaseUrl)
-      const res = await fetch(`/api/dev/submissions?${params.toString()}`)
+      const res = await fetch(`/api/admin/review-history?${params.toString()}`)
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}))
         const message =
           (typeof errorData.error === "string" ? errorData.error : null) ||
           (typeof errorData.detail === "string" ? errorData.detail : null) ||
-          "投稿一覧の取得に失敗しました"
+          "講評履歴の取得に失敗しました"
         throw new Error(message)
       }
-
-      const data = await res.json()
-      setSubmissions(data || [])
+      const json: AdminReviewHistoryListResponse = await res.json()
+      setData(json)
     } catch (err: any) {
       setError(err.message || "エラーが発生しました")
     } finally {
@@ -712,35 +724,23 @@ function SubmissionList({ databaseUrl }: { databaseUrl?: string }) {
     }
   }
 
-  const filteredSubmissions = submissions.filter(
-    (sub) => !searchTerm || String(sub.subject ?? "").toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const items = data?.items ?? []
+  const total = data?.total ?? 0
+  const canPrev = offset > 0
+  const canNext = offset + items.length < total
 
-  const handleView = (submissionId: number) => {
-    // submissions一覧はreview_idと紐付かないため、遷移は廃止（必要ならreview-historyを使う）
-    router.push(`/dev`)
-  }
+  const formatDate = (s: string) => (s ? s.replace("T", " ").slice(0, 19) : "-")
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>📋 過去の講評一覧（最新100件）</CardTitle>
-          <CardDescription>開発用：全投稿一覧を取得（認証不要）</CardDescription>
+          <CardTitle>📋 全ユーザー Review 履歴</CardTitle>
+          <CardDescription>
+            選択中のDBの講評履歴です。行の「講評結果検証で開く」で講評IDを渡して検証タブを開けます。
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* 検索 */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-            <Input
-              placeholder="検索（科目で検索）"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-
-          {/* エラー表示 */}
           {error && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
@@ -749,71 +749,86 @@ function SubmissionList({ databaseUrl }: { databaseUrl?: string }) {
             </Alert>
           )}
 
-          {/* ローディング */}
           {loading && (
             <div className="space-y-2">
               {[1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-20 w-full" />
+                <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
           )}
 
-          {/* 投稿一覧 */}
-          {!loading && filteredSubmissions.length === 0 && (
-            <Alert>
-              <AlertDescription>
-                {searchTerm ? `「${searchTerm}」に一致する講評が見つかりませんでした。` : "講評がありません。"}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {!loading && filteredSubmissions.length > 0 && (
-            <div className="space-y-4">
-              <div className="text-sm text-muted-foreground">
-                全{filteredSubmissions.length}件の講評
-                {searchTerm && `（検索結果: ${filteredSubmissions.length}件）`}
+          {!loading && data && (
+            <>
+              <div className="rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>review_id</TableHead>
+                      <TableHead>ユーザー</TableHead>
+                      <TableHead>科目</TableHead>
+                      <TableHead>試験種別</TableHead>
+                      <TableHead>年度</TableHead>
+                      <TableHead>作成日時</TableHead>
+                      <TableHead className="w-[140px]"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((item: AdminReviewHistoryItem) => (
+                      <TableRow key={`${item.user_id}-${item.review_id}-${item.id}`}>
+                        <TableCell className="font-mono">{item.review_id}</TableCell>
+                        <TableCell className="text-sm">
+                          {item.user_email ?? `user_${item.user_id}`}
+                        </TableCell>
+                        <TableCell>{item.subject_name ?? "-"}</TableCell>
+                        <TableCell>{item.exam_type ?? "-"}</TableCell>
+                        <TableCell>{item.year ?? "-"}</TableCell>
+                        <TableCell className="text-muted-foreground text-sm">
+                          {formatDate(item.created_at)}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => onSelectReview(item.review_id)}
+                          >
+                            <Eye className="w-4 h-4 mr-1" />
+                            講評結果検証で開く
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
-              {filteredSubmissions.slice(0, 50).map((sub) => (
-                <Card key={sub.id}>
-                  <CardContent className="pt-6">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 space-y-2">
-                        <div className="flex items-center gap-2">
-                          {sub.review ? (
-                            <Badge variant="default">✅</Badge>
-                          ) : (
-                            <Badge variant="secondary">⚠️</Badge>
-                          )}
-                          <span className="font-semibold">ID: {sub.id}</span>
-                          <Badge variant="outline">{sub.subject}</Badge>
-                          <span className="text-sm text-muted-foreground">
-                            {sub.created_at.substring(0, 10)}
-                          </span>
-                        </div>
-                        {sub.question_text && (
-                          <p className="text-sm text-muted-foreground line-clamp-2">
-                            {sub.question_text.length > 100
-                              ? `${sub.question_text.substring(0, 100)}...`
-                              : sub.question_text}
-                          </p>
-                        )}
-                      </div>
-                      <Button onClick={() => handleView(sub.id)} variant="outline" size="sm">
-                        <Eye className="w-4 h-4 mr-2" />
-                        表示
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-              {filteredSubmissions.length > 50 && (
-                <Alert>
-                  <AlertDescription>
-                    他にも {filteredSubmissions.length - 50} 件の講評があります。検索で絞り込んでください。
-                  </AlertDescription>
-                </Alert>
-              )}
-            </div>
+
+              <div className="flex justify-between items-center">
+                <div className="text-sm text-muted-foreground">
+                  {total > 0 ? `${offset + 1} - ${offset + items.length} / ${total}` : "0件"}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setOffset((o) => Math.max(0, o - limit))}
+                    disabled={!canPrev || loading}
+                  >
+                    前へ
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setOffset((o) => o + limit)}
+                    disabled={!canNext || loading}
+                  >
+                    次へ
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {!loading && data && items.length === 0 && (
+            <Alert>
+              <AlertDescription>講評履歴がありません。</AlertDescription>
+            </Alert>
           )}
         </CardContent>
       </Card>
@@ -1846,21 +1861,27 @@ function AdminStats({ databaseUrl }: { databaseUrl?: string }) {
 
 function DevTools({ databaseUrl }: { databaseUrl?: string }) {
   const [activeSubTab, setActiveSubTab] = useState("verify")
+  const [selectedReviewId, setSelectedReviewId] = useState<number | null>(null)
+
+  const handleSelectReview = (reviewId: number) => {
+    setSelectedReviewId(reviewId)
+    setActiveSubTab("verify")
+  }
 
   return (
     <div className="space-y-6">
       <Tabs value={activeSubTab} onValueChange={setActiveSubTab}>
         <TabsList>
           <TabsTrigger value="verify">📊 講評結果検証</TabsTrigger>
-          <TabsTrigger value="list">📋 過去の講評一覧</TabsTrigger>
+          <TabsTrigger value="list">📋 全ユーザーReview履歴</TabsTrigger>
         </TabsList>
 
         <TabsContent value="verify">
-          <ReviewResultVerify databaseUrl={databaseUrl} />
+          <ReviewResultVerify databaseUrl={databaseUrl} initialReviewId={selectedReviewId} />
         </TabsContent>
 
         <TabsContent value="list">
-          <SubmissionList databaseUrl={databaseUrl} />
+          <ReviewHistoryList databaseUrl={databaseUrl} onSelectReview={handleSelectReview} />
         </TabsContent>
       </Tabs>
     </div>

@@ -157,6 +157,29 @@ export interface SubmissionHistory {
   } | null
 }
 
+/** 管理者用：全ユーザー講評履歴1件 */
+export interface AdminReviewHistoryItem {
+  id: number
+  review_id: number
+  user_id: number
+  user_email: string | null
+  subject: number | null
+  subject_name: string | null
+  exam_type: string | null
+  year: number | null
+  score: number | null
+  attempt_count: number
+  question_title: string | null
+  reference_text: string | null
+  created_at: string
+}
+
+/** 管理者用：全ユーザー講評履歴一覧レスポンス */
+export interface AdminReviewHistoryListResponse {
+  items: AdminReviewHistoryItem[]
+  total: number
+}
+
 export interface ShortAnswerHistory {
   session_id: number
   exam_type: string
