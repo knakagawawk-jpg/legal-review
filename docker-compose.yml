@@ -11,7 +11,8 @@ services:
     # environment セクションで同じ変数を設定すると env_file の値を上書きしてしまうため、
     # ここでは設定しません
     volumes:
-      - ./data:/data
+      # サーバーで別ディレクトリから起動する場合は LAW_REVIEW_DATA_DIR=/opt/law-review/data などで絶対パス指定
+      - ${LAW_REVIEW_DATA_DIR:-./data}:/data
       # backend で .env を直接読めるようにマウント（キーはenvファイルにのみ保持）
       - ./.env:/app/.env:ro
     networks:
@@ -39,7 +40,7 @@ services:
     # environment セクションで同じ変数を設定すると env_file の値を上書きしてしまうため、
     # ここでは設定しません
     volumes:
-      - ./data:/data
+      - ${LAW_REVIEW_DATA_DIR:-./data}:/data
       - ./.env.beta:/app/.env:ro
     networks:
       - law-review-network
@@ -66,7 +67,7 @@ services:
     # environment セクションで同じ変数を設定すると env_file の値を上書きしてしまうため、
     # ここでは設定しません
     volumes:
-      - ./data:/data
+      - ${LAW_REVIEW_DATA_DIR:-./data}:/data
       - ./.env.dev:/app/.env:ro
     networks:
       - law-review-network

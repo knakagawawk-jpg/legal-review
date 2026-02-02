@@ -117,6 +117,12 @@ docker image inspect $(docker inspect law-review-backend-dev --format '{{.Image}
 # 5) 直近ログ確認（任意）
 docker compose --profile dev logs --tail=80 web-dev-server backend-dev
 
+# 6) DBファイルの存在確認（管理者ページのセレクトにβ/本番が出ないとき）
+# ホスト: ls -la data/*.db
+# コンテナ内: docker exec law-review-backend-dev ls -la /data/*.db
+# コンテナ内の /data が空の場合 → .env に LAW_REVIEW_DATA_DIR=/opt/law-review/data を追加し、
+# docker compose --profile dev up -d --force-recreate backend-dev web-dev-server で再作成
+
 # ============================================
 # 全環境を同時に起動する場合
 # ============================================

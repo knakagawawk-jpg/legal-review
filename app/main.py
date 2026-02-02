@@ -4613,19 +4613,6 @@ def get_db_file_path_from_url(db_url: str) -> str:
     return db_url
 
 
-def get_data_root_from_db_url(db_url: str) -> tuple[str, str]:
-    """
-    現在のDATABASE_URLからデータディレクトリのルートとURLプレフィックスを取得する。
-    Dockerでは sqlite:////data/xxx になるため /data を参照し、
-    ローカルでは sqlite:///./data/xxx になるため ./data を参照する。
-    Returns:
-        (data_root_path, url_prefix) 例: ("/data", "sqlite:////data") または ("./data", "sqlite:///./data")
-    """
-    if db_url.startswith("sqlite:////"):
-        return "/data", "sqlite:////data"
-    return "./data", "sqlite:///./data"
-
-
 @app.get("/v1/admin/databases", response_model=AdminDatabaseInfoResponse)
 async def get_admin_databases(
     current_admin: User = Depends(get_current_admin),
@@ -4639,14 +4626,23 @@ async def get_admin_databases(
         
         normalized_current_url = normalize_database_url(current_db_url)
         
-        # 現在のDBのURLからデータルートを導出（Docker: /data、ローカル: ./data）
-        data_root, url_prefix = get_data_root_from_db_url(current_db_url)
-        
-        # 利用可能なデータベースの候補リスト（現在の環境に合わせたパスで統一）
+        # 利用可能なデータベースの候補リスト
         candidate_databases = [
-            {"name": "dev", "url": f"{url_prefix}/dev.db", "description": "開発環境"},
-            {"name": "beta", "url": f"{url_prefix}/beta.db", "description": "βテスト環境"},
-            {"name": "本番", "url": f"{url_prefix}/prod.db", "description": "本番環境"},
+            {
+                "name": "dev",
+                "url": "sqlite:////data/dev.db",
+                "description": "開発環境"
+            },
+            {
+                "name": "beta",
+                "url": "sqlite:////data/beta.db",
+                "description": "βテスト環境"
+            },
+            {
+                "name": "本番",
+                "url": "sqlite:////data/prod.db",
+                "description": "本番環境"
+            },
         ]
         
         # 実際に存在する有効なDBのみをフィルタリング
