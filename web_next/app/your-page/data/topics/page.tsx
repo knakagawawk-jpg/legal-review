@@ -664,13 +664,13 @@ function TopicsPage() {
               setFavoriteFilter(value as "fav-only" | "fav-except" | "all")
             }}
           >
-            <SelectTrigger className={cn("h-7 w-28", favoriteFilter === "all" ? "!text-[10px]" : "text-xs")}>
+            <SelectTrigger className="h-7 text-xs w-28" style={favoriteFilter === "all" ? { fontSize: '10px' } : undefined}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="fav-only" className="text-xs">favのみ</SelectItem>
               <SelectItem value="fav-except" className="text-xs">fav以外</SelectItem>
-              <SelectItem value="all" className="!text-[10px]">フィルターなし</SelectItem>
+              <SelectItem value="all" style={{ fontSize: '10px' }}>フィルターなし</SelectItem>
             </SelectContent>
           </Select>
           </div>
