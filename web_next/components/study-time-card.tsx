@@ -300,7 +300,7 @@ export function StudyTimeCard() {
                           {monthlyWeekData.map((week) => {
                             const heightPercent = maxWeekSeconds > 0 ? (week.totalSeconds / maxWeekSeconds) * 100 : 0
                             return (
-                              <div key={week.week} className="flex flex-col items-center justify-end h-full flex-1 sm:flex-none sm:w-4">
+                              <div key={week.week} className="flex flex-col items-center justify-end h-full flex-1 sm:flex-none sm:w-6">
                                 <span className="text-[8px] text-amber-700 leading-none mb-0.5 tabular-nums sm:hidden">
                                   {secondsToHours(week.totalSeconds)}
                                 </span>
@@ -315,7 +315,7 @@ export function StudyTimeCard() {
                         </div>
                         <div className="flex gap-1.5 sm:gap-1 mt-0.5 sm:justify-end">
                           {monthlyWeekData.map((week, index) => (
-                            <span key={week.week} className="flex-1 sm:flex-none sm:w-4 text-[8px] text-amber-600 leading-none text-center">
+                            <span key={week.week} className="flex-1 sm:flex-none sm:w-6 text-[8px] text-amber-600 leading-none text-center">
                               {week.label}
                             </span>
                           ))}
