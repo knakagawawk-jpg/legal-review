@@ -25,7 +25,7 @@ type Mode = "existing" | "new"
 
 export default function ReviewPage() {
   const router = useRouter()
-  const { isOpen } = useSidebar()
+  const { mainContentStyle } = useSidebar()
   const [step, setStep] = useState<Step>(1)
   const [mode, setMode] = useState<Mode>("existing")
   const [loading, setLoading] = useState(false)
@@ -288,9 +288,7 @@ export default function ReviewPage() {
   return (
     <div
       className="flex min-h-screen flex-col bg-slate-50 transition-all duration-300"
-      style={{
-        marginLeft: isOpen ? '208px' : '0',
-      }}
+      style={mainContentStyle}
     >
       <header className="shrink-0 border-b border-slate-200/60 bg-white/80 backdrop-blur-md">
         <div className="mx-auto flex h-11 max-w-7xl items-center justify-between px-3">

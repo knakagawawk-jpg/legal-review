@@ -12,9 +12,11 @@ interface ChatInputProps {
   onSend: (message: string) => void
   isLoading: boolean
   onStop?: () => void
+  /** 講評結果ページなど、パネル幅いっぱいに入力欄を表示する場合にtrue */
+  fullWidth?: boolean
 }
 
-export const ChatInput = memo(function ChatInput({ onSend, isLoading, onStop }: ChatInputProps) {
+export const ChatInput = memo(function ChatInput({ onSend, isLoading, onStop, fullWidth }: ChatInputProps) {
   const [input, setInput] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const onSendRef = useRef(onSend)
@@ -54,6 +56,7 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, onStop }: 
   return (
     <ChatInputBar
       helperText={<p className="text-[10px] text-muted-foreground/70">Shift + Enter で改行</p>}
+      contentClassName={fullWidth ? "w-full max-w-none" : undefined}
     >
       <div className="relative flex items-end gap-2 rounded-2xl border border-indigo-200/60 bg-white/90 backdrop-blur-sm p-2 shadow-sm focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-400/20">
         {/* Text Input */}
@@ -103,7 +106,6 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, onStop }: 
     </ChatInputBar>
   )
 }, (prevProps, nextProps) => {
-  // isLoadingとonStopの変更のみを再レンダリングのトリガーとする
-  // onSendの参照が変わっても再レンダリングしない（refで最新の参照を保持するため）
-  return prevProps.isLoading === nextProps.isLoading && prevProps.onStop === nextProps.onStop
+  // isLoading、onStop、fullWidthの変更のみを再レンダリングのトリガーとする
+  return prevProps.isLoading === nextProps.isLoading && prevProps.onStop === nextProps.onStop && prevProps.fullWidth === nextProps.fullWidth
 })

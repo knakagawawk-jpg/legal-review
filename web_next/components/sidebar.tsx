@@ -11,11 +11,14 @@ import { LoginButton } from "./auth/login-button"
 import { UserMenu } from "./auth/user-menu"
 import { useAuth } from "@/contexts/auth-context"
 import { hasFunctionalConsent } from "@/lib/cookie-consent"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 // サイドバーの状態を共有するContext
 type SidebarContextType = {
   isOpen: boolean
   setIsOpen: (open: boolean) => void
+  /** メインコンテンツ用marginLeft（モバイルでは常に0、デスクトップではサイドバー開閉に連動） */
+  mainContentStyle: React.CSSProperties
 }
 
 const SidebarContext = createContext<SidebarContextType | undefined>(undefined)
@@ -24,7 +27,7 @@ export function useSidebar() {
   const context = useContext(SidebarContext)
   if (!context) {
     // Contextが提供されていない場合は、デフォルトの動作（常に閉じている）を返す
-    return { isOpen: false, setIsOpen: () => { } }
+    return { isOpen: false, setIsOpen: () => { }, mainContentStyle: { marginLeft: 0 } }
   }
   return context
 }
@@ -137,7 +140,16 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  return <SidebarContext.Provider value={{ isOpen, setIsOpen: handleSetIsOpen }}>{children}</SidebarContext.Provider>
+  const isMobile = useIsMobile()
+  const mainContentStyle: React.CSSProperties = {
+    marginLeft: isMobile ? 0 : (isOpen ? 208 : 0),
+  }
+
+  return (
+    <SidebarContext.Provider value={{ isOpen, setIsOpen: handleSetIsOpen, mainContentStyle }}>
+      {children}
+    </SidebarContext.Provider>
+  )
 }
 
 export function Sidebar() {

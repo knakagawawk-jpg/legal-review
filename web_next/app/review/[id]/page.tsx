@@ -36,7 +36,7 @@ import { apiClient } from "@/lib/api-client"
 export default function ReviewResultPage() {
   const params = useParams()
   const router = useRouter()
-  const { isOpen } = useSidebar()
+  const { mainContentStyle } = useSidebar()
   const reviewId = params.id as string
 
   const [review, setReview] = useState<ReviewResponse | null>(null)
@@ -187,11 +187,11 @@ export default function ReviewResultPage() {
 
   // ChatInputをメモ化して再マウントを防ぐ（早期リターンの前に配置）
   const leftChatInput = useMemo(
-    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} />,
+    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} fullWidth />,
     [handleSendMessage, isLoading]
   )
   const rightChatInput = useMemo(
-    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} />,
+    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} fullWidth />,
     [handleSendMessage, isLoading]
   )
 
@@ -199,9 +199,7 @@ export default function ReviewResultPage() {
     return (
       <div
         className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
-        style={{
-          marginLeft: isOpen ? '208px' : '0',
-        }}
+        style={mainContentStyle}
       >
         <div className="container mx-auto px-5 py-12">
           <div className="space-y-6">
@@ -218,9 +216,7 @@ export default function ReviewResultPage() {
     return (
       <div
         className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
-        style={{
-          marginLeft: isOpen ? '208px' : '0',
-        }}
+        style={mainContentStyle}
       >
         <div className="container mx-auto px-5 py-12">
           <Alert variant="destructive">
@@ -351,9 +347,7 @@ export default function ReviewResultPage() {
   return (
     <div
       className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
-      style={{
-        marginLeft: isOpen ? '208px' : '0',
-      }}
+      style={mainContentStyle}
     >
       <header className="border-b border-border shrink-0 bg-gradient-to-r from-primary/5 via-transparent to-accent/5">
         <div className="px-5 py-1.5 flex items-center justify-between">
@@ -374,20 +368,26 @@ export default function ReviewResultPage() {
       </header>
 
       <div
-        className="flex flex-row flex-1 min-h-0 overflow-hidden w-full"
+        className={cn(
+          "flex flex-1 min-h-0 overflow-hidden w-full",
+          isLargeScreen ? "flex-row" : "flex-col overflow-y-auto",
+        )}
       >
         {/* Left Panel */}
         <div
-          className="lg:min-h-0 border-b lg:border-b-0 lg:border-r border-border flex flex-col overflow-hidden shrink-0"
-          style={{
+          className={cn(
+            "border-b border-border flex flex-col overflow-hidden",
+            isLargeScreen ? "lg:min-h-0 lg:border-b-0 lg:border-r shrink-0" : "min-h-[45vh] shrink-0",
+          )}
+          style={isLargeScreen ? {
             width: `${leftWidth}%`,
             flexBasis: `${leftWidth}%`,
             flexGrow: 0,
             flexShrink: 0,
-          }}
+          } : undefined}
         >
-          <div className="px-5 py-3 border-b border-border shrink-0 flex items-center justify-between gap-4 bg-card/50">
-            <div className="flex items-center gap-2">
+          <div className="px-3 sm:px-5 py-3 border-b border-border shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 bg-card/50">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={() => setLeftTab("answer")}
                 className={cn(
@@ -420,7 +420,7 @@ export default function ReviewResultPage() {
                 )}
               </button>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               <SubTabButton
                 active={leftTab === "question"}
                 onClick={() => setLeftTab("question")}
@@ -527,17 +527,20 @@ export default function ReviewResultPage() {
 
         {/* Right Panel */}
         <div
-          className="flex flex-col min-h-0 overflow-hidden min-w-0 bg-background"
-          style={{
+          className={cn(
+            "flex flex-col min-h-0 overflow-hidden bg-background",
+            isLargeScreen ? "min-w-0" : "min-h-[45vh] flex-1",
+          )}
+          style={isLargeScreen ? {
             width: 'auto',
             flexBasis: 0,
             flexGrow: 1,
             flexShrink: 1,
             minWidth: 0,
-          }}
+          } : undefined}
         >
-          <div className="px-5 py-3 border-b border-border shrink-0 flex items-center justify-between gap-4 bg-card/50">
-            <div className="flex items-center gap-2">
+          <div className="px-3 sm:px-5 py-3 border-b border-border shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 bg-card/50">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={() => setRightTab("review")}
                 className={cn(
@@ -570,7 +573,7 @@ export default function ReviewResultPage() {
                 )}
               </button>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               <SubTabButton
                 active={rightTab === "question"}
                 onClick={() => setRightTab("question")}

@@ -31,7 +31,7 @@ type DevReviewData = {
 
 function DevPage() {
   const router = useRouter()
-  const { isOpen } = useSidebar()
+  const { mainContentStyle } = useSidebar()
   const [activeTab, setActiveTab] = useState("dashboard")
   const [isDevEnv, setIsDevEnv] = useState<boolean | null>(null)
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null)
@@ -101,9 +101,7 @@ function DevPage() {
   return (
     <div 
       className="min-h-screen bg-gradient-to-b from-background to-muted/20 transition-all duration-300"
-      style={{
-        marginLeft: isOpen ? '208px' : '0',
-      }}
+      style={mainContentStyle}
     >
       <div className="container mx-auto px-8 py-12 max-w-7xl">
         {/* ヘッダー */}

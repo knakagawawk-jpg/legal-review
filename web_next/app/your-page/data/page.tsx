@@ -1974,7 +1974,7 @@ function ChatHistorySection() {
 }
 
 function HistoryPage() {
-  const { isOpen, setIsOpen } = useSidebar()
+  const { isOpen, setIsOpen, mainContentStyle } = useSidebar()
   const [mainTab, setMainTab] = useState<"study" | "past-questions">("study")
   const [reviewHistory, setReviewHistory] = useState<ReviewHistoryItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -2135,9 +2135,7 @@ function HistoryPage() {
   return (
     <div 
       className="min-h-screen bg-gradient-to-b from-amber-50/80 to-orange-50/30 transition-all duration-300"
-      style={{
-        marginLeft: isOpen ? '208px' : '0',
-      }}
+      style={mainContentStyle}
     >
       {!isOpen && (
         <button

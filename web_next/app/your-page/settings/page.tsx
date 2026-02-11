@@ -20,7 +20,7 @@ import { apiClient } from "@/lib/api-client"
 import { getConsent, saveConsent, revokeConsent, hasRequiredConsent, hasFunctionalConsent, hasPrivacyConsent } from "@/lib/cookie-consent"
 
 function SettingsPage() {
-  const { isOpen } = useSidebar()
+  const { mainContentStyle } = useSidebar()
   const { user, isLoading: authLoading, refreshUser } = useAuth()
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -148,9 +148,7 @@ function SettingsPage() {
   return (
     <div 
       className="flex min-h-screen flex-col bg-slate-50 transition-all duration-300"
-      style={{
-        marginLeft: isOpen ? '208px' : '0',
-      }}
+      style={mainContentStyle}
     >
       <header className="shrink-0 border-b border-slate-200/60 bg-white/80 backdrop-blur-md">
         <div className="mx-auto flex h-11 max-w-7xl items-center justify-between px-3">

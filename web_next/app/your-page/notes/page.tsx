@@ -35,7 +35,7 @@ type NotebookWithDetails = Notebook & {
 }
 
 function NotesPage() {
-  const { isOpen } = useSidebar()
+  const { mainContentStyle } = useSidebar()
   const [notebooks, setNotebooks] = useState<NotebookWithDetails[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedNotebooks, setExpandedNotebooks] = useState<Set<number>>(new Set())
@@ -336,9 +336,7 @@ function NotesPage() {
   return (
     <div
       className="min-h-screen bg-gradient-to-b from-background to-muted/20 transition-all duration-300"
-      style={{
-        marginLeft: isOpen ? '208px' : '0',
-      }}
+      style={mainContentStyle}
     >
       <div className="container mx-auto px-8 py-12 max-w-6xl">
         {/* ヘッダー */}

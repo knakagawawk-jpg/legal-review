@@ -15,7 +15,7 @@ import type { Message, Thread } from "@/types/api"
 export default function FreeChatThreadPage() {
   const params = useParams()
   const router = useRouter()
-  const { isOpen } = useSidebar()
+  const { mainContentStyle } = useSidebar()
   const threadId = params.id as string
   const [thread, setThread] = useState<Thread | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -177,9 +177,7 @@ export default function FreeChatThreadPage() {
   return (
     <div 
       className="flex h-screen flex-col bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 transition-all duration-300"
-      style={{
-        marginLeft: isOpen ? '208px' : '0',
-      }}
+      style={mainContentStyle}
     >
       <ChatHeader 
         title={thread?.title || "新しいチャット"} 

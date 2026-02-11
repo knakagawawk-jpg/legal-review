@@ -239,7 +239,7 @@ function MemoField({
 
 function MemoPage() {
   const router = useRouter()
-  const { isOpen, setIsOpen } = useSidebar()
+  const { isOpen, setIsOpen, mainContentStyle } = useSidebar()
   const [allItems, setAllItems] = useState<DashboardItem[]>([])
   const [displayedItems, setDisplayedItems] = useState<DashboardItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -544,9 +544,7 @@ function MemoPage() {
   return (
     <div 
       className="min-h-screen bg-gradient-to-b from-amber-50/80 to-orange-50/30 transition-all duration-300"
-      style={{
-        marginLeft: isOpen ? '208px' : '0',
-      }}
+      style={mainContentStyle}
     >
       {!isOpen && (
         <button

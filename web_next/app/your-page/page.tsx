@@ -18,7 +18,7 @@ import { LoginButton } from "@/components/auth/login-button"
 export default function YourPage() {
   const router = useRouter()
   const { isAuthenticated, isLoading } = useAuth()
-  const { isOpen } = useSidebar()
+  const { mainContentStyle } = useSidebar()
   const [todayGoal, setTodayGoal] = useState("")
   const [focusMemo, setFocusMemo] = useState("")
   const [studyItems, setStudyItems] = useState("")
@@ -102,9 +102,7 @@ export default function YourPage() {
   return (
     <div 
       className="min-h-screen bg-gradient-to-b from-amber-50/80 to-background transition-all duration-300 relative"
-      style={{
-        marginLeft: isOpen ? '208px' : '0',
-      }}
+      style={mainContentStyle}
     >
       {/* コンテンツ */}
       <div className="container mx-auto px-4 py-4 max-w-4xl">

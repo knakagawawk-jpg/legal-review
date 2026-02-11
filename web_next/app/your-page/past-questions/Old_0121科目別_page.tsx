@@ -90,7 +90,7 @@ function ExamTable({ data, title }: { data: ExamRecord[]; title: string }) {
 }
 
 function PastExamsPage() {
-  const { isOpen } = useSidebar()
+  const { mainContentStyle } = useSidebar()
   const [selectedSubject, setSelectedSubject] = useState<string>(FIXED_SUBJECTS[0] as string)
   const [reviewHistory, setReviewHistory] = useState<ReviewHistoryItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -186,9 +186,7 @@ function PastExamsPage() {
   return (
     <div 
       className="min-h-screen bg-gradient-to-b from-amber-50/80 to-orange-50/30 transition-all duration-300"
-      style={{
-        marginLeft: isOpen ? '208px' : '0',
-      }}
+      style={mainContentStyle}
     >
       {/* Fixed Header */}
       <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-amber-200/60 shadow-sm">

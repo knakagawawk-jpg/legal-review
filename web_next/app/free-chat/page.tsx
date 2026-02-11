@@ -10,7 +10,7 @@ import { apiClient } from "@/lib/api-client"
 
 export default function FreeChatPage() {
   const router = useRouter()
-  const { isOpen } = useSidebar()
+  const { mainContentStyle } = useSidebar()
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -40,9 +40,7 @@ export default function FreeChatPage() {
   return (
     <div 
       className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center transition-all duration-300"
-      style={{
-        marginLeft: isOpen ? '208px' : '0',
-      }}
+      style={mainContentStyle}
     >
       <div className="text-center space-y-4">
         {loading && (

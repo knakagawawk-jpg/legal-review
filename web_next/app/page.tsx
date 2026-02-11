@@ -53,14 +53,12 @@ const menuItems = [
 ]
 
 export default function HomePage() {
-  const { isOpen } = useSidebar()
+  const { mainContentStyle } = useSidebar()
   
   return (
     <div 
-      className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 flex flex-col items-center justify-center px-6 pt-24 pb-12 transition-all duration-300"
-      style={{
-        marginLeft: isOpen ? '208px' : '0',
-      }}
+      className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 flex flex-col items-center justify-center px-4 sm:px-6 pt-20 sm:pt-24 pb-8 sm:pb-12 transition-all duration-300"
+      style={mainContentStyle}
     >
       {/* サイドバーを開くボタン */}
       <div className="fixed top-4 left-4 z-50">
@@ -89,12 +87,12 @@ export default function HomePage() {
       </div>
 
       {/* Menu Grid */}
-      <div className="relative grid grid-cols-2 gap-6 w-full max-w-xl">
+      <div className="relative grid grid-cols-2 gap-4 sm:gap-6 w-full max-w-xl">
         {menuItems.map((item) => (
           <Link
             key={item.title}
             href={item.href}
-            className={`group relative bg-white/80 backdrop-blur-sm rounded-3xl p-8 border ${item.borderColor} shadow-lg ${item.glowColor} transition-all duration-500 hover:scale-[1.03] hover:shadow-2xl ${item.hoverBg}`}
+            className={`group relative bg-white/80 backdrop-blur-sm rounded-2xl sm:rounded-3xl p-5 sm:p-8 border ${item.borderColor} shadow-lg ${item.glowColor} transition-all duration-500 hover:scale-[1.03] hover:shadow-2xl ${item.hoverBg}`}
           >
             <div
               className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${item.gradient} rounded-t-3xl opacity-40 group-hover:opacity-100 transition-opacity duration-300`}
