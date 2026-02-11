@@ -558,7 +558,7 @@ function MemoPage() {
       
       {/* Fixed Header */}
       <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-amber-200/60 shadow-sm">
-        <div className="container mx-auto px-20 py-3 max-w-6xl">
+        <div className="container mx-auto px-4 sm:px-8 lg:px-20 py-3 max-w-6xl">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <Button
@@ -586,7 +586,7 @@ function MemoPage() {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-20 py-4 max-w-6xl">
+      <main className="container mx-auto px-4 sm:px-8 lg:px-20 py-4 max-w-6xl">
         {/* フィルター */}
         <div className="mb-4 flex items-center gap-2 flex-wrap">
           {/* 科目 */}

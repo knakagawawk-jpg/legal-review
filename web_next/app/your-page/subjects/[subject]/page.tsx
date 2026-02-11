@@ -1562,7 +1562,7 @@ function SubjectPage() {
       )}
       {/* Fixed Header */}
       <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-amber-200/60 shadow-sm">
-        <div className="container mx-auto px-20 py-3 max-w-6xl">
+        <div className="container mx-auto px-4 sm:px-8 lg:px-20 py-3 max-w-6xl">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <StickyNote className="h-4 w-4 text-amber-600" />
@@ -1641,7 +1641,7 @@ function SubjectPage() {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-20 py-4 max-w-6xl">
+      <main className="container mx-auto px-4 sm:px-8 lg:px-20 py-4 max-w-6xl">
         <Card className="shadow-sm border-amber-200/60">
           <CardContent className="p-4">
             {/* My規範・My論点 */}

@@ -338,7 +338,7 @@ function NotesPage() {
       className="min-h-screen bg-gradient-to-b from-background to-muted/20 transition-all duration-300"
       style={mainContentStyle}
     >
-      <div className="container mx-auto px-8 py-12 max-w-6xl">
+      <div className="container mx-auto px-4 sm:px-8 py-12 max-w-6xl">
         {/* ヘッダー */}
         <div className="mb-8 flex items-center justify-between">
           <div>
