@@ -229,98 +229,107 @@ export function StudyTimeCard() {
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <CollapsibleTrigger asChild>
           <CardHeader className="cursor-pointer hover:bg-amber-50/40 transition-colors p-3">
-            <div className="flex items-center gap-3">
+            <div className="flex items-start gap-3">
               {/* アイコン */}
-              <div className="p-1.5 rounded-md bg-amber-100 shrink-0">
+              <div className="p-1.5 rounded-md bg-amber-100 shrink-0 mt-0.5">
                 <Clock className="h-4 w-4 text-amber-700" />
               </div>
 
-              {/* 7日間サマリー */}
+              {/* メインコンテンツ：スマホは縦並び、PCは横並び */}
               <div className="flex-1 min-w-0">
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-lg font-bold text-amber-900 tabular-nums">
-                    {formatHoursShort(weeklyTotal)}
-                  </span>
-                  <span className="text-xs text-amber-600">/ 7日間</span>
-                  <span className="text-xs text-muted-foreground ml-1">
-                    (平均{formatTime(weeklyAvg)}/日)
-                  </span>
-                </div>
-                {/* ミニバーチャート - 7日間 */}
-                {last7DaysData.length > 0 && (
-                  <div className="mt-1 w-1/2">
-                    <div className="flex items-end gap-0.5 h-16">
-                      {last7DaysData.map((day) => {
-                        const maxSeconds = Math.max(...last7DaysData.map((d) => d.totalSeconds), 1)
-                        const heightPercent = maxSeconds > 0 ? (day.totalSeconds / maxSeconds) * 100 : 0
-                        return (
-                          <div key={day.date} className="flex-1 flex flex-col items-center justify-end h-full">
-                            <span className="text-[8px] text-amber-700 leading-none mb-0.5 tabular-nums">
-                              {secondsToHours(day.totalSeconds)}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                  {/* 7日間サマリー */}
+                  <div className="sm:flex-1 min-w-0">
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-lg font-bold text-amber-900 tabular-nums">
+                        {formatHoursShort(weeklyTotal)}
+                      </span>
+                      <span className="text-xs text-amber-600">/ 7日間</span>
+                      <span className="text-xs text-muted-foreground ml-1">
+                        (平均{formatTime(weeklyAvg)}/日)
+                      </span>
+                    </div>
+                    {/* ミニバーチャート - 7日間 */}
+                    {last7DaysData.length > 0 && (
+                      <div className="mt-1 sm:w-3/4">
+                        <div className="flex items-end gap-0.5 h-16">
+                          {last7DaysData.map((day) => {
+                            const maxSeconds = Math.max(...last7DaysData.map((d) => d.totalSeconds), 1)
+                            const heightPercent = maxSeconds > 0 ? (day.totalSeconds / maxSeconds) * 100 : 0
+                            return (
+                              <div key={day.date} className="flex-1 flex flex-col items-center justify-end h-full">
+                                <span className="text-[8px] text-amber-700 leading-none mb-0.5 tabular-nums">
+                                  {secondsToHours(day.totalSeconds)}
+                                </span>
+                                <div
+                                  className="w-full bg-amber-500 rounded-t min-h-[2px]"
+                                  style={{ height: `${Math.max(heightPercent, 8)}%` }}
+                                  title={`${day.dayOfWeek}: ${formatTime(day.totalSeconds)}`}
+                                />
+                              </div>
+                            )
+                          })}
+                        </div>
+                        <div className="flex gap-0.5 mt-0.5">
+                          {last7DaysData.map((day) => (
+                            <span key={day.date} className="flex-1 text-[8px] text-amber-600 leading-none text-center">
+                              {day.date.slice(5).replace("-", "/")}
                             </span>
-                            <div
-                              className="w-full bg-amber-500 rounded-t min-h-[2px]"
-                              style={{ height: `${Math.max(heightPercent, 8)}%` }}
-                              title={`${day.dayOfWeek}: ${formatTime(day.totalSeconds)}`}
-                            />
-                          </div>
-                        )
-                      })}
-                    </div>
-                    <div className="flex gap-0.5 mt-0.5">
-                      {last7DaysData.map((day) => (
-                        <span key={day.date} className="flex-1 text-[8px] text-amber-600 leading-none text-center">
-                          {day.date.slice(5).replace("-", "/")}
-                        </span>
-                      ))}
-                    </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              {/* 区切り線 */}
-              <div className="h-10 w-px bg-amber-200/60" />
+                  {/* 区切り線：PCは縦線、スマホは横線 */}
+                  <div className="hidden sm:block h-10 w-px bg-amber-200/60" />
+                  <div className="sm:hidden h-px w-full bg-amber-200/60" />
 
-              {/* 今月サマリー */}
-              <div className="shrink-0">
-                <div className="flex items-baseline gap-1 justify-end">
-                  <span className="text-lg font-bold text-amber-900 tabular-nums">
-                    {formatHoursShort(monthlyTotal)}
-                  </span>
-                  <span className="text-xs text-amber-600">/ 今月</span>
+                  {/* 今月サマリー */}
+                  <div className="sm:shrink-0">
+                    <div className="flex items-baseline gap-1 sm:justify-end">
+                      <span className="text-lg font-bold text-amber-900 tabular-nums">
+                        {formatHoursShort(monthlyTotal)}
+                      </span>
+                      <span className="text-xs text-amber-600">/ 今月</span>
+                    </div>
+                    {/* 週別ミニバーチャート */}
+                    {monthlyWeekData.length > 0 && (
+                      <div className="mt-1">
+                        <div className="flex items-end gap-1.5 sm:gap-1 h-16 sm:justify-end">
+                          {monthlyWeekData.map((week) => {
+                            const heightPercent = maxWeekSeconds > 0 ? (week.totalSeconds / maxWeekSeconds) * 100 : 0
+                            return (
+                              <div key={week.week} className="flex flex-col items-center justify-end h-full flex-1 sm:flex-none sm:w-4">
+                                <span className="text-[8px] text-amber-700 leading-none mb-0.5 tabular-nums sm:hidden">
+                                  {secondsToHours(week.totalSeconds)}
+                                </span>
+                                <div
+                                  className="w-full bg-amber-400 rounded-t min-h-[2px]"
+                                  style={{ height: `${Math.max(heightPercent, 8)}%` }}
+                                  title={`${week.label}: ${formatTime(week.totalSeconds)}`}
+                                />
+                              </div>
+                            )
+                          })}
+                        </div>
+                        <div className="flex gap-1.5 sm:gap-1 mt-0.5 sm:justify-end">
+                          {monthlyWeekData.map((week, index) => (
+                            <span key={week.week} className="flex-1 sm:flex-none sm:w-4 text-[8px] text-amber-600 leading-none text-center">
+                              {week.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                {/* 週別ミニバーチャート */}
-                {monthlyWeekData.length > 0 && (
-                  <div className="mt-1">
-                    <div className="flex items-end gap-1 h-16 justify-end">
-                      {monthlyWeekData.map((week) => {
-                        const heightPercent = maxWeekSeconds > 0 ? (week.totalSeconds / maxWeekSeconds) * 100 : 0
-                        return (
-                          <div key={week.week} className="flex flex-col items-center justify-end h-full w-4">
-                            <div
-                              className="w-full bg-amber-400 rounded-t min-h-[2px]"
-                              style={{ height: `${Math.max(heightPercent, 8)}%` }}
-                              title={`${week.label}: ${formatTime(week.totalSeconds)}`}
-                            />
-                          </div>
-                        )
-                      })}
-                    </div>
-                    <div className="flex gap-1 mt-0.5 justify-end">
-                      {monthlyWeekData.map((week, index) => (
-                        <span key={week.week} className="w-4 text-[8px] text-amber-600 leading-none text-center">
-                          {index + 1}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* 展開アイコン */}
               <ChevronDown
                 className={cn(
-                  "h-4 w-4 text-amber-500 transition-transform shrink-0",
+                  "h-4 w-4 text-amber-500 transition-transform shrink-0 mt-1",
                   isOpen && "rotate-180"
                 )}
               />
