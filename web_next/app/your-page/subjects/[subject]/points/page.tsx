@@ -6,7 +6,7 @@ import { FileText, ArrowLeft, Plus, GripVertical, Trash2, Menu } from "lucide-re
 import { SortableRow } from "@/components/sortable-row"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { useSidebar } from "@/components/sidebar"
+import { useSidebar, SidebarToggle } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { FIXED_SUBJECTS, getSubjectId } from "@/lib/subjects"
 import { withAuth } from "@/components/auth/with-auth"
@@ -546,32 +546,23 @@ function PointsPage() {
       className="min-h-screen bg-gradient-to-b from-amber-50/80 to-orange-50/30 transition-all duration-300"
       style={mainContentStyle}
     >
-      {!isOpen && (
-        <button
-          onClick={() => setIsOpen(true)}
-          className="fixed left-4 top-4 z-30 flex h-8 w-8 items-center justify-center rounded-md bg-white/95 backdrop-blur-sm border border-amber-200/60 shadow-md hover:bg-amber-50/40 transition-colors"
-          aria-label="サイドバーを開く"
-        >
-          <Menu className="h-4 w-4 text-amber-600" />
-        </button>
-      )}
-
       {/* Fixed Header */}
       <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-amber-200/60 shadow-sm">
         <div className="container mx-auto px-4 sm:px-8 lg:px-12 py-3 max-w-7xl">
           <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0"
-                onClick={() => router.back()}
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              <FileText className="h-4 w-4 text-amber-600" />
-              <h1 className="text-base font-semibold text-amber-900">論点一覧</h1>
-            </div>
+      <div className="flex items-center gap-2">
+        <SidebarToggle />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0"
+          onClick={() => router.back()}
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <FileText className="h-4 w-4 text-amber-600" />
+        <h1 className="text-base font-semibold text-amber-900">論点一覧</h1>
+      </div>
             <Button
               variant="outline"
               size="sm"

@@ -6,7 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { useSidebar } from "@/components/sidebar"
+import { useSidebar, SidebarToggle } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { FIXED_SUBJECTS, getSubjectId, getSubjectShortName } from "@/lib/subjects"
 import { BookOpen, FileText, StickyNote, Plus, Folder, ChevronRight, ChevronDown, ChevronLeft, X, Menu, MoreVertical, Edit, Maximize2, Trash2 } from "lucide-react"
@@ -1551,24 +1551,15 @@ function SubjectPage() {
       style={mainContentStyle}
     >
       {/* サイドバーを開くボタン（閉じている場合のみ表示） */}
-      {!isOpen && (
-        <button
-          onClick={() => setIsOpen(true)}
-          className="fixed left-4 top-4 z-30 flex h-8 w-8 items-center justify-center rounded-md bg-white/95 backdrop-blur-sm border border-amber-200/60 shadow-md hover:bg-amber-50/40 transition-colors"
-          aria-label="サイドバーを開く"
-        >
-          <Menu className="h-4 w-4 text-amber-600" />
-        </button>
-      )}
       {/* Fixed Header */}
       <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-amber-200/60 shadow-sm">
         <div className="container mx-auto px-4 sm:px-8 lg:px-12 py-3 max-w-7xl">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            {/* 1行目(スマホ): タイトル + 科目 / 広い画面: 左側 */}
             <div className="flex items-center gap-2">
+              <SidebarToggle />
               <StickyNote className="h-4 w-4 text-amber-600" />
               <h1 className="text-base font-semibold text-amber-900">Your Note</h1>
-            </div>
-            <div className="flex items-center gap-2">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className={cn(
@@ -1595,6 +1586,9 @@ function SubjectPage() {
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
+            </div>
+            {/* 2行目(スマホ): タブ / 広い画面: 右側 */}
+            <div className="flex items-center gap-2">
               <Tabs value={mainTab} onValueChange={(v) => {
                 if (v === "study" || v === "notes") {
                   setMainTab(v)
