@@ -560,7 +560,7 @@ function TopicsPage() {
       
       {/* Fixed Header */}
       <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-amber-200/60 shadow-sm">
-        <div className="container mx-auto px-4 sm:px-8 lg:px-20 py-3 max-w-6xl">
+        <div className="container mx-auto px-4 sm:px-8 lg:px-12 py-3 max-w-7xl">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <Button
@@ -588,9 +588,9 @@ function TopicsPage() {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 sm:px-8 lg:px-20 py-4 max-w-6xl">
-        {/* フィルター */}
-        <div className="mb-4 flex items-center gap-2 flex-wrap">
+      <main className="container mx-auto px-4 sm:px-8 lg:px-12 py-4 max-w-7xl">
+        {/* フィルター: スマホは2行(セレクト行+日付行)、広い画面は1行 */}
+        <div className="mb-4 flex flex-wrap items-center gap-2">
           {/* 科目 */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -655,37 +655,6 @@ function TopicsPage() {
             </SelectContent>
           </Select>
           
-          {/* 期間 */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="h-7 text-xs">
-                <CalendarIcon className="h-3 w-3 mr-1" />
-                {startDate ? formatDate(startDate.toISOString()) : "開始日"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0">
-              <DatePickerCalendar
-                selectedDate={startDate || null}
-                onSelect={(date) => setStartDate(date || undefined)}
-              />
-            </PopoverContent>
-          </Popover>
-          <span className="text-xs text-muted-foreground">～</span>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="h-7 text-xs">
-                <CalendarIcon className="h-3 w-3 mr-1" />
-                {endDate ? formatDate(endDate.toISOString()) : "終了日"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0">
-              <DatePickerCalendar
-                selectedDate={endDate || null}
-                onSelect={(date) => setEndDate(date || undefined)}
-              />
-            </PopoverContent>
-          </Popover>
-          
           {/* fav */}
           <Select 
             value={favoriteFilter} 
@@ -702,6 +671,39 @@ function TopicsPage() {
               <SelectItem value="all" className="text-xs">フィルターなし</SelectItem>
             </SelectContent>
           </Select>
+          
+          {/* 期間: スマホで w-full により2行目に表示、md以上で1行に */}
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-7 text-xs">
+                  <CalendarIcon className="h-3 w-3 mr-1" />
+                  {startDate ? formatDate(startDate.toISOString()) : "開始日"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <DatePickerCalendar
+                  selectedDate={startDate || null}
+                  onSelect={(date) => setStartDate(date || undefined)}
+                />
+              </PopoverContent>
+            </Popover>
+            <span className="text-xs text-muted-foreground">～</span>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-7 text-xs">
+                  <CalendarIcon className="h-3 w-3 mr-1" />
+                  {endDate ? formatDate(endDate.toISOString()) : "終了日"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <DatePickerCalendar
+                  selectedDate={endDate || null}
+                  onSelect={(date) => setEndDate(date || undefined)}
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
         </div>
         
         {/* テーブル */}

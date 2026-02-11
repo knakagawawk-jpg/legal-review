@@ -1745,7 +1745,7 @@ function YourPageDashboardInner() {
       className="min-h-screen bg-gradient-to-b from-amber-50/80 to-background transition-all duration-300"
       style={mainContentStyle}
     >
-      <div className="container mx-auto px-4 sm:px-8 lg:px-20 py-3 max-w-6xl">
+      <div className="container mx-auto px-4 sm:px-8 lg:px-12 py-3 max-w-7xl">
         {/* Header */}
         <header className="mb-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

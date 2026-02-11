@@ -190,7 +190,7 @@ function PastExamsPage() {
     >
       {/* Fixed Header */}
       <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-amber-200/60 shadow-sm">
-        <div className="container mx-auto px-4 sm:px-8 lg:px-20 py-3 max-w-6xl">
+        <div className="container mx-auto px-4 sm:px-8 lg:px-12 py-3 max-w-7xl">
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <BookOpen className="h-4 w-4 text-amber-600" />
@@ -217,7 +217,7 @@ function PastExamsPage() {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 sm:px-8 lg:px-20 py-4 max-w-6xl">
+      <main className="container mx-auto px-4 sm:px-8 lg:px-12 py-4 max-w-7xl">
         <Card className="shadow-sm border-amber-200/60">
           <CardContent className="p-4 space-y-4">
             {loading ? (
