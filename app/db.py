@@ -10,7 +10,10 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/dev.db")
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False},  # SQLite用
+    connect_args={
+        "check_same_thread": False,  # SQLite用
+        "timeout": 30,  # ロック時は最大30秒待ってから書き込み（競合時の503を減らす）
+    },
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -54,9 +57,12 @@ def get_db_session_for_url(database_url: str) -> Generator:
                 # ファイルが存在しない場合でもエンジンは作成する（新規作成される可能性があるため）
         
         # 新しいエンジンを作成
+        sqlite_args = (
+            {"check_same_thread": False, "timeout": 30} if "sqlite" in database_url else {}
+        )
         temp_engine = create_engine(
             database_url,
-            connect_args={"check_same_thread": False} if "sqlite" in database_url else {}
+            connect_args=sqlite_args,
         )
         TempSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=temp_engine)
         db = TempSessionLocal()

@@ -513,15 +513,12 @@ export default function ReviewResultPage() {
                 </div>
               )}
             </div>
-            {/* ChatInputを常にレンダリングして、条件に応じて表示/非表示を切り替える */}
-            <div 
-              className={cn(
-                "border-t border-border/70 bg-card shrink-0",
-                leftTab === "chat" ? "visible" : "invisible pointer-events-none"
-              )}
-            >
-              {leftChatInput}
-            </div>
+            {/* ChatInputはチャットタブのときのみレンダリング（下部領域の有効活用） */}
+            {leftTab === "chat" && (
+              <div className="border-t border-border/70 bg-card shrink-0">
+                {leftChatInput}
+              </div>
+            )}
           </div>
         </div>
 
@@ -605,7 +602,7 @@ export default function ReviewResultPage() {
               )}
             >
               {rightTab === "review" && (
-                <div className="space-y-8 max-w-2xl">
+                <div className="space-y-8 w-full">
                   {score !== undefined && (
                     <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
                       <div className="flex items-start gap-6">
@@ -771,15 +768,12 @@ export default function ReviewResultPage() {
                 </div>
               )}
             </div>
-            {/* ChatInputを常にレンダリングして、条件に応じて表示/非表示を切り替える */}
-            <div 
-              className={cn(
-                "border-t border-border/70 bg-card shrink-0",
-                rightTab === "chat" ? "visible" : "invisible pointer-events-none"
-              )}
-            >
-              {rightChatInput}
-            </div>
+            {/* ChatInputはチャットタブのときのみレンダリング（下部領域の有効活用） */}
+            {rightTab === "chat" && (
+              <div className="border-t border-border/70 bg-card shrink-0">
+                {rightChatInput}
+              </div>
+            )}
           </div>
         </div>
       </div>
