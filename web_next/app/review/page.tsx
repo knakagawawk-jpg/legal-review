@@ -291,8 +291,8 @@ export default function ReviewPage() {
       style={mainContentStyle}
     >
       <header className="shrink-0 border-b border-slate-200/60 bg-white/80 backdrop-blur-md">
-        <div className="mx-auto flex h-11 max-w-7xl items-center justify-between px-3">
-          <div className="flex items-center gap-2 ml-2">
+        <div className="mx-auto flex flex-wrap items-center justify-between gap-2 max-w-7xl px-3 py-2 min-h-11">
+          <div className="flex items-center gap-2 shrink-0">
             <SidebarToggle />
             <div className="flex h-6 w-6 items-center justify-center rounded-md bg-gradient-to-br from-indigo-500 to-sky-500">
               <Scale className="h-3.5 w-3.5 text-white" />
@@ -300,13 +300,13 @@ export default function ReviewPage() {
             <h1 className="text-sm font-bold text-slate-800">Juristutor-AI</h1>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 shrink min-w-0">
             {mode === "existing" && (
               <>
                 <Select value={examType} onValueChange={(value) => {
                   setExamType(value)
                 }}>
-                  <SelectTrigger className="h-7 w-24 border-slate-200 bg-white text-xs shadow-sm">
+                  <SelectTrigger className="h-7 w-16 sm:w-24 min-w-0 border-slate-200 bg-white text-xs shadow-sm">
                     <SelectValue placeholder="試験種別" />
                   </SelectTrigger>
                   <SelectContent>
@@ -317,7 +317,7 @@ export default function ReviewPage() {
                 <Select value={year ? year.toString() : ""} onValueChange={(value) => {
                   setYear(value ? parseInt(value) : null)
                 }}>
-                  <SelectTrigger className="h-7 w-20 border-slate-200 bg-white text-xs shadow-sm">
+                  <SelectTrigger className="h-7 w-14 sm:w-20 min-w-0 border-slate-200 bg-white text-xs shadow-sm">
                     <SelectValue placeholder="年度" />
                   </SelectTrigger>
                   <SelectContent>
@@ -346,7 +346,7 @@ export default function ReviewPage() {
                     setOfficialQuestionId(null)
                   }}
                 >
-                  <SelectTrigger className="h-7 w-24 border-slate-200 bg-white text-xs shadow-sm">
+                  <SelectTrigger className="h-7 w-16 sm:w-24 min-w-0 border-slate-200 bg-white text-xs shadow-sm">
                     {subject !== null ? (
                       <span>{getSubjectName(subject)}</span>
                     ) : (
@@ -387,15 +387,22 @@ export default function ReviewPage() {
                   setError(err?.message || err?.toString() || "モードの切り替えに失敗しました")
                 }
               }}
-              className="ml-1 px-3 py-1.5 text-xs text-slate-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 hover:border-blue-300 transition-colors"
+              className="shrink-0 ml-1 px-2 sm:px-3 py-1.5 text-xs text-slate-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 hover:border-blue-300 transition-colors"
             >
-              {mode === "existing" ? "好きな問題を貼りつけレビュー" : "既存問題"}
+              {mode === "existing" ? (
+                <>
+                  <span className="hidden sm:inline">好きな問題を貼りつけレビュー</span>
+                  <span className="sm:hidden">新規問題</span>
+                </>
+              ) : (
+                "既存問題"
+              )}
             </button>
           </div>
         </div>
       </header>
 
-      <main className="flex flex-col mx-auto w-full max-w-5xl p-3 gap-2" style={{ height: 'calc(100vh - 2.75rem)' }}>
+      <main className="flex flex-1 flex-col mx-auto w-full max-w-5xl p-3 gap-2 min-h-0 overflow-auto">
 
         {/* エラー表示 */}
         {error && (
