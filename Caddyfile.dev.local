@@ -1,0 +1,44 @@
+# 開発環境用Caddyfile（ローカル専用・Basic認証なし）
+# .env.dev で CADDYFILE_DEV_PATH=./Caddyfile.dev.local を指定して使用。
+# サーバーでは Caddyfile.dev（Basic認証あり）を使用すること。
+
+# ポートベースの設定（localhost用、HTTPのみ）
+:80 {
+    # HTTPのみ（TLS無効化）
+    # ローカルでは Basic 認証なし
+
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    reverse_proxy web-dev-server:3000 {
+        transport http {
+            dial_timeout 10s
+            response_header_timeout 600s
+            read_timeout 600s
+            write_timeout 600s
+        }
+    }
+}
+
+# ドメインベース（ローカルで CADDY_DOMAIN_DEV=localhost 等の場合）
+{$CADDY_DOMAIN_DEV:dev.localhost} {
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    reverse_proxy web-dev-server:3000 {
+        transport http {
+            dial_timeout 10s
+            response_header_timeout 600s
+            read_timeout 600s
+            write_timeout 600s
+        }
+    }
+}

@@ -14,13 +14,11 @@
 :80 {
     # HTTPのみ（TLS無効化）
     
-    # Basic auth (bcrypt hash) - ページリクエストのみに適用（APIとNext.jsの静的リソースは除外）
-    # Generate hash with: docker run --rm caddy:2-alpine caddy hash-password --plaintext your-password
-    # Note: .envファイルでは$$でエスケープする必要がある（$$2a$$14$$...）
+    # Basic auth（サーバー用）。ローカルで認証なしにする場合は .env.dev で CADDYFILE_DEV_PATH=./Caddyfile.dev.local を指定
     @not_api {
         not path /api/* /_next/* /favicon.ico
     }
-    basicauth @not_api {
+    basic_auth @not_api {
         {$BASIC_AUTH_USER_DEV} {$BASIC_AUTH_PASS_HASH_DEV}
     }
 
@@ -51,11 +49,11 @@
 {$CADDY_DOMAIN_DEV:dev.localhost} {
     # 自動TLS（Let's Encrypt）で HTTPS を提供
 
-    # Basic auth (bcrypt hash) - ページリクエストのみに適用（APIとNext.jsの静的リソースは除外）
+    # Basic auth（サーバー用）
     @not_api {
         not path /api/* /_next/* /favicon.ico
     }
-    basicauth @not_api {
+    basic_auth @not_api {
         {$BASIC_AUTH_USER_DEV} {$BASIC_AUTH_PASS_HASH_DEV}
     }
 

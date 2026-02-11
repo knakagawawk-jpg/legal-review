@@ -62,13 +62,13 @@ services:
       dockerfile: app/Dockerfile
     container_name: law-review-backend-dev
     env_file:
-      - .env.dev
-    # 注意: 環境変数は env_file (.env.dev) から読み込まれます
+      - ${DEV_ENV_FILE:-.env.dev}
+    # 注意: 環境変数は env_file から読み込み。DEV_ENV_FILE で .env.dev1（ローカル）/.env.dev2（サーバー）を切り替え
     # environment セクションで同じ変数を設定すると env_file の値を上書きしてしまうため、
     # ここでは設定しません
     volumes:
       - ${LAW_REVIEW_DATA_DIR:-./data}:/data
-      - ./.env.dev:/app/.env:ro
+      - ./${DEV_ENV_FILE:-.env.dev}:/app/.env:ro
     networks:
       - law-review-network
     restart: unless-stopped
@@ -186,7 +186,7 @@ services:
       dockerfile: Dockerfile.nextjs.dev
     container_name: law-review-web-dev-server
     env_file:
-      - .env.dev
+      - ${DEV_ENV_FILE:-.env.dev}
     environment:
       # BACKEND_INTERNAL_URLは開発環境固定
       - BACKEND_INTERNAL_URL=http://backend-dev:8000
@@ -194,7 +194,7 @@ services:
       - WATCHPACK_POLLING=true # ファイル変更検知のため
       - ENABLE_DEV_PAGE=true # 開発者用ページを有効化（dev環境のみ）
       - NEXT_PUBLIC_ENABLE_DEV_PAGE=true # フロントエンド用（dev環境のみ）
-    # 注意: NEXT_PUBLIC_GOOGLE_CLIENT_ID, REVIEW_TIMEOUT_MS は env_file (.env.dev) から読み込まれます
+    # 注意: NEXT_PUBLIC_GOOGLE_CLIENT_ID, REVIEW_TIMEOUT_MS は env_file から読み込まれます
     volumes:
       # ソースコードをマウント（ホットリロード対応）
       - ./web_next:/app
@@ -214,7 +214,9 @@ services:
       start_period: 40s
     profiles:
       - dev # 開発環境用プロファイル（サーバー上）
-    # ports公開しない（proxy経由のみアクセス可能）
+    # ローカル開発用: proxy で接続できない場合に http://localhost:3000 で直接アクセス可能
+    ports:
+      - "3000:3000"
 
     # プロキシ - 本番環境用（複数ドメイン対応）
   proxy:
@@ -285,20 +287,20 @@ services:
       - law-review-network
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:2019/config/" ]
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "--timeout=5", "http://localhost/" ]
       interval: 30s
-      timeout: 10s
+      timeout: 15s
       retries: 3
-      start_period: 10s
+      start_period: 20s
 
   # プロキシ - 開発環境用（単独起動時用、通常はproxyと統合）
   # 本番 proxy が 80/443 を使う場合は、dev は本番 proxy 経由でアクセスすること。
   # 単独起動時のみ 8081/8444 を使用（本番と同時起動時は proxy-dev のポートは使わない）。
   proxy-dev:
     env_file:
-      - .env.dev
+      - ${DEV_ENV_FILE:-.env.dev}
     # 注意: CADDY_DOMAIN_DEV, BASIC_AUTH_USER_DEV, BASIC_AUTH_PASS_HASH_DEV は
-    # env_file (.env.dev) から読み込まれます
+    # env_file（DEV_ENV_FILE で .env.dev1 / .env.dev2 を指定）から読み込まれます
     image: caddy:2-alpine
     container_name: law-review-proxy-dev
     profiles:
@@ -308,7 +310,8 @@ services:
       - "8444:443"
       - "8444:443/udp"
     volumes:
-      - ./Caddyfile.dev:/etc/caddy/Caddyfile:ro
+      # ローカル: .env.dev1 で CADDYFILE_DEV_PATH=./Caddyfile.dev.local を設定。サーバー: .env.dev2 では未設定
+      - ${CADDYFILE_DEV_PATH:-./Caddyfile.dev}:/etc/caddy/Caddyfile:ro
       - caddy_data_dev:/data
       - caddy_config_dev:/config
     depends_on:
@@ -318,11 +321,11 @@ services:
       - law-review-network
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:2019/config/" ]
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "--timeout=5", "http://localhost/" ]
       interval: 30s
-      timeout: 10s
+      timeout: 15s
       retries: 3
-      start_period: 10s
+      start_period: 20s
 
   proxy-local:
     image: caddy:2-alpine
