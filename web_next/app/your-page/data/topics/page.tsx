@@ -590,7 +590,9 @@ function TopicsPage() {
       {/* Main Content */}
       <main className="container mx-auto px-4 sm:px-8 lg:px-12 py-4 max-w-7xl">
         {/* フィルター: スマホは2行(セレクト行+日付行)、広い画面は1行 */}
-        <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="mb-4 flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
+          {/* 1行目(スマホ) / 左側(広い画面): 科目・状態・fav */}
+          <div className="flex flex-wrap items-center gap-2">
           {/* 科目 */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -662,18 +664,19 @@ function TopicsPage() {
               setFavoriteFilter(value as "fav-only" | "fav-except" | "all")
             }}
           >
-            <SelectTrigger className="h-7 text-xs w-28">
+            <SelectTrigger className={cn("h-7 w-28", favoriteFilter === "all" ? "text-[10px]" : "text-xs")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="fav-only" className="text-xs">favのみ</SelectItem>
               <SelectItem value="fav-except" className="text-xs">fav以外</SelectItem>
-              <SelectItem value="all" className="text-xs">フィルターなし</SelectItem>
+              <SelectItem value="all" className="text-[10px]">フィルターなし</SelectItem>
             </SelectContent>
           </Select>
+          </div>
           
-          {/* 期間: スマホで w-full により2行目に表示、md以上で1行に */}
-          <div className="flex items-center gap-2 w-full md:w-auto">
+          {/* 2行目(スマホ) / 右側(広い画面): 期間 */}
+          <div className="flex items-center gap-2">
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm" className="h-7 text-xs">
