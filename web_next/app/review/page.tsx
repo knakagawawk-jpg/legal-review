@@ -306,7 +306,7 @@ export default function ReviewPage() {
                 <Select value={examType} onValueChange={(value) => {
                   setExamType(value)
                 }}>
-                  <SelectTrigger className="h-7 w-16 sm:w-24 min-w-0 border-slate-200 bg-white text-xs shadow-sm">
+                  <SelectTrigger className="h-7 w-20 sm:w-24 min-w-0 border-slate-200 bg-white text-[10px] sm:text-xs shadow-sm px-2 sm:px-3">
                     <SelectValue placeholder="試験種別" />
                   </SelectTrigger>
                   <SelectContent>
@@ -317,7 +317,7 @@ export default function ReviewPage() {
                 <Select value={year ? year.toString() : ""} onValueChange={(value) => {
                   setYear(value ? parseInt(value) : null)
                 }}>
-                  <SelectTrigger className="h-7 w-14 sm:w-20 min-w-0 border-slate-200 bg-white text-xs shadow-sm">
+                  <SelectTrigger className="h-7 w-[4.5rem] sm:w-20 min-w-0 border-slate-200 bg-white text-[10px] sm:text-xs shadow-sm px-2 sm:px-3">
                     <SelectValue placeholder="年度" />
                   </SelectTrigger>
                   <SelectContent>
@@ -346,7 +346,7 @@ export default function ReviewPage() {
                     setOfficialQuestionId(null)
                   }}
                 >
-                  <SelectTrigger className="h-7 w-16 sm:w-24 min-w-0 border-slate-200 bg-white text-xs shadow-sm">
+                  <SelectTrigger className="h-7 w-20 sm:w-24 min-w-0 border-slate-200 bg-white text-[10px] sm:text-xs shadow-sm px-2 sm:px-3">
                     {subject !== null ? (
                       <span>{getSubjectName(subject)}</span>
                     ) : (
