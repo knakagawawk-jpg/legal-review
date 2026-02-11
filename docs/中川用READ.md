@@ -5,6 +5,23 @@ cd /opt/law-review
 
 # ============================================
 
+# 環境一覧・接続先整理
+
+# ============================================
+#
+# | 環境 | プロファイル | envファイル | DB | ドメイン/アクセス先 |
+# |------|-------------|-------------|-----|---------------------|
+# | 本番 | production | .env | prod.db | https://juristutor-ai.com |
+# | β | beta | .env.beta | beta.db | https://beta.juristutor-ai.com |
+# | dev（サーバー） | dev | .env.dev2 | dev.db | https://dev.juristutor-ai.com |
+# | dev（ローカル） | dev | .env.dev1 | dev.db | http://localhost:8081 |
+# | local（フロントのみ） | local | .env | dev.db | http://localhost:8080 |
+#
+# 【重要】本番の .env は DATABASE_URL=sqlite:////data/prod.db にすること
+# 【npm run dev】Next.js単体起動時は web_next/.env.local で BACKEND_INTERNAL_URL=http://127.0.0.1:8000 を設定
+#
+# ============================================
+
 # 本番環境（production）
 
 # ============================================
@@ -156,17 +173,27 @@ docker compose --profile beta logs --tail=80 web-beta backend-beta
 
 #   サーバー用: cp .env.dev2.example .env.dev2 して設定を編集
 
-# 起動時にどちらを使うか指定（編集で壊す心配なし）:
+# 起動（推奨: スクリプトで確実に起動）:
 
-#   PowerShell（ローカル）: $env:DEV_ENV_FILE=".env.dev1"; docker compose --profile dev up -d
+#   dev1（ローカル）: .\scripts\dev1-up.ps1  → http://localhost:8081（接続拒否のときは http://localhost:3000 を利用）
+
+#   dev2（サーバー）: .\scripts\dev2-up.ps1  → https://dev.juristutor-ai.com
+
+# 手動で起動する場合（dev1 では CADDYFILE_DEV_PATH も必須。さもないと proxy が正しく動かず接続拒否になることがあります）:
+
+#   PowerShell（ローカル）: $env:DEV_ENV_FILE=".env.dev1"; $env:CADDYFILE_DEV_PATH="./Caddyfile.dev.local"; docker compose --profile dev up -d
 
 #   PowerShell（サーバー）: $env:DEV_ENV_FILE=".env.dev2"; docker compose --profile dev up -d
 
-#   Bash（ローカル）:      DEV_ENV_FILE=.env.dev1 docker compose --profile dev up -d
+#   Bash（Linux/Mac のみ。PowerShell では不可）:
 
-#   Bash（サーバー）:      DEV_ENV_FILE=.env.dev2 docker compose --profile dev up -d
+#      DEV_ENV_FILE=.env.dev1 CADDYFILE_DEV_PATH=./Caddyfile.dev.local docker compose --profile dev up -d
+
+#      DEV_ENV_FILE=.env.dev2 docker compose --profile dev up -d
 
 # 未指定の場合は従来どおり .env.dev が使われます（後方互換）
+
+# 接続拒否になった場合: http://localhost:3000 で直接アクセス可能（proxy 経由ではなく web-dev-server 直）。または上記のとおり DEV_ENV_FILE と（dev1のときは）CADDYFILE_DEV_PATH を設定してから up するか、\scripts\dev1-up.ps1 を実行。docker compose --profile dev ps で backend-dev / web-dev-server / proxy-dev の3つが running か確認。
 
 # 注意: 開発環境はホットリロード対応（web-dev-server）
 
