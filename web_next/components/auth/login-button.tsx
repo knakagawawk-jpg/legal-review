@@ -1,12 +1,39 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useAuth } from "@/contexts/auth-context"
 import { Loader2, AlertCircle, X } from "lucide-react"
 import { CookieConsentBanner } from "@/components/cookie-consent-banner"
 import { hasRequiredConsent, hasPrivacyConsent } from "@/lib/cookie-consent"
+
+/** Google One Tap prompt() の通知コールバック型 */
+interface PromptMomentNotification {
+  isDisplayMoment: () => boolean
+  isDisplayed: () => boolean
+  isNotDisplayed: () => boolean
+  getNotDisplayedReason: () =>
+    | "browser_not_supported"
+    | "invalid_client"
+    | "missing_client_id"
+    | "opt_out_or_no_session"
+    | "secure_http_required"
+    | "suppressed_by_user"
+    | "unregistered_origin"
+    | "unknown_reason"
+  isSkippedMoment: () => boolean
+  getSkippedReason: () =>
+    | "auto_cancel"
+    | "user_cancel"
+    | "tap_outside"
+    | "issuing_failed"
+  isDismissedMoment: () => boolean
+  getDismissedReason: () =>
+    | "credential_returned"
+    | "cancel_called"
+    | "flow_restarted"
+}
 
 declare global {
   interface Window {
@@ -18,8 +45,17 @@ declare global {
             use_fedcm_for_prompt?: boolean
             callback: (response: { credential: string }) => void
           }) => void
-          prompt: () => void
-          renderButton: (element: HTMLElement, config: any) => void
+          prompt: (momentListener?: (notification: PromptMomentNotification) => void) => void
+          renderButton: (element: HTMLElement, config: {
+            type?: "standard" | "icon"
+            theme?: "outline" | "filled_blue" | "filled_black"
+            size?: "large" | "medium" | "small"
+            text?: "signin_with" | "signup_with" | "continue_with" | "signin"
+            shape?: "rectangular" | "pill" | "circle" | "square"
+            logo_alignment?: "left" | "center"
+            width?: number
+            locale?: string
+          }) => void
         }
       }
     }
@@ -33,6 +69,8 @@ export function LoginButton() {
   const [loginError, setLoginError] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
   const [showConsentBanner, setShowConsentBanner] = useState(false)
+  const [showGoogleButton, setShowGoogleButton] = useState(false)
+  const googleButtonRef = useRef<HTMLDivElement>(null)
 
   // クライアント側でのみマウントされたことを確認（Hydrationエラーを防ぐ）
   useEffect(() => {
@@ -166,12 +204,48 @@ export function LoginButton() {
       return
     }
     
+    // フォールバックボタンが既に表示されている場合はpromptを再試行しない
+    // （ユーザーはGoogleボタンを直接クリックする）
+    if (showGoogleButton) {
+      return
+    }
+    
     try {
-      window.google.accounts.id.prompt()
-      console.log("Prompt called successfully")
+      // prompt() に通知コールバックを渡し、抑制を検知する
+      window.google.accounts.id.prompt((notification) => {
+        if (notification.isNotDisplayed()) {
+          const reason = notification.getNotDisplayedReason()
+          console.warn("One Tap prompt was not displayed. Reason:", reason)
+          
+          if (reason === "suppressed_by_user" || reason === "opt_out_or_no_session") {
+            // クールダウン中またはセッションなし → フォールバックボタンを表示
+            console.log("Showing fallback Google Sign-In button")
+            setShowGoogleButton(true)
+          } else if (reason === "browser_not_supported") {
+            setLoginError("お使いのブラウザではGoogle One Tapがサポートされていません。")
+            setShowGoogleButton(true)
+          } else if (reason === "unregistered_origin" || reason === "invalid_client") {
+            setLoginError("Google認証の設定に問題があります。管理者にお問い合わせください。")
+          } else {
+            // その他の理由でも念のためフォールバックボタンを表示
+            setShowGoogleButton(true)
+          }
+        } else if (notification.isSkippedMoment()) {
+          const reason = notification.getSkippedReason()
+          console.warn("One Tap prompt was skipped. Reason:", reason)
+          // ユーザーがキャンセルした場合もフォールバックボタンを表示
+          if (reason === "user_cancel" || reason === "tap_outside") {
+            setShowGoogleButton(true)
+          }
+        }
+        // isDisplayMoment() / isDismissedMoment() の場合は正常動作なので何もしない
+      })
+      console.log("Prompt called successfully with notification listener")
     } catch (error: any) {
       console.error("Error calling prompt:", error)
       setLoginError(error.message || "ログインプロンプトの表示に失敗しました")
+      // エラー時もフォールバックボタンを表示
+      setShowGoogleButton(true)
     }
   }
 
@@ -187,6 +261,28 @@ export function LoginButton() {
       }, 100)
     }
   }
+
+  // フォールバック: Google公式ボタンをレンダリング
+  // One Tapが抑制された場合にポップアップ方式のGoogleボタンを表示する
+  // renderButton はクールダウンの影響を受けないため、常に動作する
+  useEffect(() => {
+    if (showGoogleButton && googleButtonRef.current && window.google?.accounts?.id) {
+      try {
+        window.google.accounts.id.renderButton(googleButtonRef.current, {
+          type: "standard",
+          theme: "outline",
+          size: "large",
+          text: "signin_with",
+          shape: "rectangular",
+          logo_alignment: "left",
+          locale: "ja",
+        })
+        console.log("Google fallback button rendered successfully")
+      } catch (error) {
+        console.error("Failed to render Google fallback button:", error)
+      }
+    }
+  }, [showGoogleButton, isGoogleLoaded])
 
   // サーバー側レンダリング時は何も表示しない（Hydrationエラーを防ぐ）
   if (!mounted || isLoading) {
@@ -238,6 +334,14 @@ export function LoginButton() {
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             {isLoggingIn ? "ログイン中..." : "読み込み中..."}
           </Button>
+        ) : showGoogleButton ? (
+          // フォールバック: Google公式サインインボタン（One Tapが使えない場合）
+          <div className="flex flex-col items-center gap-1.5">
+            <div ref={googleButtonRef} />
+            <p className="text-xs text-muted-foreground">
+              上のボタンでログインしてください
+            </p>
+          </div>
         ) : (
           <Button onClick={handleLogin} variant="outline" size="sm">
             Googleでログイン
