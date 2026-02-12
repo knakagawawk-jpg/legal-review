@@ -16,7 +16,7 @@ interface AuthContextType {
   token: string | null
   isLoading: boolean
   error: string | null
-  login: (token: string, rememberMe?: boolean) => Promise<void>
+  login: (token: string, rememberMe?: boolean, adminOtpCode?: string) => Promise<void>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
   clearError: () => void
@@ -141,7 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [fetchUserInfo])
 
-  const login = async (idToken: string, rememberMe: boolean = true) => {
+  const login = async (idToken: string, rememberMe: boolean = true, adminOtpCode?: string) => {
     try {
       setError(null)
       setIsLoading(true)
@@ -151,7 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ token: idToken }),
+        body: JSON.stringify({ token: idToken, adminOtpCode }),
       })
 
       if (!response.ok) {

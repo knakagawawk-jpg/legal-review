@@ -40,6 +40,37 @@ TOKEN_CACHE_MAX_SIZE = int(os.getenv("TOKEN_CACHE_MAX_SIZE", "1000"))  # デフ�
 # JWTトークン設定
 JWT_ACCESS_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_DAYS", "30"))  # デフォルト30日
 
+# 管理者2段階認証（TOTP）設定
+ADMIN_2FA_ENABLED = os.getenv("ADMIN_2FA_ENABLED", "false").lower() == "true"
+ADMIN_2FA_EMAIL = os.getenv("ADMIN_2FA_EMAIL", "note.shihoushiken@gmail.com").lower()
+ADMIN_2FA_TOTP_SECRET = os.getenv("ADMIN_2FA_TOTP_SECRET")
+ADMIN_2FA_TOTP_VALID_WINDOW = int(os.getenv("ADMIN_2FA_TOTP_VALID_WINDOW", "1"))
+
+# 環境判定
+APP_ENV = os.getenv("APP_ENV", "").lower()
+NODE_ENV = os.getenv("NODE_ENV", "").lower()
+ENABLE_DEV_PAGE = os.getenv("ENABLE_DEV_PAGE", "false").lower() == "true"
+IS_DEV_ENV = APP_ENV == "dev" or NODE_ENV == "development" or ENABLE_DEV_PAGE
+
+# プラン制限有効/無効（未指定時: devは無効、それ以外は有効）
+PLAN_LIMITS_ENABLED = os.getenv(
+    "PLAN_LIMITS_ENABLED",
+    "false" if IS_DEV_ENV else "true",
+).lower() == "true"
+
+# Stripe設定（課金）
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+STRIPE_REVIEW_TICKET_PRICE_YEN = int(os.getenv("STRIPE_REVIEW_TICKET_PRICE_YEN", "500"))
+STRIPE_REVIEW_TICKET_PRODUCT_NAME = os.getenv("STRIPE_REVIEW_TICKET_PRODUCT_NAME", "Review追加チケット")
+STRIPE_BASIC_PLAN_PRICE_YEN = int(os.getenv("STRIPE_BASIC_PLAN_PRICE_YEN", "3980"))
+STRIPE_HIGH_PLAN_PRICE_YEN = int(os.getenv("STRIPE_HIGH_PLAN_PRICE_YEN", "7200"))
+STRIPE_FIRST_MONTH_FM_DM_PRICE_YEN = int(os.getenv("STRIPE_FIRST_MONTH_FM_DM_PRICE_YEN", "1000"))
+STRIPE_BASIC_PLAN_PRICE_ID = os.getenv("STRIPE_BASIC_PLAN_PRICE_ID", "")
+STRIPE_HIGH_PLAN_PRICE_ID = os.getenv("STRIPE_HIGH_PLAN_PRICE_ID", "")
+STRIPE_FIRST_MONTH_FM_DM_PRICE_ID = os.getenv("STRIPE_FIRST_MONTH_FM_DM_PRICE_ID", "")
+FM_DM_SIGNUP_LINK = os.getenv("FM_DM_SIGNUP_LINK", "https://juristutor-ai.com/signup/fm-dm-first-month")
+
 # β環境メール制限設定
 # BETA_EMAIL_RESTRICTION_ENABLED=true の場合、許可リストにあるメールアドレスのみ新規登録可能
 BETA_EMAIL_RESTRICTION_ENABLED = os.getenv("BETA_EMAIL_RESTRICTION_ENABLED", "false").lower() == "true"

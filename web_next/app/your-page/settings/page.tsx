@@ -38,6 +38,13 @@ function SettingsPage() {
   const [cookiePrivacy, setCookiePrivacy] = useState(false)
   const [cookieConsentLoaded, setCookieConsentLoaded] = useState(false)
   const [showExternalDetails, setShowExternalDetails] = useState(false) // 外部送信先の詳細表示
+  const [planCode, setPlanCode] = useState<string | null>(null)
+  const [planLoading, setPlanLoading] = useState(false)
+  const [checkoutLoading, setCheckoutLoading] = useState<null | "basic" | "high" | "ticket">(null)
+  const [cancelLoading, setCancelLoading] = useState(false)
+  const [fmDmEligible, setFmDmEligible] = useState(false)
+
+  const FM_DM_LINK = "https://juristutor-ai.com/signup/fm-dm-first-month"
 
   // ユーザー情報を取得
   useEffect(() => {
@@ -63,6 +70,36 @@ function SettingsPage() {
       }
     }
     fetchUserInfo()
+  }, [authLoading, user])
+
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    const via = url.searchParams.get("via")
+    const fromFmDmPath = window.location.pathname === "/signup/fm-dm-first-month"
+    const eligible = via === "fm-dm" || fromFmDmPath
+    setFmDmEligible(eligible)
+    if (eligible) {
+      localStorage.setItem("fm_dm_eligible", "1")
+    } else if (localStorage.getItem("fm_dm_eligible") === "1") {
+      setFmDmEligible(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    const loadPlan = async () => {
+      if (!authLoading && user) {
+        setPlanLoading(true)
+        try {
+          const data = await apiClient.get<{ plan_code: string | null }>("/api/users/me/plan-limits")
+          setPlanCode(data.plan_code ?? null)
+        } catch {
+          setPlanCode(null)
+        } finally {
+          setPlanLoading(false)
+        }
+      }
+    }
+    loadPlan()
   }, [authLoading, user])
 
   // Cookie同意状態を取得
@@ -144,6 +181,68 @@ function SettingsPage() {
   // フォームの変更を検知
   const hasChanges = name !== (user?.name || "") || email !== (user?.email || "")
   const hasCookieChanges = cookieRequired !== hasRequiredConsent() || cookieFunctional !== hasFunctionalConsent() || cookiePrivacy !== hasPrivacyConsent()
+  const canBuyTicket = planCode === "basic_plan" || planCode === "first_month_fm_dm" || planCode === "high_plan"
+
+  const getPlanLabel = () => {
+    if (!planCode) return "No Subscription"
+    if (planCode === "basic_plan") return "Basic Plan"
+    if (planCode === "first_month_fm_dm") return "Basic Plan (for 1st Month)"
+    if (planCode === "high_plan") return "High Plan"
+    return planCode
+  }
+
+  const startSubscriptionCheckout = async (selectedPlanCode: "basic_plan" | "high_plan" | "first_month_fm_dm") => {
+    setError(null)
+    setCheckoutLoading(selectedPlanCode === "basic_plan" ? "basic" : "high")
+    try {
+      const payload = {
+        plan_code: selectedPlanCode,
+        success_url: `${window.location.origin}/checkout/success?from=settings&type=subscription`,
+        cancel_url: `${window.location.origin}/checkout/cancel?from=settings&type=subscription`,
+        via_fm_dm_link: fmDmEligible,
+      }
+      const res = await apiClient.post<{ checkout_url: string }>("/api/subscriptions/checkout", payload)
+      window.location.href = res.checkout_url
+    } catch (err: any) {
+      setError(err?.error || "プラン購入の開始に失敗しました")
+    } finally {
+      setCheckoutLoading(null)
+    }
+  }
+
+  const startTicketCheckout = async () => {
+    setError(null)
+    setCheckoutLoading("ticket")
+    try {
+      const res = await apiClient.post<{ checkout_url: string }>("/api/review-tickets/checkout", {
+        quantity: 1,
+        success_url: `${window.location.origin}/checkout/success?from=settings&type=ticket`,
+        cancel_url: `${window.location.origin}/checkout/cancel?from=settings&type=ticket`,
+      })
+      window.location.href = res.checkout_url
+    } catch (err: any) {
+      setError(err?.error || "チケット購入の開始に失敗しました")
+    } finally {
+      setCheckoutLoading(null)
+    }
+  }
+
+  const cancelSubscriptionAtPeriodEnd = async () => {
+    if (!confirm("次回更新を停止します。現在の期間終了までは利用可能です。よろしいですか？")) {
+      return
+    }
+    setError(null)
+    setSuccess(null)
+    setCancelLoading(true)
+    try {
+      const res = await apiClient.post<{ message: string; expires_at?: string | null }>("/api/users/me/subscription/cancel", {})
+      setSuccess(res.message || "次回更新を停止しました。")
+    } catch (err: any) {
+      setError(err?.error || "解約処理に失敗しました")
+    } finally {
+      setCancelLoading(false)
+    }
+  }
 
   return (
     <div 
@@ -283,6 +382,86 @@ function SettingsPage() {
                         </p>
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <Settings className="h-5 w-5 text-indigo-600" />
+                      <CardTitle>Manage Your Plan</CardTitle>
+                    </div>
+                    <CardDescription>
+                      Your Plan: {planLoading ? "Loading..." : getPlanLabel()}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        onClick={() => startSubscriptionCheckout("basic_plan")}
+                        disabled={checkoutLoading !== null}
+                      >
+                        {checkoutLoading === "basic" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        Basic Plan (3,980円 税抜き)
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => startSubscriptionCheckout("high_plan")}
+                        disabled={checkoutLoading !== null}
+                      >
+                        {checkoutLoading === "high" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        High Plan (7,200円 税抜き)
+                      </Button>
+                      {fmDmEligible && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => startSubscriptionCheckout("first_month_fm_dm")}
+                          disabled={checkoutLoading !== null}
+                        >
+                          Basic Plan (for 1st Month): <span className="line-through mx-1">3,980円</span> 1,000円
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t">
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          onClick={startTicketCheckout}
+                          disabled={checkoutLoading !== null || !canBuyTicket}
+                        >
+                          {checkoutLoading === "ticket" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                          追加チケット購入（900円 税抜き / +レビュー2回）
+                        </Button>
+                      </div>
+                      {!canBuyTicket && (
+                        <p className="text-sm text-amber-700 mt-2">
+                          プラン未登録のユーザーはチケットを購入できません
+                        </p>
+                      )}
+                      {planCode && (
+                        <div className="mt-3">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={cancelSubscriptionAtPeriodEnd}
+                            disabled={cancelLoading}
+                          >
+                            {cancelLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            Planを解約（次回更新停止）
+                          </Button>
+                          <p className="text-xs text-slate-500 mt-2">
+                            途中解約しても返金はありません。期間終了までは利用できます。
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      PlanB限定リンク: <Link href={FM_DM_LINK} className="underline" target="_blank">{FM_DM_LINK}</Link>
+                    </p>
                   </CardContent>
                 </Card>
 

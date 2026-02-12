@@ -473,6 +473,7 @@ class User(Base):
     
     # リレーションシップ
     subscriptions = relationship("UserSubscription", back_populates="user", order_by="desc(UserSubscription.started_at)")
+    review_ticket_grants = relationship("UserReviewTicketGrant", back_populates="user", order_by="desc(UserReviewTicketGrant.created_at)")
     submissions = relationship("Submission", back_populates="user")
     short_answer_sessions = relationship("ShortAnswerSession", back_populates="user")
     monthly_usage = relationship("MonthlyUsage", back_populates="user")
@@ -546,6 +547,30 @@ class UserSubscription(Base):
     
     __table_args__ = (
         Index('idx_user_active_subscription', 'user_id', 'is_active'),
+    )
+
+class UserReviewTicketGrant(Base):
+    __tablename__ = "user_review_ticket_grants"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # 追加チケット: 1枚で review を2回追加できる
+    ticket_count = Column(Integer, nullable=False, default=1)
+    reviews_per_ticket = Column(Integer, nullable=False, default=2)
+    total_bonus_reviews = Column(Integer, nullable=False, default=2)
+
+    source_type = Column(String(30), nullable=False, default="purchase")  # purchase / admin_grant / campaign
+    payment_id = Column(String(255), nullable=True, index=True)
+    note = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="review_ticket_grants")
+
+    __table_args__ = (
+        Index("idx_review_ticket_grants_user_created", "user_id", "created_at"),
     )
 
 class MonthlyUsage(Base):

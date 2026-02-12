@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { token } = body
+    const { token, adminOtpCode } = body
 
     if (!token) {
       return NextResponse.json(
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ token, admin_otp_code: adminOtpCode || null }),
       cache: "no-store",
     })
 

@@ -35,6 +35,19 @@ interface PromptMomentNotification {
     | "flow_restarted"
 }
 
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const [, payload] = token.split(".")
+    if (!payload) return null
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/")
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4)
+    const json = atob(padded)
+    return JSON.parse(json)
+  } catch {
+    return null
+  }
+}
+
 declare global {
   interface Window {
     google?: {
@@ -71,6 +84,7 @@ export function LoginButton() {
   const [showConsentBanner, setShowConsentBanner] = useState(false)
   const [showGoogleButton, setShowGoogleButton] = useState(false)
   const googleButtonRef = useRef<HTMLDivElement>(null)
+  const admin2faEmail = (process.env.NEXT_PUBLIC_ADMIN_2FA_EMAIL || "note.shihoushiken@gmail.com").toLowerCase()
 
   // クライアント側でのみマウントされたことを確認（Hydrationエラーを防ぐ）
   useEffect(() => {
@@ -153,7 +167,17 @@ export function LoginButton() {
               setLoginError(null)
               clearError()
               try {
-                await login(response.credential)
+                const payload = decodeJwtPayload(response.credential)
+                const email = typeof payload?.email === "string" ? payload.email.toLowerCase() : ""
+                let adminOtpCode: string | undefined
+                if (email && email === admin2faEmail) {
+                  const input = window.prompt("管理者用の2段階認証コード（6桁）を入力してください")
+                  adminOtpCode = input?.trim()
+                  if (!adminOtpCode) {
+                    throw new Error("管理者ログインには2段階認証コードが必要です")
+                  }
+                }
+                await login(response.credential, true, adminOtpCode)
               } catch (error: any) {
                 console.error("Login failed:", error)
                 setLoginError(error.message || "ログインに失敗しました")

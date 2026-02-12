@@ -19,18 +19,20 @@ from .models import (
     User,
     SubscriptionPlan,
     UserSubscription,
+    UserReviewTicketGrant,
     Review,
     Thread,
     Message,
     LlmRequest,
 )
 from .timer_utils import get_study_date as get_study_date_4am
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from config.settings import PLAN_LIMITS_ENABLED
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PLAN_CODE = os.getenv("DEFAULT_PLAN_CODE", "beta-for-260128")
+DEFAULT_PLAN_CODE = os.getenv("DEFAULT_PLAN_CODE", "")
 
 # limits JSON のキー
 LIMIT_MAX_REVIEWS_TOTAL = "max_reviews_total"
@@ -38,6 +40,10 @@ LIMIT_MAX_REVIEW_CHAT_MESSAGES_TOTAL = "max_review_chat_messages_total"
 LIMIT_MAX_FREE_CHAT_MESSAGES_TOTAL = "max_free_chat_messages_total"
 LIMIT_RECENT_REVIEW_DAILY = "recent_review_daily_limit"
 LIMIT_MAX_NON_REVIEW_COST_YEN_TOTAL = "max_non_review_cost_yen_total"
+
+
+def is_plan_limits_enabled() -> bool:
+    return PLAN_LIMITS_ENABLED
 
 
 def _parse_limits(limits_json: Optional[str]) -> dict[str, Any]:
@@ -51,6 +57,8 @@ def _parse_limits(limits_json: Optional[str]) -> dict[str, Any]:
 
 def get_default_plan(db: Session) -> Optional[SubscriptionPlan]:
     """デフォルトプラン（plan_code）を取得。未設定なら None。"""
+    if not DEFAULT_PLAN_CODE:
+        return None
     return db.query(SubscriptionPlan).filter(
         SubscriptionPlan.plan_code == DEFAULT_PLAN_CODE,
         SubscriptionPlan.is_active == True,
@@ -63,7 +71,8 @@ def get_user_plan(db: Session, user: User) -> Optional[SubscriptionPlan]:
     - 有効な UserSubscription があればそのプラン
     - なければデフォルトプラン（全ユーザー対象の beta 想定）
     """
-    sub = (
+    now_utc = datetime.now(ZoneInfo("UTC"))
+    subs = (
         db.query(UserSubscription)
         .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
         .filter(
@@ -72,11 +81,25 @@ def get_user_plan(db: Session, user: User) -> Optional[SubscriptionPlan]:
             SubscriptionPlan.is_active == True,
         )
         .order_by(UserSubscription.started_at.desc())
-        .first()
+        .all()
     )
-    if sub and sub.plan:
+    for sub in subs:
+        if not sub.plan:
+            continue
+        # 解約予約済み(cancelled_atあり)でも、有効期限までは利用可能
+        if sub.expires_at is not None and sub.expires_at <= now_utc:
+            continue
+        # PlanB（first_month_fm_dm）は初月限定。expires_at未設定時の安全弁として30日で無効化扱い。
+        if sub.plan.plan_code == "first_month_fm_dm" and sub.expires_at is None:
+            if sub.started_at <= now_utc - timedelta(days=30):
+                continue
         return sub.plan
     return get_default_plan(db)
+
+
+def has_active_subscription(db: Session, user: User) -> bool:
+    """有効な有料/無料プラン契約レコードを持っているか。"""
+    return get_user_plan(db, user) is not None
 
 
 def get_plan_limits(plan: Optional[SubscriptionPlan]) -> dict[str, Any]:
@@ -92,6 +115,51 @@ def get_plan_limits(plan: Optional[SubscriptionPlan]) -> dict[str, Any]:
 def count_reviews_total(db: Session, user_id: int) -> int:
     """Review の合計数（全期間）。"""
     return db.query(Review).filter(Review.user_id == user_id).count()
+
+
+def count_review_ticket_bonus_total(db: Session, user_id: int) -> int:
+    """追加チケットによる Review 追加回数の合計。"""
+    row = (
+        db.query(func.coalesce(func.sum(UserReviewTicketGrant.total_bonus_reviews), 0).label("total"))
+        .filter(UserReviewTicketGrant.user_id == user_id)
+        .first()
+    )
+    if not row or row.total is None:
+        return 0
+    return int(row.total)
+
+
+def count_review_ticket_count_total(db: Session, user_id: int) -> int:
+    """購入/付与された追加チケット枚数の合計。"""
+    row = (
+        db.query(func.coalesce(func.sum(UserReviewTicketGrant.ticket_count), 0).label("total"))
+        .filter(UserReviewTicketGrant.user_id == user_id)
+        .first()
+    )
+    if not row or row.total is None:
+        return 0
+    return int(row.total)
+
+
+def get_effective_review_limit(db: Session, user: User) -> Optional[int]:
+    """実効 review 上限（プラン上限 + 追加チケット由来の上限）。"""
+    plan = get_user_plan(db, user)
+    limits = get_plan_limits(plan)
+    base_limit = limits.get(LIMIT_MAX_REVIEWS_TOTAL)
+    if base_limit is None:
+        return None
+    bonus = count_review_ticket_bonus_total(db, user.id)
+    return int(base_limit) + bonus
+
+
+def _raise_if_no_subscription(db: Session, user: User) -> None:
+    if not is_plan_limits_enabled():
+        return
+    if get_user_plan(db, user) is None:
+        raise HTTPException(
+            status_code=402,
+            detail="プラン未登録です。PlanAまたはPlanCに登録してください。",
+        )
 
 
 def count_review_chat_user_messages(db: Session, user_id: int) -> int:
@@ -152,21 +220,25 @@ def _get_current_study_date_4am() -> str:
 
 def check_review_limit(db: Session, user: User) -> None:
     """講評作成: 全期間の Review 数が上限以内か。"""
-    plan = get_user_plan(db, user)
-    limits = get_plan_limits(plan)
-    max_total = limits.get(LIMIT_MAX_REVIEWS_TOTAL)
+    if not is_plan_limits_enabled():
+        return
+    _raise_if_no_subscription(db, user)
+    max_total = get_effective_review_limit(db, user)
     if max_total is None:
         return
     n = count_reviews_total(db, user.id)
     if n >= max_total:
         raise HTTPException(
             status_code=429,
-            detail=f"講評の作成回数が上限（{max_total}回）に達しています。",
+            detail=f"講評の作成回数が上限（プラン + 追加チケット合算で{max_total}回）に達しています。",
         )
 
 
 def check_review_chat_message_limit(db: Session, user: User, *, after_add: int = 0) -> None:
     """講評チャット: user メッセージ数が上限以内か。after_add はこのリクエストで増える数（通常1）。"""
+    if not is_plan_limits_enabled():
+        return
+    _raise_if_no_subscription(db, user)
     plan = get_user_plan(db, user)
     limits = get_plan_limits(plan)
     max_total = limits.get(LIMIT_MAX_REVIEW_CHAT_MESSAGES_TOTAL)
@@ -182,6 +254,9 @@ def check_review_chat_message_limit(db: Session, user: User, *, after_add: int =
 
 def check_free_chat_message_limit(db: Session, user: User, *, after_add: int = 0) -> None:
     """フリーチャット: user メッセージ数が上限以内か。"""
+    if not is_plan_limits_enabled():
+        return
+    _raise_if_no_subscription(db, user)
     plan = get_user_plan(db, user)
     limits = get_plan_limits(plan)
     max_total = limits.get(LIMIT_MAX_FREE_CHAT_MESSAGES_TOTAL)
@@ -197,6 +272,9 @@ def check_free_chat_message_limit(db: Session, user: User, *, after_add: int = 0
 
 def check_non_review_cost_limit(db: Session, user: User) -> None:
     """Review 以外の合計コスト（円）が上限以内か。"""
+    if not is_plan_limits_enabled():
+        return
+    _raise_if_no_subscription(db, user)
     plan = get_user_plan(db, user)
     limits = get_plan_limits(plan)
     max_yen = limits.get(LIMIT_MAX_NON_REVIEW_COST_YEN_TOTAL)
@@ -219,6 +297,9 @@ def get_recent_review_daily_limit(db: Session, user: User) -> Optional[int]:
 
 def check_recent_review_daily_limit(db: Session, user: User) -> None:
     """復習問題生成: 本日の成功セッション数が日次上限以内か。"""
+    if not is_plan_limits_enabled():
+        return
+    _raise_if_no_subscription(db, user)
     limit = get_recent_review_daily_limit(db, user)
     if limit is None:
         return

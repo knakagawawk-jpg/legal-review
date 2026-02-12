@@ -153,7 +153,7 @@ export default function FreeChatThreadPage() {
 
   if (loadingMessages) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
+      <div className="flex h-dvh items-center justify-center bg-background">
         <div className="text-center">
           <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
           <p className="text-lg text-muted-foreground">読み込み中...</p>
@@ -164,7 +164,7 @@ export default function FreeChatThreadPage() {
 
   if (error && !thread) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
+      <div className="flex h-dvh items-center justify-center bg-background">
         <div className="text-center max-w-md">
           <Alert variant="destructive">
             <AlertDescription>{error}</AlertDescription>
@@ -176,7 +176,7 @@ export default function FreeChatThreadPage() {
 
   return (
     <div 
-      className="flex h-screen flex-col bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 transition-all duration-300"
+      className="flex h-dvh flex-col bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 transition-all duration-300"
       style={mainContentStyle}
     >
       <ChatHeader 

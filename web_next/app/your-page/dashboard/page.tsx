@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -378,6 +379,10 @@ function YourPageDashboardInner() {
   const [recentReviewSelectedSessionId, setRecentReviewSelectedSessionId] = useState<string>("")
   const [recentReviewGenerating, setRecentReviewGenerating] = useState(false)
   const [recentReviewUiMode, setRecentReviewUiMode] = useState<"idle" | "retry" | "limit">("idle")
+  const [billingDialogOpen, setBillingDialogOpen] = useState(false)
+  const [billingDialogMode, setBillingDialogMode] = useState<"plan" | "ticket">("plan")
+  const [checkoutLoading, setCheckoutLoading] = useState<null | "basic" | "high" | "first_month" | "ticket">(null)
+  const [fmDmEligible, setFmDmEligible] = useState(false)
 
   // 回答例表示（ローカル）
   const [recentReviewExpanded, setRecentReviewExpanded] = useState<Record<number, boolean>>({})
@@ -409,6 +414,14 @@ function YourPageDashboardInner() {
       }
     }
   }, [searchParams])
+
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    const via = url.searchParams.get("via")
+    const fromFmDmPath = window.location.pathname === "/signup/fm-dm-first-month"
+    const eligible = via === "fm-dm" || fromFmDmPath || localStorage.getItem("fm_dm_eligible") === "1"
+    setFmDmEligible(eligible)
+  }, [])
 
   const loadRecentReviewSessions = useCallback(async () => {
     try {
@@ -744,6 +757,14 @@ function YourPageDashboardInner() {
       // 429（制限）
       if (e?.status === 429) {
         setRecentReviewUiMode("limit")
+        if ((e?.error || e?.message || "").includes("本日の制限")) {
+          setBillingDialogMode("ticket")
+          setBillingDialogOpen(true)
+        }
+      } else if (e?.status === 402 || (e?.error || e?.message || "").includes("プラン未登録")) {
+        setRecentReviewUiMode("limit")
+        setBillingDialogMode("plan")
+        setBillingDialogOpen(true)
       } else {
         setRecentReviewUiMode("retry")
       }
@@ -753,6 +774,42 @@ function YourPageDashboardInner() {
       setRecentReviewGenerating(false)
     }
   }, [loadRecentReviewSessions])
+
+  const startSubscriptionCheckout = useCallback(async (selectedPlanCode: "basic_plan" | "high_plan" | "first_month_fm_dm") => {
+    setCheckoutLoading(
+      selectedPlanCode === "basic_plan" ? "basic" : selectedPlanCode === "high_plan" ? "high" : "first_month"
+    )
+    try {
+      const payload = {
+        plan_code: selectedPlanCode,
+        success_url: `${window.location.origin}/checkout/success?from=dashboard&type=subscription`,
+        cancel_url: `${window.location.origin}/checkout/cancel?from=dashboard&type=subscription`,
+        via_fm_dm_link: fmDmEligible,
+      }
+      const res = await apiClient.post<{ checkout_url: string }>("/api/subscriptions/checkout", payload)
+      window.location.href = res.checkout_url
+    } catch (err) {
+      console.error("Failed to start subscription checkout:", err)
+    } finally {
+      setCheckoutLoading(null)
+    }
+  }, [fmDmEligible])
+
+  const startTicketCheckout = useCallback(async () => {
+    setCheckoutLoading("ticket")
+    try {
+      const res = await apiClient.post<{ checkout_url: string }>("/api/review-tickets/checkout", {
+        quantity: 1,
+        success_url: `${window.location.origin}/checkout/success?from=dashboard&type=ticket`,
+        cancel_url: `${window.location.origin}/checkout/cancel?from=dashboard&type=ticket`,
+      })
+      window.location.href = res.checkout_url
+    } catch (err) {
+      console.error("Failed to start ticket checkout:", err)
+    } finally {
+      setCheckoutLoading(null)
+    }
+  }, [])
 
   // ============================================================================
   // タイマーデータの初期読み込み
@@ -2219,6 +2276,45 @@ function YourPageDashboardInner() {
           </div>
         </div>
       </div>
+
+      <Dialog open={billingDialogOpen} onOpenChange={setBillingDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{billingDialogMode === "plan" ? "プラン選択" : "追加チケット購入"}</DialogTitle>
+            <DialogDescription>
+              {billingDialogMode === "plan"
+                ? "プラン未登録です。PlanA または PlanC を選択して決済に進んでください。"
+                : "復習問題生成の上限に達しました。追加チケットを購入しますか？"}
+            </DialogDescription>
+          </DialogHeader>
+
+          {billingDialogMode === "plan" ? (
+            <div className="space-y-2">
+              <Button onClick={() => startSubscriptionCheckout("basic_plan")} disabled={checkoutLoading !== null} className="w-full justify-between">
+                <span>PlanA (Basic Plan)</span><span>3,980円 税抜き</span>
+              </Button>
+              <Button onClick={() => startSubscriptionCheckout("high_plan")} disabled={checkoutLoading !== null} variant="secondary" className="w-full justify-between">
+                <span>PlanC (High Plan)</span><span>7,200円 税抜き</span>
+              </Button>
+              {fmDmEligible && (
+                <Button onClick={() => startSubscriptionCheckout("first_month_fm_dm")} disabled={checkoutLoading !== null} variant="outline" className="w-full justify-between">
+                  <span>PlanB (for 1st Month)</span><span><span className="line-through mr-1">3,980円</span>1,000円 税抜き</span>
+                </Button>
+              )}
+            </div>
+          ) : (
+            <Button onClick={startTicketCheckout} disabled={checkoutLoading !== null} className="w-full">
+              追加チケットを購入する（900円 税抜き / +レビュー2回）
+            </Button>
+          )}
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setBillingDialogOpen(false)} disabled={checkoutLoading !== null}>
+              閉じる
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

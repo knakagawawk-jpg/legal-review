@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
@@ -32,6 +33,10 @@ export default function ReviewPage() {
   const [error, setError] = useState<string | null>(null)
   const [generationPhase, setGenerationPhase] = useState<string>("")
   const abortControllerRef = useRef<AbortController | null>(null)
+  const [billingDialogOpen, setBillingDialogOpen] = useState(false)
+  const [billingDialogMode, setBillingDialogMode] = useState<"plan" | "ticket">("plan")
+  const [checkoutLoading, setCheckoutLoading] = useState<null | "basic" | "high" | "first_month" | "ticket">(null)
+  const [fmDmEligible, setFmDmEligible] = useState(false)
 
   // Step 1: 問題選択 + 答案入力
   const [examType, setExamType] = useState<string>("")
@@ -73,6 +78,14 @@ export default function ReviewPage() {
       // 同意がない場合は保存しない（警告は出さない - UX向上のための機能なので）
     }
   }, [answerText])
+
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    const via = url.searchParams.get("via")
+    const fromFmDmPath = window.location.pathname === "/signup/fm-dm-first-month"
+    const eligible = via === "fm-dm" || fromFmDmPath || localStorage.getItem("fm_dm_eligible") === "1"
+    setFmDmEligible(eligible)
+  }, [])
 
 
   // 年度一覧を取得（試験種別でフィルタ）
@@ -232,12 +245,55 @@ export default function ReviewPage() {
       console.error("Review generation error:", err)
       const errorMessage = err?.error || err?.message || "講評の生成に失敗しました"
       setError(errorMessage)
+      if (err?.status === 402 || errorMessage.includes("プラン未登録")) {
+        setBillingDialogMode("plan")
+        setBillingDialogOpen(true)
+      } else if (err?.status === 429 && errorMessage.includes("講評の作成回数が上限")) {
+        setBillingDialogMode("ticket")
+        setBillingDialogOpen(true)
+      }
       setGenerationPhase("")
     } finally {
       if (!abortController.signal.aborted) {
         setLoading(false)
         abortControllerRef.current = null
       }
+    }
+  }
+
+  const startSubscriptionCheckout = async (selectedPlanCode: "basic_plan" | "high_plan" | "first_month_fm_dm") => {
+    setCheckoutLoading(
+      selectedPlanCode === "basic_plan" ? "basic" : selectedPlanCode === "high_plan" ? "high" : "first_month"
+    )
+    try {
+      const payload = {
+        plan_code: selectedPlanCode,
+        success_url: `${window.location.origin}/checkout/success?from=review&type=subscription`,
+        cancel_url: `${window.location.origin}/checkout/cancel?from=review&type=subscription`,
+        via_fm_dm_link: fmDmEligible,
+      }
+      const res = await apiClient.post<{ checkout_url: string }>("/api/subscriptions/checkout", payload)
+      window.location.href = res.checkout_url
+    } catch (e: any) {
+      setError(e?.error || "プラン購入の開始に失敗しました")
+    } finally {
+      setCheckoutLoading(null)
+    }
+  }
+
+  const startTicketCheckout = async () => {
+    setCheckoutLoading("ticket")
+    try {
+      const res = await apiClient.post<{ checkout_url: string }>("/api/review-tickets/checkout", {
+        quantity: 1,
+        success_url: `${window.location.origin}/checkout/success?from=review&type=ticket`,
+        cancel_url: `${window.location.origin}/checkout/cancel?from=review&type=ticket`,
+      })
+      window.location.href = res.checkout_url
+    } catch (e: any) {
+      setError(e?.error || "チケット購入の開始に失敗しました")
+    } finally {
+      setCheckoutLoading(null)
     }
   }
 
@@ -287,7 +343,7 @@ export default function ReviewPage() {
 
   return (
     <div
-      className="flex min-h-screen flex-col bg-slate-50 transition-all duration-300"
+      className="flex min-h-dvh flex-col bg-slate-50 transition-all duration-300"
       style={mainContentStyle}
     >
       <header className="shrink-0 border-b border-slate-200/60 bg-white/80 backdrop-blur-md">
@@ -794,6 +850,64 @@ export default function ReviewPage() {
         )}
 
       </main>
+
+      <Dialog open={billingDialogOpen} onOpenChange={setBillingDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{billingDialogMode === "plan" ? "プラン選択" : "レビュー追加チケット"}</DialogTitle>
+            <DialogDescription>
+              {billingDialogMode === "plan"
+                ? "プラン未登録です。PlanA または PlanC を選択して決済に進んでください。"
+                : "レビュー回数の上限に達しました。追加チケットを購入しますか？"}
+            </DialogDescription>
+          </DialogHeader>
+
+          {billingDialogMode === "plan" ? (
+            <div className="space-y-2">
+              <Button
+                className="w-full justify-between"
+                onClick={() => startSubscriptionCheckout("basic_plan")}
+                disabled={checkoutLoading !== null}
+              >
+                <span>PlanA (Basic Plan)</span>
+                <span>3,980円 税抜き</span>
+              </Button>
+              <Button
+                variant="secondary"
+                className="w-full justify-between"
+                onClick={() => startSubscriptionCheckout("high_plan")}
+                disabled={checkoutLoading !== null}
+              >
+                <span>PlanC (High Plan)</span>
+                <span>7,200円 税抜き</span>
+              </Button>
+              {fmDmEligible && (
+                <Button
+                  variant="outline"
+                  className="w-full justify-between"
+                  onClick={() => startSubscriptionCheckout("first_month_fm_dm")}
+                  disabled={checkoutLoading !== null}
+                >
+                  <span>PlanB (for 1st Month)</span>
+                  <span><span className="line-through mr-1">3,980円</span>1,000円 税抜き</span>
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Button onClick={startTicketCheckout} disabled={checkoutLoading !== null} className="w-full">
+                追加チケットを購入する（900円 税抜き / +レビュー2回）
+              </Button>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setBillingDialogOpen(false)} disabled={checkoutLoading !== null}>
+              閉じる
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

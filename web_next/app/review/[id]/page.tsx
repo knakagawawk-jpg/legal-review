@@ -198,7 +198,7 @@ export default function ReviewResultPage() {
   if (loading) {
     return (
       <div
-        className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
+        className="h-dvh bg-background flex flex-col overflow-hidden transition-all duration-300"
         style={mainContentStyle}
       >
         <div className="container mx-auto px-5 py-12">
@@ -215,7 +215,7 @@ export default function ReviewResultPage() {
   if (error || !review) {
     return (
       <div
-        className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
+        className="h-dvh bg-background flex flex-col overflow-hidden transition-all duration-300"
         style={mainContentStyle}
       >
         <div className="container mx-auto px-5 py-12">

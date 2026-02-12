@@ -752,6 +752,9 @@ class PlanLimitUsageResponse(BaseModel):
     # Review制限
     reviews_used: int
     reviews_limit: Optional[int] = None
+    base_reviews_limit: Optional[int] = None
+    review_ticket_count_total: int = 0
+    review_ticket_bonus_total: int = 0
     
     # Review Chat制限
     review_chat_messages_used: int
@@ -767,3 +770,32 @@ class PlanLimitUsageResponse(BaseModel):
     # Review以外のコスト制限
     non_review_cost_yen_used: float
     non_review_cost_yen_limit: Optional[int] = None
+
+
+class ReviewTicketCheckoutRequest(BaseModel):
+    quantity: int = 1
+    success_url: str
+    cancel_url: str
+
+
+class ReviewTicketCheckoutResponse(BaseModel):
+    checkout_url: str
+    session_id: str
+
+
+class ReviewTicketUsageResponse(BaseModel):
+    review_ticket_count_total: int
+    review_ticket_bonus_total: int
+    reviews_per_ticket: int = 2
+
+
+class SubscriptionCheckoutRequest(BaseModel):
+    plan_code: str
+    success_url: str
+    cancel_url: str
+    via_fm_dm_link: bool = False
+
+
+class SubscriptionCheckoutResponse(BaseModel):
+    checkout_url: str
+    session_id: str

@@ -1,5 +1,7 @@
 import json
 import logging
+import calendar
+import pyotp
 from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi import Request
@@ -19,7 +21,7 @@ from .db import SessionLocal, engine, Base, get_db_session_for_url
 from .models import (
     Submission, Review, Problem,
     ShortAnswerProblem, ShortAnswerSession, ShortAnswerAnswer,
-    User, UserSubscription, SubscriptionPlan,
+    User, UserSubscription, SubscriptionPlan, UserReviewTicketGrant,
     Notebook, NoteSection, NotePage,
     Thread, Message, LlmRequest,
     UserPreference, UserDashboard, UserDashboardHistory, UserReviewHistory,
@@ -57,7 +59,8 @@ from .schemas import (
     LlmRequestResponse, LlmRequestListResponse,
     AdminUserResponse, AdminUserListResponse, AdminStatsResponse, AdminFeatureStatsResponse,
     AdminUserUpdateRequest, AdminDatabaseInfoResponse,
-    PlanLimitUsageResponse
+    PlanLimitUsageResponse, ReviewTicketCheckoutRequest, ReviewTicketCheckoutResponse, ReviewTicketUsageResponse,
+    SubscriptionCheckoutRequest, SubscriptionCheckoutResponse
 )
 from pydantic import BaseModel
 from .llm_service import generate_review, chat_about_review, free_chat, generate_recent_review_problems, generate_chat_title
@@ -65,8 +68,113 @@ from .llm_usage import build_llm_request_row
 from .auth import get_current_user, get_current_user_required, get_current_admin, verify_google_token, get_or_create_user, create_access_token
 from . import plan_limits as plan_limits_module
 from config.settings import AUTH_ENABLED
+from config.settings import (
+    ADMIN_2FA_ENABLED,
+    ADMIN_2FA_EMAIL,
+    ADMIN_2FA_TOTP_SECRET,
+    ADMIN_2FA_TOTP_VALID_WINDOW,
+    STRIPE_SECRET_KEY,
+    STRIPE_WEBHOOK_SECRET,
+    STRIPE_REVIEW_TICKET_PRICE_YEN,
+    STRIPE_REVIEW_TICKET_PRODUCT_NAME,
+    STRIPE_BASIC_PLAN_PRICE_ID,
+    STRIPE_HIGH_PLAN_PRICE_ID,
+    STRIPE_FIRST_MONTH_FM_DM_PRICE_ID,
+)
 from .timer_api import register_timer_routes
 from .timer_utils import get_study_date as get_study_date_4am
+
+try:
+    import stripe
+except Exception:
+    stripe = None
+
+
+def _add_one_month_jst(base_utc: datetime) -> datetime:
+    """
+    ひと月判定（日付基準）:
+    - JST基準で「登録日の翌月同日の前日まで有効」
+      例: 1/16登録 -> 2/15 23:59:59.999999 (JST) まで
+    - 翌月に同日が無い場合は、月末日に合わせた上で前日を期限とする
+    返り値はUTC datetime（期間終了時刻）。
+    """
+    jst = ZoneInfo("Asia/Tokyo")
+    dt_jst = base_utc.astimezone(jst)
+    year = dt_jst.year
+    month = dt_jst.month + 1
+    if month == 13:
+        month = 1
+        year += 1
+    last_day = calendar.monthrange(year, month)[1]
+    day = min(dt_jst.day, last_day)
+    next_anchor_jst = dt_jst.replace(year=year, month=month, day=day)
+    period_end_jst = (next_anchor_jst - timedelta(days=1)).replace(
+        hour=23, minute=59, second=59, microsecond=999999
+    )
+    return period_end_jst.astimezone(timezone.utc)
+
+
+def _get_plan_price_id(plan_code: str) -> str:
+    mapping = {
+        "basic_plan": STRIPE_BASIC_PLAN_PRICE_ID,
+        "high_plan": STRIPE_HIGH_PLAN_PRICE_ID,
+        "first_month_fm_dm": STRIPE_FIRST_MONTH_FM_DM_PRICE_ID,
+    }
+    return mapping.get(plan_code, "")
+
+
+def _upsert_user_subscription(
+    db: Session,
+    *,
+    user_id: int,
+    plan_code: str,
+    stripe_subscription_id: str,
+    current_period_start_utc: datetime,
+    current_period_end_utc: datetime,
+    cancel_at_period_end: bool,
+) -> None:
+    plan = db.query(SubscriptionPlan).filter(
+        SubscriptionPlan.plan_code == plan_code,
+        SubscriptionPlan.is_active == True,
+    ).first()
+    if not plan:
+        logger.warning(f"Subscription plan not found for plan_code={plan_code}")
+        return
+
+    existing = db.query(UserSubscription).filter(
+        UserSubscription.user_id == user_id,
+        UserSubscription.payment_id == stripe_subscription_id,
+        UserSubscription.is_active == True,
+    ).order_by(UserSubscription.started_at.desc()).first()
+
+    if existing:
+        existing.plan_id = plan.id
+        existing.started_at = current_period_start_utc
+        existing.expires_at = current_period_end_utc
+        existing.cancelled_at = datetime.now(timezone.utc) if cancel_at_period_end else None
+        existing.payment_method = "stripe_subscription"
+        db.commit()
+        return
+
+    # 新規または過去行しかない場合は、現在アクティブを停止してから作成
+    now_utc = datetime.now(timezone.utc)
+    db.query(UserSubscription).filter(
+        UserSubscription.user_id == user_id,
+        UserSubscription.is_active == True,
+    ).update({"is_active": False, "cancelled_at": now_utc}, synchronize_session=False)
+
+    sub = UserSubscription(
+        user_id=user_id,
+        plan_id=plan.id,
+        is_active=True,
+        started_at=current_period_start_utc,
+        expires_at=current_period_end_utc,
+        payment_method="stripe_subscription",
+        payment_id=stripe_subscription_id,
+        cancelled_at=now_utc if cancel_at_period_end else None,
+    )
+    db.add(sub)
+    db.commit()
 
 
 def _normalize_subject_id(subject_value) -> Optional[int]:
@@ -212,14 +320,23 @@ def _startup_migrate_reviews():
     except Exception as e:
         logger.warning(f"Startup llm_requests migration skipped/failed: {str(e)}")
 
-    # beta用 SubscriptionPlan を投入（既存ならスキップ）
+    # review追加チケット付与テーブルを作成
     try:
-        from .seed_beta_plan import seed_beta_plan
+        from .migrate_review_ticket_grants import migrate_review_ticket_grants
 
-        seed_beta_plan()
-        logger.info("✓ Startup beta plan seed completed")
+        migrate_review_ticket_grants()
+        logger.info("✓ Startup review ticket grants migration completed")
     except Exception as e:
-        logger.warning(f"Startup beta plan seed skipped/failed: {str(e)}")
+        logger.warning(f"Startup review ticket grants migration skipped/failed: {str(e)}")
+
+    # SubscriptionPlan を投入/更新
+    try:
+        from .seed_beta_plan import seed_subscription_plans
+
+        seed_subscription_plans()
+        logger.info("✓ Startup subscription plans seed completed")
+    except Exception as e:
+        logger.warning(f"Startup subscription plans seed skipped/failed: {str(e)}")
 
 # DBロックなど（複数ユーザー同時アクセス時）→ ユーザー向けメッセージで表示
 @app.exception_handler(SQLAlchemyOperationalError)
@@ -446,6 +563,7 @@ def get_active_official_question(
 # 認証関連のエンドポイント（認証がOFFの場合は動作しない）
 class GoogleAuthRequest(BaseModel):
     token: str
+    admin_otp_code: Optional[str] = None
 
 @app.post("/v1/auth/google")
 async def google_auth(req: GoogleAuthRequest, db: Session = Depends(get_db)):
@@ -467,6 +585,27 @@ async def google_auth(req: GoogleAuthRequest, db: Session = Depends(get_db)):
     
     # ユーザーを取得または作成
     user = get_or_create_user(google_info, db)
+
+    # 管理者アカウントのみ追加のTOTP認証を要求
+    if ADMIN_2FA_ENABLED and user.email and user.email.lower() == ADMIN_2FA_EMAIL:
+        otp_code = (req.admin_otp_code or "").strip()
+        if not ADMIN_2FA_TOTP_SECRET:
+            logger.error("ADMIN_2FA_ENABLED is true, but ADMIN_2FA_TOTP_SECRET is not configured")
+            raise HTTPException(
+                status_code=503,
+                detail="Admin two-factor authentication is not configured"
+            )
+        if not otp_code:
+            raise HTTPException(
+                status_code=401,
+                detail="管理者アカウントには2段階認証コードが必要です"
+            )
+        totp = pyotp.TOTP(ADMIN_2FA_TOTP_SECRET)
+        if not totp.verify(otp_code, valid_window=ADMIN_2FA_TOTP_VALID_WINDOW):
+            raise HTTPException(
+                status_code=401,
+                detail="2段階認証コードが正しくありません"
+            )
     
     # JWTアクセストークンを発行（長期有効）
     access_token = create_access_token(user_id=user.id, email=user.email)
@@ -500,12 +639,18 @@ async def get_plan_limits_usage(
     """現在のユーザーのプラン制限と使用量を取得（認証必須）"""
     plan = plan_limits_module.get_user_plan(db, current_user)
     limits = plan_limits_module.get_plan_limits(plan)
+    review_tickets_total = plan_limits_module.count_review_ticket_count_total(db, current_user.id)
+    review_ticket_bonus_total = plan_limits_module.count_review_ticket_bonus_total(db, current_user.id)
+    effective_review_limit = plan_limits_module.get_effective_review_limit(db, current_user)
     
     return PlanLimitUsageResponse(
         plan_name=plan.name if plan else None,
         plan_code=plan.plan_code if plan else None,
         reviews_used=plan_limits_module.count_reviews_total(db, current_user.id),
-        reviews_limit=limits.get(plan_limits_module.LIMIT_MAX_REVIEWS_TOTAL),
+        reviews_limit=effective_review_limit,
+        base_reviews_limit=limits.get(plan_limits_module.LIMIT_MAX_REVIEWS_TOTAL),
+        review_ticket_count_total=review_tickets_total,
+        review_ticket_bonus_total=review_ticket_bonus_total,
         review_chat_messages_used=plan_limits_module.count_review_chat_user_messages(db, current_user.id),
         review_chat_messages_limit=limits.get(plan_limits_module.LIMIT_MAX_REVIEW_CHAT_MESSAGES_TOTAL),
         free_chat_messages_used=plan_limits_module.count_free_chat_user_messages(db, current_user.id),
@@ -514,6 +659,269 @@ async def get_plan_limits_usage(
         non_review_cost_yen_used=float(plan_limits_module.get_non_review_cost_yen_total(db, current_user.id)),
         non_review_cost_yen_limit=limits.get(plan_limits_module.LIMIT_MAX_NON_REVIEW_COST_YEN_TOTAL),
     )
+
+
+@app.get("/v1/users/me/review-tickets", response_model=ReviewTicketUsageResponse)
+async def get_review_ticket_usage(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """現在ユーザーの review 追加チケット利用状況を取得。"""
+    return ReviewTicketUsageResponse(
+        review_ticket_count_total=plan_limits_module.count_review_ticket_count_total(db, current_user.id),
+        review_ticket_bonus_total=plan_limits_module.count_review_ticket_bonus_total(db, current_user.id),
+        reviews_per_ticket=2,
+    )
+
+
+@app.post("/v1/users/me/subscription/cancel")
+async def cancel_my_subscription(
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """
+    次回更新停止（解約予約）。
+    - 返金は行わない
+    - expires_at までは利用可能
+    """
+    now_utc = datetime.now(timezone.utc)
+    sub = (
+        db.query(UserSubscription)
+        .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
+        .filter(
+            UserSubscription.user_id == current_user.id,
+            UserSubscription.is_active == True,
+            SubscriptionPlan.is_active == True,
+        )
+        .order_by(UserSubscription.started_at.desc())
+        .first()
+    )
+    if not sub:
+        raise HTTPException(status_code=404, detail="有効なサブスクリプションがありません。")
+
+    # Stripe定期課金を次回更新停止へ
+    stripe_sub_id = sub.payment_id or ""
+    if stripe is not None and STRIPE_SECRET_KEY and stripe_sub_id:
+        try:
+            stripe.api_key = STRIPE_SECRET_KEY
+            stripe.Subscription.modify(stripe_sub_id, cancel_at_period_end=True)
+        except Exception as e:
+            logger.warning(f"Failed to set cancel_at_period_end on Stripe: {str(e)}")
+
+    # 期間上限が未設定の古いデータがあれば、開始時刻を基準に1か月で補完
+    if sub.expires_at is None:
+        base = sub.started_at if sub.started_at.tzinfo else sub.started_at.replace(tzinfo=timezone.utc)
+        sub.expires_at = _add_one_month_jst(base)
+    sub.cancelled_at = now_utc
+    db.commit()
+    db.refresh(sub)
+    return {
+        "message": "次回更新を停止しました。現在の期間終了までは利用できます。",
+        "expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
+    }
+
+
+@app.post("/v1/review-tickets/checkout", response_model=ReviewTicketCheckoutResponse)
+async def create_review_ticket_checkout(
+    req: ReviewTicketCheckoutRequest,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """review追加チケット購入用の Stripe Checkout セッションを作成。"""
+    if stripe is None:
+        raise HTTPException(status_code=503, detail="Stripe SDK is not installed")
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Stripe is not configured")
+    if req.quantity <= 0:
+        raise HTTPException(status_code=400, detail="quantity must be greater than 0")
+    if plan_limits_module.is_plan_limits_enabled() and not plan_limits_module.has_active_subscription(db, current_user):
+        raise HTTPException(status_code=400, detail="プラン未登録のユーザーはチケットを購入できません。")
+
+    stripe.api_key = STRIPE_SECRET_KEY
+    session = stripe.checkout.Session.create(
+        mode="payment",
+        success_url=req.success_url,
+        cancel_url=req.cancel_url,
+        customer_email=current_user.email,
+        metadata={
+            "type": "review_ticket",
+            "user_id": str(current_user.id),
+            "ticket_count": str(req.quantity),
+            "reviews_per_ticket": "2",
+        },
+        line_items=[
+            {
+                "price_data": {
+                    "currency": "jpy",
+                    "unit_amount": STRIPE_REVIEW_TICKET_PRICE_YEN,
+                    "product_data": {
+                        "name": STRIPE_REVIEW_TICKET_PRODUCT_NAME,
+                        "description": "1回購入につきレビュー2回追加",
+                    },
+                },
+                "quantity": req.quantity,
+            }
+        ],
+    )
+    return ReviewTicketCheckoutResponse(
+        checkout_url=session.url,
+        session_id=session.id,
+    )
+
+
+@app.post("/v1/subscriptions/checkout", response_model=SubscriptionCheckoutResponse)
+async def create_subscription_checkout(
+    req: SubscriptionCheckoutRequest,
+    current_user: User = Depends(get_current_user_required),
+):
+    """プラン購入/変更用の Stripe Checkout セッションを作成。"""
+    if stripe is None:
+        raise HTTPException(status_code=503, detail="Stripe SDK is not installed")
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Stripe is not configured")
+
+    allowed_plan_codes = {"basic_plan", "high_plan"}
+    if req.via_fm_dm_link:
+        allowed_plan_codes.add("first_month_fm_dm")
+    if req.plan_code not in allowed_plan_codes:
+        raise HTTPException(status_code=400, detail="選択できないプランです。")
+    selected_price_id = _get_plan_price_id(req.plan_code)
+    if not selected_price_id:
+        raise HTTPException(
+            status_code=503,
+            detail="Stripe recurring price is not configured. Set STRIPE_*_PLAN_PRICE_ID.",
+        )
+    stripe.api_key = STRIPE_SECRET_KEY
+    session = stripe.checkout.Session.create(
+        mode="subscription",
+        success_url=req.success_url,
+        cancel_url=req.cancel_url,
+        customer_email=current_user.email,
+        metadata={
+            "type": "subscription_plan",
+            "user_id": str(current_user.id),
+            "plan_code": req.plan_code,
+            "via_fm_dm_link": "true" if req.via_fm_dm_link else "false",
+        },
+        subscription_data={
+            "metadata": {
+                "type": "subscription_plan",
+                "user_id": str(current_user.id),
+                "plan_code": req.plan_code,
+                "renewal_plan_code": "basic_plan" if req.plan_code == "first_month_fm_dm" else req.plan_code,
+            }
+        },
+        line_items=[
+            {
+                "price": selected_price_id,
+                "quantity": 1,
+            }
+        ],
+    )
+    return SubscriptionCheckoutResponse(checkout_url=session.url, session_id=session.id)
+
+
+@app.post("/v1/webhooks/stripe")
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
+    """Stripe Webhook（review追加チケットの付与）。"""
+    if stripe is None:
+        raise HTTPException(status_code=503, detail="Stripe SDK is not installed")
+    if not STRIPE_SECRET_KEY or not STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(status_code=503, detail="Stripe webhook is not configured")
+
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+    if not sig_header:
+        raise HTTPException(status_code=400, detail="Missing stripe-signature header")
+
+    try:
+        stripe.api_key = STRIPE_SECRET_KEY
+        event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid webhook signature: {str(e)}")
+
+    if event.get("type") == "checkout.session.completed":
+        obj = event["data"]["object"]
+        metadata = obj.get("metadata") or {}
+        if metadata.get("type") == "review_ticket":
+            user_id = int(metadata.get("user_id", "0"))
+            ticket_count = int(metadata.get("ticket_count", "0"))
+            reviews_per_ticket = int(metadata.get("reviews_per_ticket", "2"))
+            payment_id = obj.get("payment_intent") or obj.get("id")
+
+            if user_id > 0 and ticket_count > 0 and payment_id:
+                already = db.query(UserReviewTicketGrant).filter(
+                    UserReviewTicketGrant.payment_id == str(payment_id)
+                ).first()
+                if not already:
+                    grant = UserReviewTicketGrant(
+                        user_id=user_id,
+                        ticket_count=ticket_count,
+                        reviews_per_ticket=reviews_per_ticket,
+                        total_bonus_reviews=ticket_count * reviews_per_ticket,
+                        source_type="purchase",
+                        payment_id=str(payment_id),
+                        note="Stripe checkout.session.completed",
+                    )
+                    db.add(grant)
+                    db.commit()
+        elif metadata.get("type") == "subscription_plan":
+            user_id = int(metadata.get("user_id", "0"))
+            plan_code = metadata.get("plan_code")
+            stripe_sub_id = obj.get("subscription")
+            if user_id > 0 and plan_code and stripe_sub_id:
+                stripe_sub = stripe.Subscription.retrieve(stripe_sub_id)
+                current_start = datetime.fromtimestamp(int(stripe_sub.current_period_start), tz=timezone.utc)
+                current_end = datetime.fromtimestamp(int(stripe_sub.current_period_end), tz=timezone.utc)
+                cancel_at_period_end = bool(stripe_sub.cancel_at_period_end)
+                _upsert_user_subscription(
+                    db,
+                    user_id=user_id,
+                    plan_code=plan_code,
+                    stripe_subscription_id=str(stripe_sub_id),
+                    current_period_start_utc=current_start,
+                    current_period_end_utc=current_end,
+                    cancel_at_period_end=cancel_at_period_end,
+                )
+
+                # PlanBは初月のみ。次回請求からPlanAへ自動更新するため、価格だけ先に差し替える。
+                if plan_code == "first_month_fm_dm":
+                    basic_price_id = _get_plan_price_id("basic_plan")
+                    if basic_price_id:
+                        try:
+                            items = stripe_sub.get("items", {}).get("data", [])
+                            if items:
+                                stripe.Subscription.modify(
+                                    stripe_sub_id,
+                                    items=[{"id": items[0]["id"], "price": basic_price_id}],
+                                    proration_behavior="none",
+                                )
+                        except Exception as e:
+                            logger.warning(f"Failed to switch PlanB to PlanA for next cycle: {str(e)}")
+
+    elif event.get("type") == "invoice.paid":
+        obj = event["data"]["object"]
+        stripe_sub_id = obj.get("subscription")
+        if stripe_sub_id:
+            stripe_sub = stripe.Subscription.retrieve(stripe_sub_id)
+            metadata = stripe_sub.get("metadata") or {}
+            user_id = int(metadata.get("user_id", "0"))
+            renewal_plan_code = metadata.get("renewal_plan_code") or metadata.get("plan_code")
+            if user_id > 0 and renewal_plan_code:
+                current_start = datetime.fromtimestamp(int(stripe_sub.current_period_start), tz=timezone.utc)
+                current_end = datetime.fromtimestamp(int(stripe_sub.current_period_end), tz=timezone.utc)
+                cancel_at_period_end = bool(stripe_sub.cancel_at_period_end)
+                _upsert_user_subscription(
+                    db,
+                    user_id=user_id,
+                    plan_code=renewal_plan_code,
+                    stripe_subscription_id=str(stripe_sub_id),
+                    current_period_start_utc=current_start,
+                    current_period_end_utc=current_end,
+                    cancel_at_period_end=cancel_at_period_end,
+                )
+
+    return {"received": True}
 
 @app.put("/v1/users/me", response_model=UserResponse)
 async def update_current_user_info(
