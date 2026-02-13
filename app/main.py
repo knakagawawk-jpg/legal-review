@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import or_, cast, String, func
 from sqlalchemy.exc import OperationalError as SQLAlchemyOperationalError
 from sqlalchemy.orm import Session
-from typing import Optional, List, Tuple
+from typing import Any, Optional, List, Tuple
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 import uuid
@@ -138,7 +138,7 @@ def _upsert_user_subscription(
         SubscriptionPlan.is_active == True,
     ).first()
     if not plan:
-        # プランが見つからない場合のデバッグ情報
+        # 本番でプラン未登録だと決済後もプランが更新されない。subscription_plans に basic_plan 等を登録すること。
         all_plans = db.query(SubscriptionPlan).all()
         plan_codes = [p.plan_code for p in all_plans]
         logger.error(
@@ -146,7 +146,10 @@ def _upsert_user_subscription(
             f"Available plan_codes: {plan_codes}. "
             f"User: {user_id}, Stripe subscription: {stripe_subscription_id}"
         )
-        return
+        raise HTTPException(
+            status_code=503,
+            detail=f"プラン '{plan_code}' がDBに登録されていません。subscription_plans に該当 plan_code を追加してください。登録済み: {plan_codes}",
+        )
 
     existing = db.query(UserSubscription).filter(
         UserSubscription.user_id == user_id,
@@ -638,6 +641,16 @@ async def get_current_user_info(
         is_admin=current_user.is_admin
     )
 
+def _plan_limit_int(value: Any) -> Optional[int]:
+    """limits の値（JSON由来で float のことがある）を Optional[int] に変換。"""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 @app.get("/v1/users/me/plan-limits", response_model=PlanLimitUsageResponse)
 async def get_plan_limits_usage(
     current_user: User = Depends(get_current_user_required),
@@ -652,22 +665,30 @@ async def get_plan_limits_usage(
         review_tickets_total = plan_limits_module.count_review_ticket_count_total(db, current_user.id)
         review_ticket_bonus_total = plan_limits_module.count_review_ticket_bonus_total(db, current_user.id)
         effective_review_limit = plan_limits_module.get_effective_review_limit(db, current_user)
-        
+        reviews_used = plan_limits_module.count_reviews_total(db, current_user.id)
+        review_chat_used = plan_limits_module.count_review_chat_user_messages(db, current_user.id)
+        free_chat_used = plan_limits_module.count_free_chat_user_messages(db, current_user.id)
+        try:
+            non_review_cost_yen_used = float(plan_limits_module.get_non_review_cost_yen_total(db, current_user.id))
+        except (TypeError, ValueError) as e:
+            logger.warning(f"get_non_review_cost_yen_total coercion failed for user {current_user.id}: {e}")
+            non_review_cost_yen_used = 0.0
+
         return PlanLimitUsageResponse(
             plan_name=plan.name if plan else None,
             plan_code=plan.plan_code if plan else None,
-            reviews_used=plan_limits_module.count_reviews_total(db, current_user.id),
+            reviews_used=reviews_used,
             reviews_limit=effective_review_limit,
-            base_reviews_limit=limits.get(plan_limits_module.LIMIT_MAX_REVIEWS_TOTAL),
+            base_reviews_limit=_plan_limit_int(limits.get(plan_limits_module.LIMIT_MAX_REVIEWS_TOTAL)),
             review_ticket_count_total=review_tickets_total,
             review_ticket_bonus_total=review_ticket_bonus_total,
-            review_chat_messages_used=plan_limits_module.count_review_chat_user_messages(db, current_user.id),
-            review_chat_messages_limit=limits.get(plan_limits_module.LIMIT_MAX_REVIEW_CHAT_MESSAGES_TOTAL),
-            free_chat_messages_used=plan_limits_module.count_free_chat_user_messages(db, current_user.id),
-            free_chat_messages_limit=limits.get(plan_limits_module.LIMIT_MAX_FREE_CHAT_MESSAGES_TOTAL),
-            recent_review_daily_limit=limits.get(plan_limits_module.LIMIT_RECENT_REVIEW_DAILY),
-            non_review_cost_yen_used=float(plan_limits_module.get_non_review_cost_yen_total(db, current_user.id)),
-            non_review_cost_yen_limit=limits.get(plan_limits_module.LIMIT_MAX_NON_REVIEW_COST_YEN_TOTAL),
+            review_chat_messages_used=review_chat_used,
+            review_chat_messages_limit=_plan_limit_int(limits.get(plan_limits_module.LIMIT_MAX_REVIEW_CHAT_MESSAGES_TOTAL)),
+            free_chat_messages_used=free_chat_used,
+            free_chat_messages_limit=_plan_limit_int(limits.get(plan_limits_module.LIMIT_MAX_FREE_CHAT_MESSAGES_TOTAL)),
+            recent_review_daily_limit=_plan_limit_int(limits.get(plan_limits_module.LIMIT_RECENT_REVIEW_DAILY)),
+            non_review_cost_yen_used=non_review_cost_yen_used,
+            non_review_cost_yen_limit=_plan_limit_int(limits.get(plan_limits_module.LIMIT_MAX_NON_REVIEW_COST_YEN_TOTAL)),
         )
     except Exception as e:
         logger.error(f"Error in get_plan_limits_usage for user {current_user.id}: {str(e)}", exc_info=True)
