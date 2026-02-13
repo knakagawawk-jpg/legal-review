@@ -69,7 +69,7 @@ def get_user_plan(db: Session, user: User) -> Optional[SubscriptionPlan]:
     """
     ユーザーに適用されるプランを返す。
     - 有効な UserSubscription があればそのプラン
-    - なければデフォルトプラン（全ユーザー対象の beta 想定）
+    - なければデフォルトプラン(全ユーザー対象の beta 想定)
     """
     now_utc = datetime.now(ZoneInfo("UTC"))
     subs = (
@@ -83,18 +83,36 @@ def get_user_plan(db: Session, user: User) -> Optional[SubscriptionPlan]:
         .order_by(UserSubscription.started_at.desc())
         .all()
     )
+    
+    logger.info(f"Found {len(subs)} active subscriptions for user {user.id}")
+    
     for sub in subs:
         if not sub.plan:
+            logger.warning(f"Subscription {sub.id} for user {user.id} has no plan")
             continue
+        
+        logger.info(
+            f"Checking subscription {sub.id}: plan_code={sub.plan.plan_code}, "
+            f"started_at={sub.started_at}, expires_at={sub.expires_at}, "
+            f"cancelled_at={sub.cancelled_at}, is_active={sub.is_active}"
+        )
+        
         # 解約予約済み(cancelled_atあり)でも、有効期限までは利用可能
         if sub.expires_at is not None and sub.expires_at <= now_utc:
+            logger.info(f"Subscription {sub.id} expired at {sub.expires_at}")
             continue
         # PlanB（first_month_fm_dm）は初月限定。expires_at未設定時の安全弁として30日で無効化扱い。
         if sub.plan.plan_code == "first_month_fm_dm" and sub.expires_at is None:
             if sub.started_at <= now_utc - timedelta(days=30):
+                logger.info(f"Subscription {sub.id} (PlanB) started more than 30 days ago without expires_at")
                 continue
+        
+        logger.info(f"Using subscription {sub.id} with plan {sub.plan.plan_code} for user {user.id}")
         return sub.plan
-    return get_default_plan(db)
+    
+    default_plan = get_default_plan(db)
+    logger.info(f"No active subscription found for user {user.id}, using default plan: {default_plan.plan_code if default_plan else 'None'}")
+    return default_plan
 
 
 def has_active_subscription(db: Session, user: User) -> bool:

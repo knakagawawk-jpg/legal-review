@@ -138,7 +138,14 @@ def _upsert_user_subscription(
         SubscriptionPlan.is_active == True,
     ).first()
     if not plan:
-        logger.warning(f"Subscription plan not found for plan_code={plan_code}")
+        # プランが見つからない場合のデバッグ情報
+        all_plans = db.query(SubscriptionPlan).all()
+        plan_codes = [p.plan_code for p in all_plans]
+        logger.error(
+            f"Subscription plan not found for plan_code='{plan_code}'. "
+            f"Available plan_codes: {plan_codes}. "
+            f"User: {user_id}, Stripe subscription: {stripe_subscription_id}"
+        )
         return
 
     existing = db.query(UserSubscription).filter(
@@ -637,28 +644,34 @@ async def get_plan_limits_usage(
     db: Session = Depends(get_db)
 ):
     """現在のユーザーのプラン制限と使用量を取得（認証必須）"""
-    plan = plan_limits_module.get_user_plan(db, current_user)
-    limits = plan_limits_module.get_plan_limits(plan)
-    review_tickets_total = plan_limits_module.count_review_ticket_count_total(db, current_user.id)
-    review_ticket_bonus_total = plan_limits_module.count_review_ticket_bonus_total(db, current_user.id)
-    effective_review_limit = plan_limits_module.get_effective_review_limit(db, current_user)
-    
-    return PlanLimitUsageResponse(
-        plan_name=plan.name if plan else None,
-        plan_code=plan.plan_code if plan else None,
-        reviews_used=plan_limits_module.count_reviews_total(db, current_user.id),
-        reviews_limit=effective_review_limit,
-        base_reviews_limit=limits.get(plan_limits_module.LIMIT_MAX_REVIEWS_TOTAL),
-        review_ticket_count_total=review_tickets_total,
-        review_ticket_bonus_total=review_ticket_bonus_total,
-        review_chat_messages_used=plan_limits_module.count_review_chat_user_messages(db, current_user.id),
-        review_chat_messages_limit=limits.get(plan_limits_module.LIMIT_MAX_REVIEW_CHAT_MESSAGES_TOTAL),
-        free_chat_messages_used=plan_limits_module.count_free_chat_user_messages(db, current_user.id),
-        free_chat_messages_limit=limits.get(plan_limits_module.LIMIT_MAX_FREE_CHAT_MESSAGES_TOTAL),
-        recent_review_daily_limit=limits.get(plan_limits_module.LIMIT_RECENT_REVIEW_DAILY),
-        non_review_cost_yen_used=float(plan_limits_module.get_non_review_cost_yen_total(db, current_user.id)),
-        non_review_cost_yen_limit=limits.get(plan_limits_module.LIMIT_MAX_NON_REVIEW_COST_YEN_TOTAL),
-    )
+    try:
+        plan = plan_limits_module.get_user_plan(db, current_user)
+        logger.info(f"User {current_user.id} plan: {plan.plan_code if plan else 'None'}")
+        
+        limits = plan_limits_module.get_plan_limits(plan)
+        review_tickets_total = plan_limits_module.count_review_ticket_count_total(db, current_user.id)
+        review_ticket_bonus_total = plan_limits_module.count_review_ticket_bonus_total(db, current_user.id)
+        effective_review_limit = plan_limits_module.get_effective_review_limit(db, current_user)
+        
+        return PlanLimitUsageResponse(
+            plan_name=plan.name if plan else None,
+            plan_code=plan.plan_code if plan else None,
+            reviews_used=plan_limits_module.count_reviews_total(db, current_user.id),
+            reviews_limit=effective_review_limit,
+            base_reviews_limit=limits.get(plan_limits_module.LIMIT_MAX_REVIEWS_TOTAL),
+            review_ticket_count_total=review_tickets_total,
+            review_ticket_bonus_total=review_ticket_bonus_total,
+            review_chat_messages_used=plan_limits_module.count_review_chat_user_messages(db, current_user.id),
+            review_chat_messages_limit=limits.get(plan_limits_module.LIMIT_MAX_REVIEW_CHAT_MESSAGES_TOTAL),
+            free_chat_messages_used=plan_limits_module.count_free_chat_user_messages(db, current_user.id),
+            free_chat_messages_limit=limits.get(plan_limits_module.LIMIT_MAX_FREE_CHAT_MESSAGES_TOTAL),
+            recent_review_daily_limit=limits.get(plan_limits_module.LIMIT_RECENT_REVIEW_DAILY),
+            non_review_cost_yen_used=float(plan_limits_module.get_non_review_cost_yen_total(db, current_user.id)),
+            non_review_cost_yen_limit=limits.get(plan_limits_module.LIMIT_MAX_NON_REVIEW_COST_YEN_TOTAL),
+        )
+    except Exception as e:
+        logger.error(f"Error in get_plan_limits_usage for user {current_user.id}: {str(e)}", exc_info=True)
+        raise
 
 
 @app.get("/v1/users/me/review-tickets", response_model=ReviewTicketUsageResponse)
@@ -947,6 +960,10 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             user_id = int(metadata.get("user_id", "0"))
             plan_code = metadata.get("plan_code")
             stripe_sub_id = obj.get("subscription")
+            logger.info(
+                f"Processing subscription_plan webhook: "
+                f"user_id={user_id}, plan_code={plan_code}, stripe_sub_id={stripe_sub_id}"
+            )
             if user_id > 0 and plan_code and stripe_sub_id:
                 current_start, current_end, cancel_at_period_end = _get_subscription_period(str(stripe_sub_id))
                 _upsert_user_subscription(
@@ -958,6 +975,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                     current_period_end_utc=current_end,
                     cancel_at_period_end=cancel_at_period_end,
                 )
+                logger.info(f"Successfully processed subscription for user {user_id}, plan {plan_code}")
 
                 # PlanBは初月のみ。次回請求からPlanAへ自動更新するため、価格だけ先に差し替える。
                 if plan_code == "first_month_fm_dm":
@@ -984,6 +1002,10 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             metadata = _safe_get(stripe_sub, "metadata") or {}
             user_id = int(metadata.get("user_id", "0"))
             renewal_plan_code = metadata.get("renewal_plan_code") or metadata.get("plan_code")
+            logger.info(
+                f"Processing invoice.paid webhook: "
+                f"user_id={user_id}, renewal_plan_code={renewal_plan_code}, stripe_sub_id={stripe_sub_id}"
+            )
             if user_id > 0 and renewal_plan_code:
                 current_start, current_end, cancel_at_period_end = _get_subscription_period(str(stripe_sub_id))
                 _upsert_user_subscription(
@@ -995,6 +1017,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                     current_period_end_utc=current_end,
                     cancel_at_period_end=cancel_at_period_end,
                 )
+                logger.info(f"Successfully processed invoice.paid for user {user_id}, plan {renewal_plan_code}")
 
     return {"received": True}
 

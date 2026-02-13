@@ -8,18 +8,31 @@ cd /opt/law-review
 # 環境一覧・接続先整理
 
 # ============================================
+
 #
+
 # | 環境 | プロファイル | envファイル | DB | ドメイン/アクセス先 |
+
 # |------|-------------|-------------|-----|---------------------|
+
 # | 本番 | production | .env | prod.db | https://juristutor-ai.com |
+
 # | β | beta | .env.beta | beta.db | https://beta.juristutor-ai.com |
+
 # | dev（サーバー） | dev | .env.dev2 | dev.db | https://dev.juristutor-ai.com |
+
 # | dev（ローカル） | dev | .env.dev1 | dev.db | http://localhost:8081 |
+
 # | local（フロントのみ） | local | .env | dev.db | http://localhost:8080 |
+
 #
+
 # 【重要】本番の .env は DATABASE_URL=sqlite:////data/prod.db にすること
+
 # 【npm run dev】Next.js単体起動時は web_next/.env.local で BACKEND_INTERNAL_URL=http://127.0.0.1:8000 を設定
+
 #
+
 # ============================================
 
 # 本番環境（production）
@@ -169,27 +182,27 @@ docker compose --profile beta logs --tail=80 web-beta backend-beta
 
 # 初回セットアップ:
 
-#   ローカル用: cp .env.dev1.example .env.dev1 して設定を編集
+# ローカル用: cp .env.dev1.example .env.dev1 して設定を編集
 
-#   サーバー用: cp .env.dev2.example .env.dev2 して設定を編集
+# サーバー用: cp .env.dev2.example .env.dev2 して設定を編集
 
 # 起動（推奨: スクリプトで確実に起動）:
 
-#   dev1（ローカル）: .\scripts\dev1-up.ps1  → http://localhost:8081（接続拒否のときは http://localhost:3000 を利用）
+# dev1（ローカル）: .\scripts\dev1-up.ps1 → http://localhost:8081（接続拒否のときは http://localhost:3000 を利用）
 
-#   dev2（サーバー）: .\scripts\dev2-up.ps1  → https://dev.juristutor-ai.com
+# dev2（サーバー）: .\scripts\dev2-up.ps1 → https://dev.juristutor-ai.com
 
 # 手動で起動する場合（dev1 では CADDYFILE_DEV_PATH も必須。さもないと proxy が正しく動かず接続拒否になることがあります）:
 
-#   PowerShell（ローカル）: $env:DEV_ENV_FILE=".env.dev1"; $env:CADDYFILE_DEV_PATH="./Caddyfile.dev.local"; docker compose --profile dev up -d
+# PowerShell（ローカル）: $env:DEV_ENV_FILE=".env.dev1"; $env:CADDYFILE_DEV_PATH="./Caddyfile.dev.local"; docker compose --profile dev up -d
 
-#   PowerShell（サーバー）: $env:DEV_ENV_FILE=".env.dev2"; docker compose --profile dev up -d
+# PowerShell（サーバー）: $env:DEV_ENV_FILE=".env.dev2"; docker compose --profile dev up -d
 
-#   Bash（Linux/Mac のみ。PowerShell では不可）:
+# Bash（Linux/Mac のみ。PowerShell では不可）:
 
-#      DEV_ENV_FILE=.env.dev1 CADDYFILE_DEV_PATH=./Caddyfile.dev.local docker compose --profile dev up -d
+# DEV_ENV_FILE=.env.dev1 CADDYFILE_DEV_PATH=./Caddyfile.dev.local docker compose --profile dev up -d
 
-#      DEV_ENV_FILE=.env.dev2 docker compose --profile dev up -d
+# DEV_ENV_FILE=.env.dev2 docker compose --profile dev up -d
 
 # 未指定の場合は従来どおり .env.dev が使われます（後方互換）
 
@@ -198,17 +211,28 @@ docker compose --profile beta logs --tail=80 web-beta backend-beta
 # 注意: 開発環境はホットリロード対応（web-dev-server）
 
 # --- devローカルでよくある問題と対処 ---
+
 # ・8000 が「古いVer」: dev ではバックエンドはコンテナ内の backend-dev:8000 のみ。ホストの 8000 は本番用や別プロセスなので、dev では 8081 または 3000 でフロントにアクセスすること。
+
 # ・8081 が接続拒否:
-#   1) .env.dev1 があるか確認（無ければ cp .env.dev1.example .env.dev1 して編集）
-#   2) 必ず .\scripts\dev1-up.ps1 で起動する（DEV_ENV_FILE と CADDYFILE_DEV_PATH が設定される）
-#   3) docker compose --profile dev ps で backend-dev / web-dev-server / proxy-dev の3つが running か確認
-#   4) いずれか unhealthy なら: docker compose --profile dev logs backend-dev web-dev-server proxy-dev で原因確認
+
+# 1) .env.dev1 があるか確認（無ければ cp .env.dev1.example .env.dev1 して編集）
+
+# 2) 必ず .\scripts\dev1-up.ps1 で起動する（DEV_ENV_FILE と CADDYFILE_DEV_PATH が設定される）
+
+# 3) docker compose --profile dev ps で backend-dev / web-dev-server / proxy-dev の3つが running か確認
+
+# 4) いずれか unhealthy なら: docker compose --profile dev logs backend-dev web-dev-server proxy-dev で原因確認
+
 # ・3000 で Google 認証が利かない:
-#   本アプリは Google Identity Services（One Tap）を使っているため、開いているオリジンが「承認済みの JavaScript 生成元」に無いとエラーになる。
-#   対処: Google Cloud Console → APIとサービス → 認証情報 → 該当の OAuth 2.0 クライアント ID を編集
-#         「承認済みの JavaScript 生成元」に http://localhost:3000 を追加して保存。
-#         （8081 経由の場合は http://localhost:8081 も追加推奨。反映に 5〜10 分かかることがある。）
+
+# 本アプリは Google Identity Services（One Tap）を使っているため、開いているオリジンが「承認済みの JavaScript 生成元」に無いとエラーになる。
+
+# 対処: Google Cloud Console → APIとサービス → 認証情報 → 該当の OAuth 2.0 クライアント ID を編集
+
+# 「承認済みの JavaScript 生成元」に http://localhost:3000 を追加して保存。
+
+# （8081 経由の場合は http://localhost:8081 も追加推奨。反映に 5〜10 分かかることがある。）
 
 # 0) いま動いてるものを一応見る（任意）
 
@@ -220,7 +244,7 @@ git pull origin main
 
 # 2) web-dev-server/backend-dev をビルド（初回のみ、通常はホットリロードで自動反映）
 
-#    （事前に DEV_ENV_FILE を設定してから実行）
+# （事前に DEV_ENV_FILE を設定してから実行）
 
 docker compose --profile dev build web-dev-server backend-dev
 
