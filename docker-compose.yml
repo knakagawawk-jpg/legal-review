@@ -306,10 +306,10 @@ services:
     profiles:
       - dev # 開発環境用プロファイル（単独起動時）
     ports:
-      # 127.0.0.1 にバインド（Windows で localhost 接続拒否を防ぐ）
-      - "127.0.0.1:8081:80"
-      - "127.0.0.1:8444:443"
-      - "127.0.0.1:8444:443/udp"
+      # Windows で 127.0.0.1 だと接続拒否になる場合があるため 8081:80 で全インターフェースにバインド
+      - "8081:80"
+      - "8444:443"
+      - "8444:443/udp"
     volumes:
       # ローカル: .env.dev1 で CADDYFILE_DEV_PATH=./Caddyfile.dev.local を設定。サーバー: .env.dev2 では未設定
       - ${CADDYFILE_DEV_PATH:-./Caddyfile.dev}:/etc/caddy/Caddyfile:ro

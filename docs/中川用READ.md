@@ -197,6 +197,19 @@ docker compose --profile beta logs --tail=80 web-beta backend-beta
 
 # 注意: 開発環境はホットリロード対応（web-dev-server）
 
+# --- devローカルでよくある問題と対処 ---
+# ・8000 が「古いVer」: dev ではバックエンドはコンテナ内の backend-dev:8000 のみ。ホストの 8000 は本番用や別プロセスなので、dev では 8081 または 3000 でフロントにアクセスすること。
+# ・8081 が接続拒否:
+#   1) .env.dev1 があるか確認（無ければ cp .env.dev1.example .env.dev1 して編集）
+#   2) 必ず .\scripts\dev1-up.ps1 で起動する（DEV_ENV_FILE と CADDYFILE_DEV_PATH が設定される）
+#   3) docker compose --profile dev ps で backend-dev / web-dev-server / proxy-dev の3つが running か確認
+#   4) いずれか unhealthy なら: docker compose --profile dev logs backend-dev web-dev-server proxy-dev で原因確認
+# ・3000 で Google 認証が利かない:
+#   本アプリは Google Identity Services（One Tap）を使っているため、開いているオリジンが「承認済みの JavaScript 生成元」に無いとエラーになる。
+#   対処: Google Cloud Console → APIとサービス → 認証情報 → 該当の OAuth 2.0 クライアント ID を編集
+#         「承認済みの JavaScript 生成元」に http://localhost:3000 を追加して保存。
+#         （8081 経由の場合は http://localhost:8081 も追加推奨。反映に 5〜10 分かかることがある。）
+
 # 0) いま動いてるものを一応見る（任意）
 
 docker compose --profile dev ps
