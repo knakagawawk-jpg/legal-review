@@ -821,50 +821,79 @@ async def create_subscription_checkout(
     return SubscriptionCheckoutResponse(checkout_url=session.url, session_id=session.id)
 
 
-def _get_subscription_period(stripe_sub) -> Tuple[datetime, datetime, bool]:
-    """Stripe Subscription から current_period_start/end と cancel_at_period_end を取得。
-    API バージョン差に対応するため、トップレベルと items.data[0] の両方を試す。
-    """
-    def _get(obj, key, default=None):
-        if obj is None:
-            return default
-        try:
-            v = getattr(obj, key, None)
+def _safe_get(obj, key, default=None):
+    """Stripe オブジェクトからキーを安全に取得（getattr / [] / .get すべて試す）"""
+    if obj is None:
+        return default
+    try:
+        v = getattr(obj, key, None)
+        if v is not None:
+            return v
+    except Exception:
+        pass
+    try:
+        if hasattr(obj, "__getitem__"):
+            v = obj[key]
             if v is not None:
                 return v
-        except Exception:
-            pass
-        try:
-            if hasattr(obj, "__getitem__"):
-                return obj[key]
-        except (KeyError, TypeError, IndexError):
-            pass
-        try:
-            if hasattr(obj, "get"):
-                return obj.get(key, default)
-        except Exception:
-            pass
-        return default
+    except (KeyError, TypeError, IndexError):
+        pass
+    try:
+        if hasattr(obj, "get"):
+            return obj.get(key, default)
+    except Exception:
+        pass
+    return default
 
-    start_ts = _get(stripe_sub, "current_period_start")
-    end_ts = _get(stripe_sub, "current_period_end")
+
+def _get_subscription_period(stripe_sub_id: str) -> Tuple[datetime, datetime, bool]:
+    """Stripe Subscription の期間を取得。
+    API 2025-03-31 以降: current_period_start/end は SubscriptionItem に移動。
+    3段階で取得を試みる:
+      1. Subscription トップレベル（旧API互換）
+      2. Subscription の埋め込み items.data[0]
+      3. SubscriptionItem.list API（最も確実）
+    """
+    stripe_sub = stripe.Subscription.retrieve(stripe_sub_id, expand=["items"])
+    cancel_at_period_end = bool(_safe_get(stripe_sub, "cancel_at_period_end") or False)
+
+    start_ts = _safe_get(stripe_sub, "current_period_start")
+    end_ts = _safe_get(stripe_sub, "current_period_end")
+
+    # 2) Subscription 埋め込み items から取得
     if start_ts is None or end_ts is None:
-        items = _get(stripe_sub, "items")
+        items = _safe_get(stripe_sub, "items")
         if items is not None:
-            data = _get(items, "data")
+            data = _safe_get(items, "data")
             if data and len(data) > 0:
                 first = data[0]
-                if start_ts is None:
-                    start_ts = _get(first, "current_period_start")
-                if end_ts is None:
-                    end_ts = _get(first, "current_period_end")
+                start_ts = start_ts or _safe_get(first, "current_period_start")
+                end_ts = end_ts or _safe_get(first, "current_period_end")
+
+    # 3) SubscriptionItem.list API で直接取得（最も確実）
     if start_ts is None or end_ts is None:
         try:
-            logger.warning("Stripe subscription missing period fields: id=%s", _get(stripe_sub, "id"))
-        except Exception:
-            pass
+            si_list = stripe.SubscriptionItem.list(subscription=stripe_sub_id, limit=1)
+            if si_list and hasattr(si_list, "data") and len(si_list.data) > 0:
+                si = si_list.data[0]
+                start_ts = start_ts or _safe_get(si, "current_period_start")
+                end_ts = end_ts or _safe_get(si, "current_period_end")
+        except Exception as e:
+            logger.warning(f"SubscriptionItem.list failed for {stripe_sub_id}: {e}")
+
+    # 4) 最終フォールバック: Subscription の created と 1ヶ月後を使用
+    if start_ts is None:
+        created = _safe_get(stripe_sub, "created")
+        if created:
+            start_ts = int(created)
+            logger.warning(f"Falling back to subscription.created for period start: {start_ts}")
+    if end_ts is None and start_ts is not None:
+        end_ts = int(start_ts) + 30 * 24 * 3600  # 30日後
+        logger.warning(f"Falling back to start + 30 days for period end: {end_ts}")
+
+    if start_ts is None or end_ts is None:
         raise ValueError("Subscription missing current_period_start or current_period_end")
-    cancel_at_period_end = bool(_get(stripe_sub, "cancel_at_period_end") or False)
+
     current_start = datetime.fromtimestamp(int(start_ts), tz=timezone.utc)
     current_end = datetime.fromtimestamp(int(end_ts), tz=timezone.utc)
     return current_start, current_end, cancel_at_period_end
@@ -919,8 +948,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             plan_code = metadata.get("plan_code")
             stripe_sub_id = obj.get("subscription")
             if user_id > 0 and plan_code and stripe_sub_id:
-                stripe_sub = stripe.Subscription.retrieve(stripe_sub_id, expand=["items"])
-                current_start, current_end, cancel_at_period_end = _get_subscription_period(stripe_sub)
+                current_start, current_end, cancel_at_period_end = _get_subscription_period(str(stripe_sub_id))
                 _upsert_user_subscription(
                     db,
                     user_id=user_id,
@@ -936,10 +964,9 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                     basic_price_id = _get_plan_price_id("basic_plan")
                     if basic_price_id:
                         try:
-                            items = getattr(stripe_sub, "items", None) or (stripe_sub.get("items") if hasattr(stripe_sub, "get") else None)
-                            item_list = (items.get("data", []) if items and hasattr(items, "get") else None) or getattr(items, "data", [])
-                            if item_list:
-                                first_id = item_list[0].get("id") if hasattr(item_list[0], "get") else getattr(item_list[0], "id", None)
+                            si_list = stripe.SubscriptionItem.list(subscription=stripe_sub_id, limit=1)
+                            if si_list and si_list.data:
+                                first_id = _safe_get(si_list.data[0], "id")
                                 if first_id:
                                     stripe.Subscription.modify(
                                         stripe_sub_id,
@@ -953,12 +980,12 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         obj = event["data"]["object"]
         stripe_sub_id = obj.get("subscription")
         if stripe_sub_id:
-            stripe_sub = stripe.Subscription.retrieve(stripe_sub_id, expand=["items"])
-            metadata = (getattr(stripe_sub, "metadata", None) or stripe_sub.get("metadata") if hasattr(stripe_sub, "get") else None) or {}
+            stripe_sub = stripe.Subscription.retrieve(stripe_sub_id)
+            metadata = _safe_get(stripe_sub, "metadata") or {}
             user_id = int(metadata.get("user_id", "0"))
             renewal_plan_code = metadata.get("renewal_plan_code") or metadata.get("plan_code")
             if user_id > 0 and renewal_plan_code:
-                current_start, current_end, cancel_at_period_end = _get_subscription_period(stripe_sub)
+                current_start, current_end, cancel_at_period_end = _get_subscription_period(str(stripe_sub_id))
                 _upsert_user_subscription(
                     db,
                     user_id=user_id,
