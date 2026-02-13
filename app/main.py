@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import or_, cast, String, func
 from sqlalchemy.exc import OperationalError as SQLAlchemyOperationalError
 from sqlalchemy.orm import Session
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 import uuid
@@ -821,6 +821,55 @@ async def create_subscription_checkout(
     return SubscriptionCheckoutResponse(checkout_url=session.url, session_id=session.id)
 
 
+def _get_subscription_period(stripe_sub) -> Tuple[datetime, datetime, bool]:
+    """Stripe Subscription から current_period_start/end と cancel_at_period_end を取得。
+    API バージョン差に対応するため、トップレベルと items.data[0] の両方を試す。
+    """
+    def _get(obj, key, default=None):
+        if obj is None:
+            return default
+        try:
+            v = getattr(obj, key, None)
+            if v is not None:
+                return v
+        except Exception:
+            pass
+        try:
+            if hasattr(obj, "__getitem__"):
+                return obj[key]
+        except (KeyError, TypeError, IndexError):
+            pass
+        try:
+            if hasattr(obj, "get"):
+                return obj.get(key, default)
+        except Exception:
+            pass
+        return default
+
+    start_ts = _get(stripe_sub, "current_period_start")
+    end_ts = _get(stripe_sub, "current_period_end")
+    if start_ts is None or end_ts is None:
+        items = _get(stripe_sub, "items")
+        if items is not None:
+            data = _get(items, "data")
+            if data and len(data) > 0:
+                first = data[0]
+                if start_ts is None:
+                    start_ts = _get(first, "current_period_start")
+                if end_ts is None:
+                    end_ts = _get(first, "current_period_end")
+    if start_ts is None or end_ts is None:
+        try:
+            logger.warning("Stripe subscription missing period fields: id=%s", _get(stripe_sub, "id"))
+        except Exception:
+            pass
+        raise ValueError("Subscription missing current_period_start or current_period_end")
+    cancel_at_period_end = bool(_get(stripe_sub, "cancel_at_period_end") or False)
+    current_start = datetime.fromtimestamp(int(start_ts), tz=timezone.utc)
+    current_end = datetime.fromtimestamp(int(end_ts), tz=timezone.utc)
+    return current_start, current_end, cancel_at_period_end
+
+
 @app.post("/v1/webhooks/stripe")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     """Stripe Webhook（review追加チケットの付与）。"""
@@ -871,9 +920,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             stripe_sub_id = obj.get("subscription")
             if user_id > 0 and plan_code and stripe_sub_id:
                 stripe_sub = stripe.Subscription.retrieve(stripe_sub_id)
-                current_start = datetime.fromtimestamp(int(stripe_sub.current_period_start), tz=timezone.utc)
-                current_end = datetime.fromtimestamp(int(stripe_sub.current_period_end), tz=timezone.utc)
-                cancel_at_period_end = bool(stripe_sub.cancel_at_period_end)
+                current_start, current_end, cancel_at_period_end = _get_subscription_period(stripe_sub)
                 _upsert_user_subscription(
                     db,
                     user_id=user_id,
@@ -889,13 +936,16 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                     basic_price_id = _get_plan_price_id("basic_plan")
                     if basic_price_id:
                         try:
-                            items = stripe_sub.get("items", {}).get("data", [])
-                            if items:
-                                stripe.Subscription.modify(
-                                    stripe_sub_id,
-                                    items=[{"id": items[0]["id"], "price": basic_price_id}],
-                                    proration_behavior="none",
-                                )
+                            items = getattr(stripe_sub, "items", None) or (stripe_sub.get("items") if hasattr(stripe_sub, "get") else None)
+                            item_list = (items.get("data", []) if items and hasattr(items, "get") else None) or getattr(items, "data", [])
+                            if item_list:
+                                first_id = item_list[0].get("id") if hasattr(item_list[0], "get") else getattr(item_list[0], "id", None)
+                                if first_id:
+                                    stripe.Subscription.modify(
+                                        stripe_sub_id,
+                                        items=[{"id": first_id, "price": basic_price_id}],
+                                        proration_behavior="none",
+                                    )
                         except Exception as e:
                             logger.warning(f"Failed to switch PlanB to PlanA for next cycle: {str(e)}")
 
@@ -904,13 +954,11 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         stripe_sub_id = obj.get("subscription")
         if stripe_sub_id:
             stripe_sub = stripe.Subscription.retrieve(stripe_sub_id)
-            metadata = stripe_sub.get("metadata") or {}
+            metadata = (getattr(stripe_sub, "metadata", None) or stripe_sub.get("metadata") if hasattr(stripe_sub, "get") else None) or {}
             user_id = int(metadata.get("user_id", "0"))
             renewal_plan_code = metadata.get("renewal_plan_code") or metadata.get("plan_code")
             if user_id > 0 and renewal_plan_code:
-                current_start = datetime.fromtimestamp(int(stripe_sub.current_period_start), tz=timezone.utc)
-                current_end = datetime.fromtimestamp(int(stripe_sub.current_period_end), tz=timezone.utc)
-                cancel_at_period_end = bool(stripe_sub.cancel_at_period_end)
+                current_start, current_end, cancel_at_period_end = _get_subscription_period(stripe_sub)
                 _upsert_user_subscription(
                     db,
                     user_id=user_id,
