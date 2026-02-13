@@ -919,7 +919,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             plan_code = metadata.get("plan_code")
             stripe_sub_id = obj.get("subscription")
             if user_id > 0 and plan_code and stripe_sub_id:
-                stripe_sub = stripe.Subscription.retrieve(stripe_sub_id)
+                stripe_sub = stripe.Subscription.retrieve(stripe_sub_id, expand=["items"])
                 current_start, current_end, cancel_at_period_end = _get_subscription_period(stripe_sub)
                 _upsert_user_subscription(
                     db,
@@ -953,7 +953,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         obj = event["data"]["object"]
         stripe_sub_id = obj.get("subscription")
         if stripe_sub_id:
-            stripe_sub = stripe.Subscription.retrieve(stripe_sub_id)
+            stripe_sub = stripe.Subscription.retrieve(stripe_sub_id, expand=["items"])
             metadata = (getattr(stripe_sub, "metadata", None) or stripe_sub.get("metadata") if hasattr(stripe_sub, "get") else None) or {}
             user_id = int(metadata.get("user_id", "0"))
             renewal_plan_code = metadata.get("renewal_plan_code") or metadata.get("plan_code")
