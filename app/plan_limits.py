@@ -34,6 +34,17 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_PLAN_CODE = os.getenv("DEFAULT_PLAN_CODE", "")
 
+UTC = ZoneInfo("UTC")
+
+
+def _as_utc_aware(dt: Optional[datetime]) -> Optional[datetime]:
+    """SQLite 等で naive で返る datetime を UTC aware にそろえる（比較用）。"""
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        return dt
+    return dt.replace(tzinfo=UTC)
+
 # limits JSON のキー
 LIMIT_MAX_REVIEWS_TOTAL = "max_reviews_total"
 LIMIT_MAX_REVIEW_CHAT_MESSAGES_TOTAL = "max_review_chat_messages_total"
@@ -71,7 +82,7 @@ def get_user_plan(db: Session, user: User) -> Optional[SubscriptionPlan]:
     - 有効な UserSubscription があればそのプラン
     - なければデフォルトプラン(全ユーザー対象の beta 想定)
     """
-    now_utc = datetime.now(ZoneInfo("UTC"))
+    now_utc = datetime.now(UTC)
     subs = (
         db.query(UserSubscription)
         .join(SubscriptionPlan, UserSubscription.plan_id == SubscriptionPlan.id)
@@ -98,12 +109,15 @@ def get_user_plan(db: Session, user: User) -> Optional[SubscriptionPlan]:
         )
         
         # 解約予約済み(cancelled_atあり)でも、有効期限までは利用可能
-        if sub.expires_at is not None and sub.expires_at <= now_utc:
+        # SQLite は naive datetime を返すことがあるため UTC aware に正規化して比較
+        expires_at = _as_utc_aware(sub.expires_at)
+        if expires_at is not None and expires_at <= now_utc:
             logger.info(f"Subscription {sub.id} expired at {sub.expires_at}")
             continue
         # PlanB（first_month_fm_dm）は初月限定。expires_at未設定時の安全弁として30日で無効化扱い。
+        started_at = _as_utc_aware(sub.started_at)
         if sub.plan.plan_code == "first_month_fm_dm" and sub.expires_at is None:
-            if sub.started_at <= now_utc - timedelta(days=30):
+            if started_at is not None and started_at <= now_utc - timedelta(days=30):
                 logger.info(f"Subscription {sub.id} (PlanB) started more than 30 days ago without expires_at")
                 continue
         
