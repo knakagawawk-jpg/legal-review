@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import Link from "next/link"
-import { ExternalLink, History, BookOpen, ChevronDown, ChevronUp, Filter, Menu, Lightbulb, ListTodo, Heart, Calendar as CalendarIcon, Pencil, Check, X, Maximize2, Plus, CalendarDays, Target } from "lucide-react"
+import { ExternalLink, History, BookOpen, ChevronDown, ChevronUp, Filter, Menu, Lightbulb, ListTodo, Heart, Calendar as CalendarIcon, Pencil, Check, X, Maximize2, Plus, CalendarDays } from "lucide-react"
 import { SortableRow } from "@/components/sortable-row"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -21,6 +21,8 @@ import { ItemField } from "@/components/item-field"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
 import { Calendar, DatePickerCalendar } from "@/components/ui/calendar"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import {
@@ -86,6 +88,19 @@ interface TimerDailyStats {
   study_date: string  // YYYY-MM-DD
   total_seconds: number
   sessions_count: number
+}
+
+interface MonthlyGoal {
+  yyyymm: number
+  target_study_minutes: number | null
+  target_short_answer_count: number | null
+  target_review_count: number | null
+}
+
+interface TimerMonthStats {
+  month: string  // "2025-02"
+  total_seconds: number
+  week_stats: Array<{ week_start: string; week_end: string; total_seconds: number; daily_stats: Array<{ study_date: string; total_seconds: number }> }>
 }
 
 interface TimerSession {
@@ -314,6 +329,15 @@ function StudyManagementPage() {
   const [topicItems, setTopicItems] = useState<DashboardItem[]>([])
   const [loading, setLoading] = useState(true)
   const [planLimits, setPlanLimits] = useState<PlanLimitUsage | null>(null)
+  const [monthlyGoal, setMonthlyGoal] = useState<MonthlyGoal | null>(null)
+  const [monthStatsForGoal, setMonthStatsForGoal] = useState<TimerMonthStats | null>(null)
+  const [goalEditOpen, setGoalEditOpen] = useState(false)
+  const [goalEditSaving, setGoalEditSaving] = useState(false)
+  const [goalEditForm, setGoalEditForm] = useState({
+    target_study_minutes: "",
+    target_short_answer_count: "",
+    target_review_count: "",
+  })
   
   // 折りたたみ状態
   const [memoOpen, setMemoOpen] = useState(true)
@@ -365,20 +389,30 @@ function StudyManagementPage() {
     })
   )
   
+  // 対象月 yyyymm（目標達成率カード用、今月）
+  const goalYyyymm = useMemo(() => {
+    const d = new Date()
+    return d.getFullYear() * 100 + (d.getMonth() + 1)
+  }, [])
+
   // データ取得
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const [memoData, topicData, limitsData] = await Promise.all([
+      const [memoData, topicData, limitsData, goalData, monthStatsData] = await Promise.all([
         apiClient.get<{ items: DashboardItem[], total: number }>("/api/dashboard/items/all?entry_type=1"),
         apiClient.get<{ items: DashboardItem[], total: number }>("/api/dashboard/items/all?entry_type=2"),
         apiClient.get<PlanLimitUsage>("/api/users/me/plan-limits"),
+        apiClient.get<MonthlyGoal>(`/api/users/me/monthly-goal?yyyymm=${goalYyyymm}`).catch(() => null),
+        apiClient.get<TimerMonthStats>(`/api/timer/stats/month?yyyymm=${goalYyyymm}`).catch(() => null),
       ])
       console.log("MEMO data:", memoData)
       console.log("Topics data:", topicData)
       setMemoItems(memoData.items || [])
       setTopicItems(topicData.items || [])
       setPlanLimits(limitsData)
+      setMonthlyGoal(goalData ?? null)
+      setMonthStatsForGoal(monthStatsData ?? null)
       
       // スクロール位置を復元
       if (hasFunctionalConsent()) {
@@ -400,11 +434,44 @@ function StudyManagementPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [goalYyyymm])
 
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  const openGoalEdit = useCallback(() => {
+    setGoalEditForm({
+      target_study_minutes: monthlyGoal?.target_study_minutes != null ? String(monthlyGoal.target_study_minutes) : "",
+      target_short_answer_count: monthlyGoal?.target_short_answer_count != null ? String(monthlyGoal.target_short_answer_count) : "",
+      target_review_count: monthlyGoal?.target_review_count != null ? String(monthlyGoal.target_review_count) : "",
+    })
+    setGoalEditOpen(true)
+  }, [monthlyGoal])
+
+  const saveGoalEdit = useCallback(async () => {
+    setGoalEditSaving(true)
+    try {
+      const parse = (s: string): number | null => {
+        const v = s.trim()
+        if (v === "") return null
+        const n = parseInt(v, 10)
+        return Number.isNaN(n) || n < 0 ? null : n
+      }
+      const data = await apiClient.put<MonthlyGoal>("/api/users/me/monthly-goal", {
+        yyyymm: goalYyyymm,
+        target_study_minutes: parse(goalEditForm.target_study_minutes),
+        target_short_answer_count: parse(goalEditForm.target_short_answer_count),
+        target_review_count: parse(goalEditForm.target_review_count),
+      })
+      setMonthlyGoal(data)
+      setGoalEditOpen(false)
+    } catch (e) {
+      console.error("Failed to save monthly goal:", e)
+    } finally {
+      setGoalEditSaving(false)
+    }
+  }, [goalYyyymm, goalEditForm])
   
   // 新しいMEMOアイテムを作成
   const createMemoItem = useCallback(async () => {
@@ -768,11 +835,28 @@ function StudyManagementPage() {
     id: getSubjectId(name),
     name,
   })).filter(s => s.id !== null) as Array<{ id: number; name: string }>
+
+  // 目標達成率カード用：該当月の勉強時間／目標（時間表示）
+  const goalStudyMinutes = Math.floor((monthStatsForGoal?.total_seconds ?? 0) / 60)
+  const targetStudy = monthlyGoal?.target_study_minutes ?? 0
+  const targetShort = monthlyGoal?.target_short_answer_count ?? 0
+  const targetReview = monthlyGoal?.target_review_count ?? 0
+  const studyRate = targetStudy > 0 ? Math.min(100, Math.round((goalStudyMinutes / targetStudy) * 100)) : 0
+  const studyNumHours = goalStudyMinutes / 60
+  const studyDenomHours = targetStudy / 60
+  // 短答・講評は分母だけ目標値、分子は現状のまま（短答は未実装のため 0）
+  const shortAnswerNum = 0
+  const shortAnswerRate = targetShort > 0 ? Math.min(100, Math.round((shortAnswerNum / targetShort) * 100)) : 0
+  const reviewNum = planLimits?.reviews_used ?? 0
+  const reviewRate = targetReview > 0 ? Math.min(100, Math.round((reviewNum / targetReview) * 100)) : 0
+  const reviewDenom = targetReview > 0 ? targetReview : 0
+  // 全体の達成率表示用（時間の達成率をメインに、または3つの平均）
+  const overallRate = targetStudy > 0 ? studyRate : (targetShort > 0 || targetReview > 0 ? Math.round((shortAnswerRate + reviewRate) / (targetShort > 0 && targetReview > 0 ? 2 : 1)) : 0)
   
   return (
     <div className="space-y-4">
-      {/* 講評回数（使用/上限） */}
-      <div className="flex justify-end mb-2">
+      {/* 講評回数は目標達成率カードの下に表示 */}
+      <div className="flex justify-end mb-2 sr-only">
         <div className="text-sm text-muted-foreground">
           講評回数：
           {planLimits?.reviews_limit != null ? (
@@ -787,124 +871,118 @@ function StudyManagementPage() {
         </div>
       </div>
       
-      {/* 目標達成率（今月の勉強時間カードと同様のレイアウト） */}
+      {/* Achievement of the Month（メインカード） */}
       {goalAchievementCardVisible && (
-        <div className="rounded-xl border border-amber-200/40 bg-gradient-to-br from-white to-amber-50/30 shadow-md transition-all duration-300">
-          <div className="py-3 px-4 border-b border-amber-100/40 flex items-center justify-between bg-gradient-to-r from-amber-50/50 to-transparent">
-            <div className="text-sm font-semibold flex items-center gap-2 text-amber-900">
-              <Target className="h-5 w-5 text-amber-600" />
-              目標達成率
+        <div className="rounded-2xl border border-orange-200/80 bg-white/90 shadow-xl shadow-orange-900/5 backdrop-blur-sm transition-all duration-300 overflow-hidden">
+          <div className="py-4 px-6 flex items-center justify-between border-b border-orange-100">
+            <h2 className="text-lg font-semibold tracking-tight text-orange-900/90">
+              Achievement of the Month
+            </h2>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={openGoalEdit}
+                className="text-orange-600 hover:text-orange-700 p-2 rounded-lg hover:bg-orange-50/80 transition-colors flex items-center gap-1.5 text-sm font-medium"
+                title="目標を編集"
+              >
+                <Pencil className="h-4 w-4" />
+                目標を編集
+              </button>
+              <button
+                type="button"
+                onClick={() => setGoalAchievementCardVisible(false)}
+                className="text-slate-400 hover:text-slate-600 p-2 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <ChevronUp className="h-5 w-5" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setGoalAchievementCardVisible(false)}
-              className="text-gray-400 hover:text-gray-600 transition-colors p-1"
-            >
-              <ChevronUp className="w-5 h-5" />
-            </button>
           </div>
-          <div className="p-6">
-            <div className="flex gap-8">
-              {/* 左側：大きな円グラフ */}
-              <div className="flex flex-col items-center justify-start flex-shrink-0">
-                <div className="relative w-40 h-40">
+          <div className="p-8 sm:p-10">
+            <div className="flex gap-10 sm:gap-12">
+              {/* 左：円グラフ＋時間 */}
+              <div className="flex flex-col items-center flex-shrink-0">
+                <div className="relative w-40 h-40 sm:w-44 sm:h-44">
                   <svg className="w-full h-full" viewBox="0 0 100 100">
-                    <circle cx="50" cy="50" r="42" fill="none" stroke="#fef3c7" strokeWidth="6" />
+                    <circle cx="50" cy="50" r="42" fill="none" stroke="#fff7ed" strokeWidth="8" />
                     <circle
                       cx="50"
                       cy="50"
                       r="42"
                       fill="none"
                       stroke="url(#gradientCircleGoal)"
-                      strokeWidth="6"
-                      strokeDasharray={`${42 * Math.PI * (72 / 100)}, ${42 * Math.PI * 2}`}
+                      strokeWidth="8"
+                      strokeDasharray={`${42 * Math.PI * (overallRate / 100)}, ${42 * Math.PI * 2}`}
                       strokeLinecap="round"
                       transform="rotate(-90 50 50)"
                     />
                     <defs>
                       <linearGradient id="gradientCircleGoal" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="#f59e0b" />
-                        <stop offset="100%" stopColor="#d97706" />
+                        <stop offset="0%" stopColor="#f97316" />
+                        <stop offset="100%" stopColor="#ea580c" />
                       </linearGradient>
                     </defs>
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-3xl font-bold bg-gradient-to-br from-amber-600 to-amber-700 bg-clip-text text-transparent">72%</span>
-                    <span className="text-xs text-gray-500 font-medium mt-1">達成</span>
+                    <span className="text-3xl sm:text-4xl font-bold tabular-nums text-orange-600">{overallRate}%</span>
+                    <span className="text-xs font-medium text-slate-500 mt-1 tracking-wide uppercase">達成</span>
                   </div>
                 </div>
-                <div className="mt-4 text-center">
-                  <p className="text-lg font-bold text-amber-900">72 / 100</p>
-                  <p className="text-xs text-gray-600 mt-0.5">時間</p>
-                </div>
+                <p className="mt-6 text-center">
+                  <span className="text-2xl font-semibold tabular-nums text-slate-800">
+                    {studyNumHours.toFixed(1)} / <span className="text-orange-600 cursor-pointer hover:text-orange-700 transition-colors" onClick={openGoalEdit} title={studyDenomHours > 0 ? "クリックで目標を編集" : "クリックで目標を設定"}>{studyDenomHours.toFixed(1)}</span>
+                  </span>
+                  <span className="text-sm font-medium text-slate-500 ml-1.5">時間</span>
+                </p>
               </div>
 
-              {/* 右側：上下に分割 */}
-              <div className="flex-1 flex flex-col gap-3 min-w-0">
-                {/* 上部：目標達成率、短答、講評（横並び） */}
-                <div className="flex gap-1.5">
-                  <div style={{ flex: "2" }} className="rounded-lg px-2.5 py-1">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="text-xs font-semibold text-blue-900">目標達成率</span>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <span className="text-xs font-bold text-blue-700">72%</span>
-                          <span className="text-xs font-bold text-blue-700">18/25</span>
-                        </div>
-                      </div>
-                      <div className="w-full bg-blue-100 rounded-full h-1.5 overflow-hidden">
-                        <div
-                          className="bg-gradient-to-r from-blue-400 to-blue-600 h-full rounded-full"
-                          style={{ width: "72%" }}
-                        />
-                      </div>
+              {/* 右：目標達成＋短答＋講評。幅は目標達成:短答:講評＝10:7:3。狭い画面では目標達成で折り返し、短答・講評は次行で7:3 */}
+              <div className="flex-1 flex flex-col gap-4 min-w-0">
+                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+                  <div className="min-w-0 sm:flex-[10]">
+                    <p className="text-xs font-medium text-slate-500 mb-1">目標達成</p>
+                    <p className="text-sm font-semibold text-slate-800 tabular-nums">
+                      {studyRate}% <span className="font-normal text-slate-600">·</span>{" "}
+                      <span className="text-orange-600">{studyNumHours.toFixed(1)}</span> / <span className="cursor-pointer hover:text-orange-600 transition-colors" onClick={openGoalEdit}>{studyDenomHours.toFixed(1)}</span>h
+                    </p>
+                    <div className="mt-2 h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+                      <div className="h-full rounded-full bg-orange-500 transition-all" style={{ width: `${studyRate}%` }} />
                     </div>
                   </div>
-                  <div style={{ flex: "0.8" }} className="rounded-lg px-2.5 py-1">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="text-xs font-semibold text-emerald-900">短答実施数</span>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <span className="text-xs font-bold text-emerald-700">72%</span>
-                          <span className="text-xs font-bold text-emerald-700">18/25</span>
-                        </div>
-                      </div>
-                      <div className="w-full bg-emerald-100 rounded-full h-1.5 overflow-hidden">
-                        <div
-                          className="bg-gradient-to-r from-emerald-400 to-emerald-600 h-full rounded-full"
-                          style={{ width: "72%" }}
-                        />
+                  <div className="flex flex-row gap-3 sm:gap-4 min-w-0 sm:flex-[10]">
+                    <div className="min-w-0 flex-[7]">
+                      <p className="text-xs font-medium text-slate-500 mb-1">短答</p>
+                      <p className="text-sm font-semibold text-slate-800 tabular-nums">
+                        {shortAnswerRate}% <span className="font-normal text-slate-600">·</span>{" "}
+                        <span className="text-violet-600">{shortAnswerNum}</span> / <span className="cursor-pointer hover:text-violet-600 transition-colors" onClick={openGoalEdit}>{targetShort}</span>
+                      </p>
+                      <div className="mt-2 h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+                        <div className="h-full rounded-full bg-violet-500 transition-all" style={{ width: `${shortAnswerRate}%` }} />
                       </div>
                     </div>
-                  </div>
-                  <div style={{ flex: "0.8" }} className="rounded-lg px-2.5 py-1">
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="text-xs font-semibold text-rose-900">今月の講評</span>
-                      <span className="text-xs font-bold text-rose-600 flex-shrink-0">
-                        {planLimits?.reviews_used ?? "-"} / {planLimits?.reviews_limit ?? "-"}
-                      </span>
+                    <div className="min-w-0 flex-[3]">
+                      <p className="text-xs font-medium text-slate-500 mb-1">講評</p>
+                      <p className="text-sm font-semibold text-slate-800 tabular-nums">
+                        <span className="text-rose-600">{reviewNum}</span> / <span className="cursor-pointer hover:text-rose-600 transition-colors" onClick={openGoalEdit}>{reviewDenom}</span>
+                      </p>
                     </div>
                   </div>
                 </div>
 
-                {/* 下部：科目別テーブル */}
-                <div className="border-t border-amber-100/60 pt-2 mt-2">
-                  <div className="text-xs font-semibold flex items-center gap-2 text-amber-900 mb-2">
-                    📊 科目別勉強時間
-                  </div>
-                  <div className="overflow-x-auto">
+                <div className="border-t border-slate-100 pt-5 mt-1">
+                  <p className="text-xs font-semibold text-slate-600 mb-3 tracking-wide">今月の目標</p>
+                  <div className="overflow-x-auto rounded-xl border border-slate-100">
                     <table className="w-full text-xs">
-                      <thead className="bg-amber-50/80 border-y border-amber-200/40">
-                        <tr>
-                          <th className="px-3 py-2 text-left font-semibold text-amber-900">科目</th>
-                          <th className="px-3 py-2 text-right font-semibold text-amber-900">実績/目標</th>
-                          <th className="px-3 py-2 text-center font-semibold text-amber-900">達成度</th>
-                          <th className="px-3 py-2 text-center font-semibold text-amber-900">ステータス</th>
+                      <thead>
+                        <tr className="bg-slate-50/80 border-b border-slate-100">
+                          <th className="px-4 py-3 text-left font-medium text-slate-600">科目</th>
+                          <th className="px-4 py-3 text-right font-medium text-slate-600">実績/目標</th>
+                          <th className="px-4 py-3 text-center font-medium text-slate-600">達成度</th>
+                          <th className="px-4 py-3 text-center font-medium text-slate-600">ステータス</th>
                         </tr>
                       </thead>
                       <tbody>
                         <tr>
-                          <td colSpan={4} className="px-3 py-4 text-center text-muted-foreground">データがありません</td>
+                          <td colSpan={4} className="px-4 py-8 text-center text-sm text-slate-400">データがありません</td>
                         </tr>
                       </tbody>
                     </table>
@@ -916,13 +994,67 @@ function StudyManagementPage() {
         </div>
       )}
 
+      <Dialog open={goalEditOpen} onOpenChange={setGoalEditOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>今月の目標を編集</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="goal-study" className="text-sm font-medium">目標勉強時間（分）</Label>
+              <Input
+                id="goal-study"
+                type="number"
+                min={0}
+                placeholder="例: 3000"
+                value={goalEditForm.target_study_minutes}
+                onChange={(e) => setGoalEditForm((f) => ({ ...f, target_study_minutes: e.target.value }))}
+                className="border-amber-200 focus:ring-amber-500"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="goal-short" className="text-sm font-medium">目標短答実施数</Label>
+              <Input
+                id="goal-short"
+                type="number"
+                min={0}
+                placeholder="例: 25"
+                value={goalEditForm.target_short_answer_count}
+                onChange={(e) => setGoalEditForm((f) => ({ ...f, target_short_answer_count: e.target.value }))}
+                className="border-violet-200 focus:ring-violet-500"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="goal-review" className="text-sm font-medium">目標講評実施数</Label>
+              <Input
+                id="goal-review"
+                type="number"
+                min={0}
+                placeholder="例: 10"
+                value={goalEditForm.target_review_count}
+                onChange={(e) => setGoalEditForm((f) => ({ ...f, target_review_count: e.target.value }))}
+                className="border-rose-200 focus:ring-rose-500"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setGoalEditOpen(false)} disabled={goalEditSaving}>
+              キャンセル
+            </Button>
+            <Button type="button" onClick={saveGoalEdit} disabled={goalEditSaving} className="bg-amber-600 hover:bg-amber-700">
+              {goalEditSaving ? "保存中..." : "保存"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {!goalAchievementCardVisible && (
         <button
           type="button"
           onClick={() => setGoalAchievementCardVisible(true)}
-          className="w-full py-2 text-xs font-medium text-amber-700 hover:text-amber-900 bg-amber-50/60 hover:bg-amber-100/60 border border-amber-200/40 rounded-lg transition-colors"
+          className="w-full py-2.5 pl-4 pr-4 text-sm font-medium text-orange-600 hover:text-orange-700 bg-slate-50 hover:bg-orange-50/50 border border-slate-200 rounded-xl transition-colors text-left"
         >
-          目標達成率を表示
+          Achievement of the Month を表示
         </button>
       )}
 

@@ -406,22 +406,28 @@ def register_timer_routes(app):
     @app.get("/api/timer/stats/month")
     async def get_month_stats(
         current_user: User = Depends(get_current_user_required),
-        db: Session = Depends(get_db)
+        db: Session = Depends(get_db),
+        yyyymm: Optional[int] = Query(None, description="対象月（例: 202502）。省略時は今月"),
     ):
         """
-        今月（1日から月末まで）の統計を取得（週ごと）
+        指定月（または今月）の1日から月末までの統計を取得（週ごと）。
         """
         from datetime import datetime, timedelta
         from zoneinfo import ZoneInfo
         import calendar
         
-        USER_TIMEZONE = ZoneInfo("Asia/Tokyo")
-        now_utc = datetime.now(ZoneInfo("UTC"))
-        now_local = now_utc.astimezone(USER_TIMEZONE)
+        if yyyymm is not None:
+            year = yyyymm // 100
+            month = yyyymm % 100
+            if not (1 <= month <= 12 and year >= 2000):
+                raise HTTPException(status_code=400, detail="yyyymm は 200001～999912 の形式で指定してください")
+        else:
+            USER_TIMEZONE = ZoneInfo("Asia/Tokyo")
+            now_utc = datetime.now(ZoneInfo("UTC"))
+            now_local = now_utc.astimezone(USER_TIMEZONE)
+            year = now_local.year
+            month = now_local.month
         
-        # 現在月の1日から月末まで
-        year = now_local.year
-        month = now_local.month
         first_day = datetime(year, month, 1).date()
         last_day = datetime(year, month, calendar.monthrange(year, month)[1]).date()
         

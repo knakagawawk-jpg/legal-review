@@ -501,6 +501,7 @@ class User(Base):
     timer_sessions = relationship("TimerSession", back_populates="user", order_by="desc(TimerSession.started_at_utc)")
     timer_daily_chunks = relationship("TimerDailyChunk", back_populates="user")
     timer_daily_stats = relationship("TimerDailyStats", back_populates="user")
+    monthly_goals = relationship("UserMonthlyGoal", back_populates="user", order_by="UserMonthlyGoal.yyyymm")  # 前方参照のためクラス名で指定
 
 class SubscriptionPlan(Base):
     __tablename__ = "subscription_plans"
@@ -610,6 +611,37 @@ class MonthlyUsage(Base):
         UniqueConstraint('user_id', 'year', 'month', name='uq_user_monthly_usage'),
         Index('idx_user_year_month', 'user_id', 'year', 'month'),
     )
+
+
+# ユーザー月別目標（勉強時間・短答・講評の目標数）
+class UserMonthlyGoal(Base):
+    """
+    ユーザーの月別目標数値。
+    対象月 yyyymm（例: 202502）ごとに1行。目標未設定は NULL 可。
+    """
+    __tablename__ = "user_monthly_goals"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    yyyymm = Column(Integer, nullable=False)  # 対象月 例: 202502
+
+    # 目標値（未設定は NULL）
+    target_study_minutes = Column(Integer, nullable=True)   # 目標勉強時間（分）
+    target_short_answer_count = Column(Integer, nullable=True)  # 目標短答実施数
+    target_review_count = Column(Integer, nullable=True)   # 目標講評実施数
+
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    target_study_updated_at = Column(DateTime(timezone=True), nullable=True)
+    target_short_answer_updated_at = Column(DateTime(timezone=True), nullable=True)
+    target_review_updated_at = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship("User", back_populates="monthly_goals")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "yyyymm", name="uq_user_monthly_goal"),
+        Index("idx_user_monthly_goals_lookup", "user_id", "yyyymm"),
+    )
+
 
 # ノート機能関連のモデル（OneNote風の階層構造）
 class Notebook(Base):

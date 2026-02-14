@@ -28,7 +28,8 @@ from .models import (
     DashboardItem, Subject, OfficialQuestion,
     RecentReviewProblemSession, RecentReviewProblem, SavedReviewProblem, ContentUse,
     TimerSession, TimerDailyChunk, TimerDailyStats,
-    StudyTag, StudyItem as StudyItemModel
+    StudyTag, StudyItem as StudyItemModel,
+    UserMonthlyGoal,
 )
 from config.constants import FIXED_SUBJECTS
 from config.subjects import SUBJECT_MAP, SUBJECT_NAME_TO_ID, get_subject_name, get_subject_id
@@ -339,6 +340,15 @@ def _startup_migrate_reviews():
         logger.info("✓ Startup review ticket grants migration completed")
     except Exception as e:
         logger.warning(f"Startup review ticket grants migration skipped/failed: {str(e)}")
+
+    # ユーザー月別目標テーブルを作成
+    try:
+        from .migrate_monthly_goals import migrate_monthly_goals
+
+        migrate_monthly_goals()
+        logger.info("✓ Startup user_monthly_goals migration completed")
+    except Exception as e:
+        logger.warning(f"Startup user_monthly_goals migration skipped/failed: {str(e)}")
 
     # SubscriptionPlan を投入/更新
     try:
@@ -694,6 +704,90 @@ async def get_plan_limits_usage(
     except Exception as e:
         logger.error(f"Error in get_plan_limits_usage for user {current_user.id}: {str(e)}", exc_info=True)
         raise
+
+
+class MonthlyGoalUpdate(BaseModel):
+    """月別目標の更新用（各項目は省略可、送った項目だけ更新）"""
+    yyyymm: int
+    target_study_minutes: Optional[int] = None
+    target_short_answer_count: Optional[int] = None
+    target_review_count: Optional[int] = None
+
+
+@app.get("/v1/users/me/monthly-goal")
+async def get_my_monthly_goal(
+    yyyymm: int = Query(..., description="対象月（例: 202502）"),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """指定月の目標（目標勉強時間・目標短答実施数・目標講評実施数）を1件返す。無ければ null。"""
+    row = (
+        db.query(UserMonthlyGoal)
+        .filter(
+            UserMonthlyGoal.user_id == current_user.id,
+            UserMonthlyGoal.yyyymm == yyyymm,
+        )
+        .first()
+    )
+    if not row:
+        return {
+            "yyyymm": yyyymm,
+            "target_study_minutes": None,
+            "target_short_answer_count": None,
+            "target_review_count": None,
+        }
+    return {
+        "yyyymm": row.yyyymm,
+        "target_study_minutes": row.target_study_minutes,
+        "target_short_answer_count": row.target_short_answer_count,
+        "target_review_count": row.target_review_count,
+    }
+
+
+@app.put("/v1/users/me/monthly-goal")
+async def put_my_monthly_goal(
+    body: MonthlyGoalUpdate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """指定月の目標を更新（upsert）。送った項目のみ更新し、null で目標をクリア可能。"""
+    row = (
+        db.query(UserMonthlyGoal)
+        .filter(
+            UserMonthlyGoal.user_id == current_user.id,
+            UserMonthlyGoal.yyyymm == body.yyyymm,
+        )
+        .first()
+    )
+    now_utc = datetime.now(timezone.utc)
+    if not row:
+        row = UserMonthlyGoal(
+            user_id=current_user.id,
+            yyyymm=body.yyyymm,
+            target_study_minutes=body.target_study_minutes,
+            target_short_answer_count=body.target_short_answer_count,
+            target_review_count=body.target_review_count,
+            target_study_updated_at=now_utc,
+            target_short_answer_updated_at=now_utc,
+            target_review_updated_at=now_utc,
+        )
+        db.add(row)
+    else:
+        # 3項目とも反映（None でクリア可能）
+        row.target_study_minutes = body.target_study_minutes
+        row.target_short_answer_count = body.target_short_answer_count
+        row.target_review_count = body.target_review_count
+        row.target_study_updated_at = now_utc
+        row.target_short_answer_updated_at = now_utc
+        row.target_review_updated_at = now_utc
+    db.commit()
+    db.refresh(row)
+    return {
+        "yyyymm": row.yyyymm,
+        "target_study_minutes": row.target_study_minutes,
+        "target_short_answer_count": row.target_short_answer_count,
+        "target_review_count": row.target_review_count,
+    }
 
 
 @app.get("/v1/users/me/review-tickets", response_model=ReviewTicketUsageResponse)

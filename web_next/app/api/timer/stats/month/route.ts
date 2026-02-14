@@ -4,11 +4,10 @@ const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:8000"
 
 export const dynamic = 'force-dynamic'
 
-// GET /api/timer/stats/month - 月統計を取得
+// GET /api/timer/stats/month - 月統計を取得（?yyyymm=202502 で指定月）
 export async function GET(request: NextRequest) {
   try {
     const authHeader = request.headers.get("authorization")
-    
     if (!authHeader) {
       return NextResponse.json(
         { error: "認証が必要です" },
@@ -16,7 +15,13 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const response = await fetch(`${BACKEND_URL}/api/timer/stats/month`, {
+    const { searchParams } = new URL(request.url)
+    const yyyymm = searchParams.get("yyyymm")
+    const url = yyyymm
+      ? `${BACKEND_URL}/api/timer/stats/month?yyyymm=${encodeURIComponent(yyyymm)}`
+      : `${BACKEND_URL}/api/timer/stats/month`
+
+    const response = await fetch(url, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
