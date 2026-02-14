@@ -46,6 +46,8 @@ export default function ReviewResultPage() {
   const [leftTab, setLeftTab] = useState<"answer" | "chat" | "question" | "purpose" | "grading_impression">("answer")
   const [rightTab, setRightTab] = useState<"review" | "chat" | "question" | "purpose" | "grading_impression">("review")
   const [isLargeScreen, setIsLargeScreen] = useState(true)
+  type UnifiedTab = "review" | "answer" | "chat" | "question" | "purpose" | "grading_impression"
+  const [unifiedTab, setUnifiedTab] = useState<UnifiedTab>("review")
 
   useEffect(() => {
     const checkScreenSize = () => {
@@ -406,21 +408,20 @@ export default function ReviewResultPage() {
       <div
         className={cn(
           "flex flex-1 min-h-0 overflow-hidden w-full",
-          isLargeScreen ? "flex-row" : "flex-col overflow-y-auto",
+          isLargeScreen ? "flex-row" : "flex-col",
         )}
       >
+        {isLargeScreen ? (
+          <>
         {/* Left Panel */}
         <div
-          className={cn(
-            "border-b border-border flex flex-col overflow-hidden",
-            isLargeScreen ? "lg:min-h-0 lg:border-b-0 lg:border-r shrink-0" : "min-h-[45vh] shrink-0",
-          )}
-          style={isLargeScreen ? {
+          className="border-b border-border flex flex-col overflow-hidden lg:min-h-0 lg:border-b-0 lg:border-r shrink-0"
+          style={{
             width: `${leftWidth}%`,
             flexBasis: `${leftWidth}%`,
             flexGrow: 0,
             flexShrink: 0,
-          } : undefined}
+          }}
         >
           <div className="px-5 py-3 border-b border-border shrink-0 flex items-center justify-between gap-4 bg-card/50">
             <div className="flex items-center gap-2">
@@ -566,17 +567,14 @@ export default function ReviewResultPage() {
 
         {/* Right Panel */}
         <div
-          className={cn(
-            "flex flex-col min-h-0 overflow-hidden bg-background",
-            isLargeScreen ? "min-w-0" : "min-h-[45vh] flex-1",
-          )}
-          style={isLargeScreen ? {
+          className="flex flex-col min-h-0 overflow-hidden bg-background min-w-0"
+          style={{
             width: 'auto',
             flexBasis: 0,
             flexGrow: 1,
             flexShrink: 1,
             minWidth: 0,
-          } : undefined}
+          }}
         >
           <div className="px-5 py-3 border-b border-border shrink-0 flex items-center justify-between gap-4 bg-card/50">
             <div className="flex items-center gap-2">
@@ -817,6 +815,276 @@ export default function ReviewResultPage() {
             </div>
           </div>
         </div>
+          </>
+        ) : (
+          /* 縦並び: 1ウィンドウで講評・答案・チャット・問題文・出題趣旨を統合タブ表示 */
+          <div className="flex flex-1 flex-col min-h-0 overflow-hidden w-full bg-background">
+            <div className="px-5 py-3 border-b border-border shrink-0 flex flex-wrap items-center justify-between gap-2 bg-card/50">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setUnifiedTab("review")}
+                  className={cn(
+                    "text-sm font-semibold transition-all px-3 py-1 rounded-full",
+                    unifiedTab === "review"
+                      ? "text-primary bg-primary/10"
+                      : "text-muted-foreground hover:text-foreground hover:bg-secondary",
+                  )}
+                >
+                  講評
+                </button>
+                <button
+                  onClick={() => setUnifiedTab("answer")}
+                  className={cn(
+                    "text-sm font-semibold transition-all px-3 py-1 rounded-full",
+                    unifiedTab === "answer"
+                      ? "text-primary bg-primary/10"
+                      : "text-muted-foreground hover:text-foreground hover:bg-secondary",
+                  )}
+                >
+                  答案
+                </button>
+                <button
+                  onClick={() => {
+                    setUnifiedTab("chat")
+                    loadChat()
+                  }}
+                  className={cn(
+                    "text-sm font-semibold transition-all px-3 py-1 rounded-full flex items-center",
+                    unifiedTab === "chat"
+                      ? "text-lime-700 bg-lime-500/15"
+                      : "text-muted-foreground hover:text-lime-700 hover:bg-lime-500/10",
+                  )}
+                >
+                  <MessageCircle className="h-4 w-4 mr-1.5" />
+                  チャット
+                  {chatBadgeCount > 0 && (
+                    <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-lime-500/15 text-lime-700 font-medium">
+                      {chatBadgeCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <SubTabButton
+                  active={unifiedTab === "question"}
+                  onClick={() => setUnifiedTab("question")}
+                  icon={FileText}
+                  label="問題文"
+                />
+                <SubTabButton
+                  active={unifiedTab === "purpose"}
+                  onClick={() => setUnifiedTab("purpose")}
+                  icon={BookOpen}
+                  label={purposeLabel}
+                />
+                {!!gradingImpressionText && (
+                  <SubTabButton
+                    active={unifiedTab === "grading_impression"}
+                    onClick={() => setUnifiedTab("grading_impression")}
+                    icon={BookOpen}
+                    label="採点実感"
+                  />
+                )}
+              </div>
+            </div>
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div
+                className={cn(
+                  "flex-1 p-5 custom-scrollbar",
+                  unifiedTab === "chat" ? "overflow-hidden" : "overflow-y-auto",
+                )}
+              >
+                {unifiedTab === "review" && (
+                  <div className="space-y-8 max-w-2xl">
+                    {score !== undefined && (
+                      <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
+                        <div className="flex items-start gap-6">
+                          <ScoreRing score={score} />
+                          <div className="flex-1 pt-2">
+                            <h2 className="text-lg font-bold text-foreground mb-3">総合評価</h2>
+                            <p className="text-sm text-muted-foreground leading-relaxed">
+                              {overallReview.comment || "コメントがありません"}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {strengths.length > 0 && (
+                      <div>
+                        <h3 className="text-xs font-bold text-success uppercase tracking-wider mb-4 flex items-center gap-2">
+                          <div className="p-1.5 rounded-lg bg-success/10">
+                            <TrendingUp className="h-3.5 w-3.5" />
+                          </div>
+                          評価した点
+                        </h3>
+                        <div className="space-y-3">
+                          {strengths.map((strength: any, index: number) => (
+                            <FeedbackCard
+                              key={index}
+                              type="strength"
+                              category={strength.category}
+                              description={strength.description}
+                              paragraphs={strength.paragraph_numbers}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {weaknesses.length > 0 && (
+                      <div>
+                        <h3 className="text-xs font-bold text-error uppercase tracking-wider mb-4 flex items-center gap-2">
+                          <div className="p-1.5 rounded-lg bg-error/10">
+                            <AlertCircle className="h-3.5 w-3.5" />
+                          </div>
+                          改善点
+                        </h3>
+                        <div className="space-y-3">
+                          {weaknesses.map((weakness: any, index: number) => (
+                            <FeedbackCard
+                              key={index}
+                              type="weakness"
+                              category={weakness.category}
+                              description={weakness.description}
+                              paragraphs={weakness.paragraph_numbers}
+                              suggestion={weakness.suggestion}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {importantPoints.length > 0 && (
+                      <div>
+                        <h3 className="text-xs font-bold text-primary uppercase tracking-wider mb-4 flex items-center gap-2">
+                          <div className="p-1.5 rounded-lg bg-primary/10">
+                            <Lightbulb className="h-3.5 w-3.5" />
+                          </div>
+                          重要な段落
+                        </h3>
+                        <div className="space-y-3">
+                          {importantPoints.map((point: any, index: number) => (
+                            <div
+                              key={index}
+                              className="bg-card rounded-2xl border border-border p-5 hover:shadow-md transition-shadow"
+                            >
+                              <div className="flex items-center gap-2 mb-4">
+                                <span className="text-xs font-bold px-3 py-1 rounded-full bg-gradient-to-r from-primary/20 to-accent/20 text-primary">
+                                  第{point.paragraph_number}段落
+                                </span>
+                              </div>
+                              <div className="space-y-4 text-sm">
+                                <div className="flex gap-3">
+                                  <div className="w-1 rounded-full bg-success shrink-0" />
+                                  <div>
+                                    <span className="text-xs font-semibold text-success uppercase tracking-wider">良い点</span>
+                                    <p className="mt-1 text-muted-foreground">{point.what_is_good}</p>
+                                  </div>
+                                </div>
+                                <div className="flex gap-3">
+                                  <div className="w-1 rounded-full bg-error shrink-0" />
+                                  <div>
+                                    <span className="text-xs font-semibold text-error uppercase tracking-wider">不足点</span>
+                                    <p className="mt-1 text-muted-foreground">{point.what_is_lacking}</p>
+                                  </div>
+                                </div>
+                                <div className="pt-3 border-t border-border">
+                                  <p className="text-xs text-foreground/70 italic leading-relaxed">{point.why_important}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {futureConsiderations.length > 0 && (
+                      <div className="bg-gradient-to-br from-secondary/60 to-accent/20 rounded-2xl p-6 border border-border/50">
+                        <h3 className="text-xs font-bold text-foreground uppercase tracking-wider mb-4">今後意識すべきこと</h3>
+                        <ul className="space-y-3">
+                          {futureConsiderations.map((item: any, index: number) => {
+                            const content = typeof item === 'string' ? item : item.content
+                            const blockNumber = typeof item === 'object' && 'block_number' in item ? item.block_number : index + 1
+                            return (
+                              <li key={index} className="flex items-start gap-3 text-sm text-foreground/80">
+                                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-bold shrink-0">
+                                  {blockNumber}
+                                </span>
+                                <span className="leading-relaxed">{content}</span>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {unifiedTab === "answer" && (
+                  <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-gradient-to-r from-secondary/50 to-transparent">
+                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">提出答案</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleCopy(review.answer_text)}
+                        className="h-7 gap-1.5 text-muted-foreground hover:text-foreground rounded-full"
+                      >
+                        {copied ? (
+                          <>
+                            <Check className="h-3.5 w-3.5 text-success" />
+                            <span className="text-xs">コピー済</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-3.5 w-3.5" />
+                            <span className="text-xs">コピー</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    <div className="p-5">
+                      <pre className="text-sm font-mono whitespace-pre-wrap text-foreground/90 leading-7">
+                        {review.answer_text}
+                      </pre>
+                    </div>
+                  </div>
+                )}
+                {unifiedTab === "chat" && (
+                  <div className="flex flex-col h-full">
+                    <ChatPanel
+                      containerRef={chatContainerRightRef}
+                      chatMessages={chatMessages}
+                      isLoading={isLoading}
+                      chatBadgeCount={chatBadgeCount}
+                      chatTheme={chatTheme}
+                      onClearChat={handleClearChat}
+                    />
+                  </div>
+                )}
+                {unifiedTab === "question" && (
+                  <div className="bg-secondary/40 rounded-2xl border border-border/50 p-5">
+                    <pre className="text-sm whitespace-pre-wrap text-muted-foreground leading-7">{questionText}</pre>
+                  </div>
+                )}
+                {unifiedTab === "purpose" && (
+                  <div className="bg-secondary/40 rounded-2xl border border-border/50 p-5">
+                    <pre className="text-sm whitespace-pre-wrap text-muted-foreground leading-7">{purposeText}</pre>
+                  </div>
+                )}
+                {unifiedTab === "grading_impression" && (
+                  <div className="bg-secondary/40 rounded-2xl border border-border/50 p-5">
+                    <pre className="text-sm whitespace-pre-wrap text-muted-foreground leading-7">{gradingImpressionText}</pre>
+                  </div>
+                )}
+              </div>
+              <div
+                className={cn(
+                  "border-t border-border/70 bg-card shrink-0",
+                  unifiedTab === "chat" ? "visible" : "invisible pointer-events-none"
+                )}
+              >
+                {rightChatInput}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

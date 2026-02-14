@@ -57,6 +57,19 @@ PLAN_DEFINITIONS = [
         },
         "display_order": 30,
     },
+    {
+        "plan_code": "planfordevelopper",
+        "name": "開発者向け無制限",
+        "description": "開発・検証用の無制限プラン（制限なし）",
+        "limits": {
+            "max_reviews_total": None,
+            "max_review_chat_messages_total": None,
+            "max_free_chat_messages_total": None,
+            "recent_review_daily_limit": None,
+            "max_non_review_cost_yen_total": None,
+        },
+        "display_order": 100,
+    },
 ]
 
 DEFAULT_FEATURES = ["review_generation", "review_chat", "free_chat", "recent_review"]

@@ -676,6 +676,9 @@ class AdminUserResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_login_at: Optional[datetime]
+    # プラン情報
+    plan_code: Optional[str] = None
+    plan_name: Optional[str] = None
     # 統計情報
     review_count: int = 0
     thread_count: int = 0
@@ -736,12 +739,30 @@ class AdminUserUpdateRequest(BaseModel):
     """管理者用ユーザー更新リクエスト"""
     is_active: Optional[bool] = None
     is_admin: Optional[bool] = None
+    plan_code: Optional[str] = None  # プラン変更（plan_codeで指定）
 
 
 class AdminDatabaseInfoResponse(BaseModel):
     """管理者用データベース情報レスポンス"""
     current_database_url: str
     available_databases: List[Dict[str, str]]
+
+
+class AdminSubscriptionPlanItem(BaseModel):
+    """管理者用: サブスクリプションプラン1件"""
+    id: int
+    plan_code: str
+    name: str
+    description: Optional[str] = None
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+
+class AdminSubscriptionPlanListResponse(BaseModel):
+    """管理者用: サブスクリプションプラン一覧"""
+    plans: List[AdminSubscriptionPlanItem]
 
 
 class PlanLimitUsageResponse(BaseModel):

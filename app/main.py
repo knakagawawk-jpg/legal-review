@@ -59,6 +59,7 @@ from .schemas import (
     LlmRequestResponse, LlmRequestListResponse,
     AdminUserResponse, AdminUserListResponse, AdminStatsResponse, AdminFeatureStatsResponse,
     AdminUserUpdateRequest, AdminDatabaseInfoResponse,
+    AdminSubscriptionPlanItem, AdminSubscriptionPlanListResponse,
     PlanLimitUsageResponse, ReviewTicketCheckoutRequest, ReviewTicketCheckoutResponse, ReviewTicketUsageResponse,
     SubscriptionCheckoutRequest, SubscriptionCheckoutResponse
 )
@@ -5218,6 +5219,51 @@ async def get_admin_databases(
         )
 
 
+@app.get("/v1/admin/subscription-plans", response_model=AdminSubscriptionPlanListResponse)
+async def get_admin_subscription_plans(
+    database_url: Optional[str] = Query(None, description="データベースURL（指定しない場合はデフォルトDB）"),
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """管理者用: サブスクリプションプラン一覧を取得"""
+    try:
+        if database_url and not database_url.startswith("sqlite:///"):
+            raise HTTPException(status_code=400, detail="現在はSQLiteデータベースのみサポートしています")
+        use_db = db
+        if database_url:
+            db_gen = get_db_session_for_url(database_url)
+            use_db = next(db_gen)
+            try:
+                plans = use_db.query(SubscriptionPlan).filter(
+                    SubscriptionPlan.is_active == True
+                ).order_by(SubscriptionPlan.display_order).all()
+                return AdminSubscriptionPlanListResponse(
+                    plans=[AdminSubscriptionPlanItem(
+                        id=p.id, plan_code=p.plan_code, name=p.name,
+                        description=p.description, is_active=p.is_active
+                    ) for p in plans]
+                )
+            finally:
+                try:
+                    next(db_gen, None)
+                except StopIteration:
+                    pass
+        plans = use_db.query(SubscriptionPlan).filter(
+            SubscriptionPlan.is_active == True
+        ).order_by(SubscriptionPlan.display_order).all()
+        return AdminSubscriptionPlanListResponse(
+            plans=[AdminSubscriptionPlanItem(
+                id=p.id, plan_code=p.plan_code, name=p.name,
+                description=p.description, is_active=p.is_active
+            ) for p in plans]
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin subscription plans error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="プラン一覧の取得に失敗しました")
+
+
 @app.get("/v1/admin/users", response_model=AdminUserListResponse)
 async def get_admin_users(
     skip: int = Query(0, ge=0),
@@ -5312,6 +5358,11 @@ async def _get_admin_users_internal(
         
         total_tokens = (token_stats.input_tokens or 0) + (token_stats.output_tokens or 0) if token_stats else 0
         total_cost_yen = float(token_stats.cost_yen or 0) if token_stats else 0.0
+
+        # プラン情報
+        plan = plan_limits_module.get_user_plan(db, user)
+        plan_code = plan.plan_code if plan else None
+        plan_name = plan.name if plan else None
         
         user_responses.append(AdminUserResponse(
             id=user.id,
@@ -5322,6 +5373,8 @@ async def _get_admin_users_internal(
             created_at=user.created_at,
             updated_at=user.updated_at,
             last_login_at=user.last_login_at,
+            plan_code=plan_code,
+            plan_name=plan_name,
             review_count=review_count,
             thread_count=thread_count,
             short_answer_session_count=short_answer_session_count,
@@ -5502,6 +5555,42 @@ async def update_admin_user(
     
     if user_update.is_admin is not None:
         target_user.is_admin = user_update.is_admin
+
+    # プラン変更
+    if user_update.plan_code is not None:
+        if user_update.plan_code == "":
+            # 空文字: 既存のアクティブなサブスクを無効化してデフォルトプランに戻す
+            db.query(UserSubscription).filter(
+                UserSubscription.user_id == target_user.id,
+                UserSubscription.is_active == True,
+            ).update({"is_active": False})
+        else:
+            plan = db.query(SubscriptionPlan).filter(
+                SubscriptionPlan.plan_code == user_update.plan_code,
+                SubscriptionPlan.is_active == True,
+            ).first()
+            if not plan:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"プラン '{user_update.plan_code}' が見つかりません"
+                )
+            # 既存のアクティブなサブスクを無効化
+            db.query(UserSubscription).filter(
+                UserSubscription.user_id == target_user.id,
+                UserSubscription.is_active == True,
+            ).update({"is_active": False})
+            # 新規サブスクリプションを作成
+            now = datetime.now(timezone.utc)
+            sub = UserSubscription(
+                user_id=target_user.id,
+                plan_id=plan.id,
+                is_active=True,
+                started_at=now,
+                expires_at=None,
+                payment_method="admin_grant",
+                payment_id=f"admin_{target_user.id}_{int(now.timestamp())}",
+            )
+            db.add(sub)
     
     db.commit()
     db.refresh(target_user)
@@ -5521,6 +5610,10 @@ async def update_admin_user(
     
     total_tokens = (token_stats.input_tokens or 0) + (token_stats.output_tokens or 0)
     total_cost_yen = float(token_stats.cost_yen or 0)
+
+    plan = plan_limits_module.get_user_plan(db, target_user)
+    plan_code = plan.plan_code if plan else None
+    plan_name = plan.name if plan else None
     
     return AdminUserResponse(
         id=target_user.id,
@@ -5531,6 +5624,8 @@ async def update_admin_user(
         created_at=target_user.created_at,
         updated_at=target_user.updated_at,
         last_login_at=target_user.last_login_at,
+        plan_code=plan_code,
+        plan_name=plan_name,
         review_count=review_count,
         thread_count=thread_count,
         short_answer_session_count=short_answer_session_count,

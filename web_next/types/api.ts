@@ -300,11 +300,21 @@ export interface AdminUser {
   created_at: string
   updated_at: string
   last_login_at?: string | null
+  plan_code?: string | null
+  plan_name?: string | null
   review_count: number
   thread_count: number
   short_answer_session_count: number
   total_tokens: number
   total_cost_yen: number
+}
+
+export interface AdminSubscriptionPlan {
+  id: number
+  plan_code: string
+  name: string
+  description?: string | null
+  is_active: boolean
 }
 
 export interface AdminUserListResponse {

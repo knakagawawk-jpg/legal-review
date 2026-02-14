@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
 import { AlertCircle, Loader2, Search, Eye, Trash2, Shield, ShieldOff, UserCheck, UserX } from "lucide-react"
-import type { ReviewResponse, LlmRequestListResponse, AdminReviewHistoryItem, AdminReviewHistoryListResponse } from "@/types/api"
+import type { ReviewResponse, LlmRequestListResponse, AdminReviewHistoryItem, AdminReviewHistoryListResponse, AdminSubscriptionPlan } from "@/types/api"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { getSubjectName } from "@/lib/subjects"
@@ -1445,6 +1445,7 @@ function AdminDashboard({ databaseUrl }: { databaseUrl?: string }) {
 
 function AdminUsers({ databaseUrl }: { databaseUrl?: string }) {
   const [users, setUsers] = useState<any[]>([])
+  const [plans, setPlans] = useState<AdminSubscriptionPlan[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
@@ -1453,8 +1454,22 @@ function AdminUsers({ databaseUrl }: { databaseUrl?: string }) {
   const [total, setTotal] = useState(0)
   const limit = 50
 
+  const loadPlans = async () => {
+    try {
+      const params = databaseUrl ? `?database_url=${encodeURIComponent(databaseUrl)}` : ""
+      const res = await fetch(`/api/admin/subscription-plans${params}`)
+      if (res.ok) {
+        const data = await res.json()
+        setPlans(data.plans || [])
+      }
+    } catch {
+      // プラン取得失敗時は無視
+    }
+  }
+
   useEffect(() => {
     loadUsers()
+    loadPlans()
   }, [skip, search, isActiveFilter, databaseUrl])
 
   const loadUsers = async () => {
@@ -1488,7 +1503,7 @@ function AdminUsers({ databaseUrl }: { databaseUrl?: string }) {
     loadUsers()
   }
 
-  const handleUpdateUser = async (userId: number, updates: { is_active?: boolean; is_admin?: boolean }) => {
+  const handleUpdateUser = async (userId: number, updates: { is_active?: boolean; is_admin?: boolean; plan_code?: string }) => {
     try {
       const res = await fetch(`/api/admin/users/${userId}`, {
         method: "PUT",
@@ -1560,6 +1575,7 @@ function AdminUsers({ databaseUrl }: { databaseUrl?: string }) {
                   <TableHead>メールアドレス</TableHead>
                   <TableHead>名前</TableHead>
                   <TableHead>状態</TableHead>
+                  <TableHead>プラン</TableHead>
                   <TableHead>作成日</TableHead>
                   <TableHead>最終ログイン</TableHead>
                   <TableHead>講評数</TableHead>
@@ -1571,14 +1587,14 @@ function AdminUsers({ databaseUrl }: { databaseUrl?: string }) {
               <TableBody>
                 {loading && (
                   <TableRow>
-                    <TableCell colSpan={10}>
+                    <TableCell colSpan={11}>
                       <Skeleton className="h-8 w-full" />
                     </TableCell>
                   </TableRow>
                 )}
                 {!loading && users.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center text-muted-foreground">
+                    <TableCell colSpan={11} className="text-center text-muted-foreground">
                       ユーザーが見つかりませんでした
                     </TableCell>
                   </TableRow>
@@ -1597,6 +1613,26 @@ function AdminUsers({ databaseUrl }: { databaseUrl?: string }) {
                         )}
                         {user.is_admin && <Badge variant="outline">管理者</Badge>}
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      <Select
+                        value={user.plan_code || ""}
+                        onValueChange={(v) => {
+                          handleUpdateUser(user.id, { plan_code: v })
+                        }}
+                      >
+                        <SelectTrigger className="h-8 w-[160px]">
+                          <SelectValue placeholder="未設定" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">未設定（デフォルト）</SelectItem>
+                          {plans.map((p) => (
+                            <SelectItem key={p.id} value={p.plan_code}>
+                              {p.name} ({p.plan_code})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
                       {user.created_at ? new Date(user.created_at).toLocaleDateString("ja-JP") : "-"}
