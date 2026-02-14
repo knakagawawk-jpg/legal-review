@@ -357,7 +357,10 @@ export function StudyTimeCard() {
                           className="flex items-center justify-between text-xs py-0.5"
                         >
                           <span className="text-amber-700 w-8">
-                            {day.date.slice(5).replace("-", "/")}
+                            {(() => {
+                              const [, m, d] = day.date.split("-").map(Number)
+                              return `${m}/${d}`
+                            })()}
                           </span>
                           <span className="text-amber-500 text-[10px]">{day.dayOfWeek}</span>
                           <div className="flex-1 mx-2">
@@ -429,39 +432,44 @@ export function StudyTimeCard() {
               </div>
             </div>
 
-            {/* 月別推移グラフ（CSSベース） */}
+            {/* 月別推移グラフ（60%）＋ 右側独立領域（40%） */}
             {yearlyData.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-amber-100">
-                <p className="text-[10px] font-medium text-amber-700 uppercase tracking-wide mb-2">
-                  月別推移
-                </p>
-                <div className="h-32">
-                  <div className="flex items-end gap-1 h-full">
-                    {yearlyData.map((month) => {
-                      const maxSeconds = Math.max(...yearlyData.map((m) => m.totalSeconds), 1)
-                      const heightPercent = maxSeconds > 0 ? (month.totalSeconds / maxSeconds) * 100 : 0
-                      const hours = secondsToHours(month.totalSeconds)
-                      return (
-                        <div key={month.month} className="flex-1 flex flex-col items-center justify-end h-full">
-                          <span className="text-[8px] text-amber-800 leading-none mb-0.5 tabular-nums">
-                            {hours}
-                          </span>
-                          <div
-                            className="w-full bg-amber-500 rounded-t min-h-[2px]"
-                            style={{ height: `${Math.max(heightPercent, 5)}%` }}
-                            title={`${month.label}: ${formatTime(month.totalSeconds)}`}
-                          />
-                        </div>
-                      )
-                    })}
+              <div className="mt-3 pt-3 border-t border-amber-100 flex gap-3">
+                <div className="w-[60%] shrink-0">
+                  <p className="text-[10px] font-medium text-amber-700 uppercase tracking-wide mb-2">
+                    月別推移
+                  </p>
+                  <div className="h-32">
+                    <div className="flex items-end gap-1 h-full">
+                      {yearlyData.map((month) => {
+                        const maxSeconds = Math.max(...yearlyData.map((m) => m.totalSeconds), 1)
+                        const heightPercent = maxSeconds > 0 ? (month.totalSeconds / maxSeconds) * 100 : 0
+                        const hours = secondsToHours(month.totalSeconds)
+                        return (
+                          <div key={month.month} className="flex-1 flex flex-col items-center justify-end h-full">
+                            <span className="text-[8px] text-amber-800 leading-none mb-0.5 tabular-nums">
+                              {hours}
+                            </span>
+                            <div
+                              className="w-full bg-amber-500 rounded-t min-h-[2px]"
+                              style={{ height: `${Math.max(heightPercent, 5)}%` }}
+                              title={`${month.label}: ${formatTime(month.totalSeconds)}`}
+                            />
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <div className="flex gap-1 mt-1">
+                      {yearlyData.map((month) => (
+                        <span key={month.month} className="flex-1 text-[8px] text-amber-600 leading-none text-center">
+                          {month.label}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex gap-1 mt-1">
-                    {yearlyData.map((month) => (
-                      <span key={month.month} className="flex-1 text-[8px] text-amber-600 leading-none text-center">
-                        {month.label}
-                      </span>
-                    ))}
-                  </div>
+                </div>
+                <div className="flex-1 min-w-0 min-h-32" aria-label="右側独立領域">
+                  {/* 別用途のコンテンツ用 */}
                 </div>
               </div>
             )}

@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation"
 import { ChatHeader } from "@/components/chat/chat-header"
 import { ChatMessages } from "@/components/chat/chat-messages"
 import { ChatInput } from "@/components/chat/chat-input"
-import { Loader2 } from "lucide-react"
+import { JuristutorLoading, MainAreaWrapper } from "@/components/loading"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
@@ -153,12 +153,9 @@ export default function FreeChatThreadPage() {
 
   if (loadingMessages) {
     return (
-      <div className="flex h-dvh items-center justify-center bg-background">
-        <div className="text-center">
-          <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
-          <p className="text-lg text-muted-foreground">読み込み中...</p>
-        </div>
-      </div>
+      <MainAreaWrapper>
+        <JuristutorLoading message="会話を読み込んでいます" fullScreen />
+      </MainAreaWrapper>
     )
   }
 

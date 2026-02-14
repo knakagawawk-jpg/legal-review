@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { JuristutorLoading } from "@/components/loading"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -306,24 +307,7 @@ function SettingsPage() {
           {/* プロフィールタブ */}
           <TabsContent value="profile" className="space-y-6 mt-6">
             {loading ? (
-              <div className="space-y-4">
-                <Card>
-                  <CardHeader>
-                    <Skeleton className="h-6 w-32" />
-                    <Skeleton className="h-4 w-64 mt-2" />
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <Skeleton className="h-4 w-20" />
-                      <Skeleton className="h-10 w-full" />
-                    </div>
-                    <div className="space-y-2">
-                      <Skeleton className="h-4 w-20" />
-                      <Skeleton className="h-10 w-full" />
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+              <JuristutorLoading message="設定を取得しています" fullScreen={false} className="py-12" />
             ) : (
               <form onSubmit={handleSubmit} className="space-y-6">
                 <Card>

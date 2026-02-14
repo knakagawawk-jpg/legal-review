@@ -1,10 +1,10 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback, useMemo, memo, type RefObject } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Skeleton } from "@/components/ui/skeleton"
+import { JuristutorLoading, MainAreaWrapper } from "@/components/loading"
 import {
   AlertCircle,
   ArrowLeft,
@@ -15,7 +15,10 @@ import {
   TrendingUp,
   Lightbulb,
   MessageCircle,
-  Trash2,
+  Plus,
+  ChevronDown,
+  ChevronRight,
+  History,
 } from "lucide-react"
 import { PanelResizer } from "@/components/panel-resizer"
 import { SubTabButton } from "@/components/sub-tab-button"
@@ -33,11 +36,22 @@ import { useSidebar } from "@/components/sidebar"
 import { apiClient } from "@/lib/api-client"
 import { getSubjectName } from "@/lib/subjects"
 
-export default function ReviewResultPage() {
-  const params = useParams()
+type ReviewThreadItem = { id: number; title: string | null; last_message_at: string | null; created_at: string }
+
+export type ReviewResultViewProps = {
+  reviewId: string
+  threadIdFromUrl: string | null
+  /** 管理者用: 講評取得APIに渡す database_url（指定時のみ使用） */
+  databaseUrl?: string | null
+  backHref: string
+  backLabel: string
+  /** 講評ページのベースパス（例: /your-page/review または /dev/review）。省略時は /your-page/review */
+  reviewPathPrefix?: string
+}
+
+export function ReviewResultView({ reviewId, threadIdFromUrl, databaseUrl, backHref, backLabel, reviewPathPrefix = "/your-page/review" }: ReviewResultViewProps) {
   const router = useRouter()
   const { mainContentStyle } = useSidebar()
-  const reviewId = params.review_id as string
 
   const [review, setReview] = useState<ReviewResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -67,8 +81,11 @@ export default function ReviewResultPage() {
   ])
   const [threadId, setThreadId] = useState<number | null>(null)
   const [chatLoaded, setChatLoaded] = useState(false)
+  const [reviewThreads, setReviewThreads] = useState<ReviewThreadItem[]>([])
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const isLoadingRef = useRef(false)
+  const [chatInputValue, setChatInputValue] = useState("")
   const chatContainerLeftRef = useRef<HTMLDivElement>(null)
   const chatContainerRightRef = useRef<HTMLDivElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -83,7 +100,10 @@ export default function ReviewResultPage() {
       try {
         setLoading(true)
         setError(null)
-        const data = await apiClient.get<ReviewResponse>(`/api/reviews/${reviewId}`)
+        const url = databaseUrl
+          ? `/api/reviews/${reviewId}?database_url=${encodeURIComponent(databaseUrl)}`
+          : `/api/reviews/${reviewId}`
+        const data = await apiClient.get<ReviewResponse>(url)
         setReview(data)
       } catch (err: any) {
         console.error("Review fetch error:", err)
@@ -101,7 +121,7 @@ export default function ReviewResultPage() {
       setError("review_idが指定されていません")
       setLoading(false)
     }
-  }, [reviewId])
+  }, [reviewId, databaseUrl])
 
   useEffect(() => {
     const refs = [chatContainerLeftRef, chatContainerRightRef]
@@ -112,30 +132,84 @@ export default function ReviewResultPage() {
     })
   }, [chatMessages, isLoading])
 
-  const loadChat = useCallback(async (): Promise<number | null> => {
+  const loadThreadList = useCallback(async () => {
+    if (!reviewId) return
+    try {
+      const res = await apiClient.get<{ threads: ReviewThreadItem[]; total: number }>(`/api/reviews/${reviewId}/threads`)
+      setReviewThreads(res?.threads ?? [])
+    } catch {
+      setReviewThreads([])
+    }
+  }, [reviewId])
+
+  const loadChat = useCallback(async (explicitThreadId?: number): Promise<number | null> => {
     if (!reviewId) return null
+    const tid = explicitThreadId ?? (threadIdFromUrl ? Number(threadIdFromUrl) : null)
+    if (Number.isFinite(tid) && tid > 0) {
+      if (chatLoaded && threadId === tid) return tid
+      try {
+        const msgList = await apiClient.get<any>(`/api/threads/${tid}/messages?limit=200&offset=0`)
+        const msgs = (msgList?.messages || [])
+          .filter((m: any) => m && (m.role === "user" || m.role === "assistant"))
+          .map((m: any) => ({ role: m.role as "user" | "assistant", content: String(m.content || "") }))
+        setThreadId(tid)
+        if (msgs.length > 0) setChatMessages(msgs)
+        else setChatMessages([{ role: "assistant", content: "講評についてご質問があればお気軽にどうぞ。" }])
+        setChatLoaded(true)
+        return tid
+      } catch {
+        // fallback to get-or-create
+      }
+    }
     if (chatLoaded && threadId) return threadId
     try {
       const thread = await apiClient.post<any>(`/api/reviews/${reviewId}/thread`, {})
-      const tid = Number(thread?.id)
-      if (!Number.isFinite(tid)) return null
-      setThreadId(tid)
-
-      const msgList = await apiClient.get<any>(`/api/threads/${tid}/messages?limit=200&offset=0`)
+      const newTid = Number(thread?.id)
+      if (!Number.isFinite(newTid)) return null
+      setThreadId(newTid)
+      const msgList = await apiClient.get<any>(`/api/threads/${newTid}/messages?limit=200&offset=0`)
       const msgs = (msgList?.messages || [])
         .filter((m: any) => m && (m.role === "user" || m.role === "assistant"))
         .map((m: any) => ({ role: m.role as "user" | "assistant", content: String(m.content || "") }))
-
-      if (msgs.length > 0) {
-        setChatMessages(msgs)
-      }
+      if (msgs.length > 0) setChatMessages(msgs)
       setChatLoaded(true)
-      return tid
-    } catch (e) {
-      // noop
+      return newTid
+    } catch {
       return null
     }
-  }, [reviewId, chatLoaded, threadId])
+  }, [reviewId, chatLoaded, threadId, threadIdFromUrl])
+
+  const switchThread = useCallback(async (tid: number) => {
+    setChatLoaded(false)
+    const params = new URLSearchParams()
+    if (tid) params.set("thread_id", String(tid))
+    if (databaseUrl) params.set("database_url", databaseUrl)
+    const q = params.toString()
+    router.replace(`${reviewPathPrefix}/${reviewId}${q ? `?${q}` : ""}`)
+    await loadChat(tid)
+    loadThreadList()
+  }, [reviewId, reviewPathPrefix, databaseUrl, loadChat, loadThreadList, router])
+
+  const handleNewTab = useCallback(async () => {
+    if (!reviewId) return
+    const hasUserMessage = chatMessages.some((m) => m.role === "user")
+    if (!hasUserMessage) return
+    try {
+      const thread = await apiClient.post<any>(`/api/reviews/${reviewId}/threads`, {})
+      const newTid = Number(thread?.id)
+      if (Number.isFinite(newTid)) {
+        const params = new URLSearchParams({ thread_id: String(newTid) })
+        if (databaseUrl) params.set("database_url", databaseUrl)
+        router.push(`${reviewPathPrefix}/${reviewId}?${params.toString()}`)
+        setThreadId(newTid)
+        setChatMessages([{ role: "assistant", content: "講評についてご質問があればお気軽にどうぞ。" }])
+        setChatLoaded(true)
+        loadThreadList()
+      }
+    } catch (e) {
+      console.error("New thread error:", e)
+    }
+  }, [reviewId, chatMessages, reviewPathPrefix, databaseUrl, router, loadThreadList])
 
   const handleSendMessage = useCallback(async (content: string) => {
     if (!content.trim() || isLoadingRef.current || !review) return
@@ -172,6 +246,7 @@ export default function ReviewResultPage() {
 
       const assistantText = String(assistant?.content || "")
       setChatMessages((prev) => [...prev, { role: "assistant", content: assistantText || "（空の応答）" }])
+      loadThreadList()
     } catch (error: any) {
       // AbortErrorの場合はエラーを表示しない
       if (error.name === 'AbortError' || abortController.signal.aborted) {
@@ -191,7 +266,7 @@ export default function ReviewResultPage() {
         abortControllerRef.current = null
       }
     }
-  }, [review, threadId, loadChat])
+  }, [review, threadId, loadChat, loadThreadList])
 
   const handleStop = useCallback(() => {
     if (abortControllerRef.current) {
@@ -201,52 +276,33 @@ export default function ReviewResultPage() {
     }
   }, [])
 
-  const handleClearChat = useCallback(() => {
-    const clearLocal = () =>
-      setChatMessages([
-        {
-          role: "assistant",
-          content: "講評についてご質問があればお気軽にどうぞ。",
-        },
-      ])
+  useEffect(() => {
+    if (!reviewId || !threadIdFromUrl) return
+    const tid = Number(threadIdFromUrl)
+    if (!Number.isFinite(tid) || tid <= 0) return
+    if (threadId === tid && chatLoaded) return
+    loadChat(tid)
+  }, [reviewId, threadIdFromUrl, threadId, chatLoaded, loadChat])
 
-    if (!threadId) {
-      clearLocal()
-      return
-    }
-
-    apiClient
-      .delete(`/api/threads/${threadId}/messages`)
-      .catch(() => { })
-      .finally(() => {
-        clearLocal()
-      })
-  }, [threadId])
+  useEffect(() => {
+    if (reviewId && (leftTab === "chat" || unifiedTab === "chat")) loadThreadList()
+  }, [reviewId, leftTab, unifiedTab, loadThreadList])
 
   // ChatInputをメモ化して再マウントを防ぐ（早期リターンの前に配置）
   const leftChatInput = useMemo(
-    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} onStop={handleStop} fullWidth />,
-    [handleSendMessage, isLoading, handleStop]
+    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} onStop={handleStop} fullWidth value={chatInputValue} onChange={setChatInputValue} />,
+    [handleSendMessage, isLoading, handleStop, chatInputValue]
   )
   const rightChatInput = useMemo(
-    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} onStop={handleStop} fullWidth />,
-    [handleSendMessage, isLoading, handleStop]
+    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} onStop={handleStop} fullWidth value={chatInputValue} onChange={setChatInputValue} />,
+    [handleSendMessage, isLoading, handleStop, chatInputValue]
   )
 
   if (loading) {
     return (
-      <div
-        className="h-dvh bg-background flex flex-col overflow-hidden transition-all duration-300"
-        style={mainContentStyle}
-      >
-        <div className="container mx-auto px-5 py-12">
-          <div className="space-y-6">
-            <Skeleton className="h-12 w-64" />
-            <Skeleton className="h-64 w-full" />
-            <Skeleton className="h-64 w-full" />
-          </div>
-        </div>
-      </div>
+      <MainAreaWrapper>
+        <JuristutorLoading message="講評を取得しています" fullScreen />
+      </MainAreaWrapper>
     )
   }
 
@@ -262,9 +318,9 @@ export default function ReviewResultPage() {
             <AlertTitle>エラー</AlertTitle>
             <AlertDescription>{error || "講評が見つかりませんでした"}</AlertDescription>
           </Alert>
-          <Button onClick={() => router.push("/your-page/past-questions")} className="mt-4">
+          <Button onClick={() => router.push(backHref)} className="mt-4">
             <ArrowLeft className="w-4 h-4 mr-2" />
-            過去問管理ページに戻る
+            {backLabel}
           </Button>
         </div>
       </div>
@@ -302,14 +358,26 @@ export default function ReviewResultPage() {
     isLoading: loading,
     chatBadgeCount: badgeCount,
     chatTheme: theme,
-    onClearChat
+    onNewTab,
+    canCreateNewTab,
+    reviewThreads: threads,
+    historyOpen: historyOpenProp,
+    onHistoryOpenChange,
+    currentThreadId,
+    onSelectThread,
   }: { 
     containerRef: RefObject<HTMLDivElement>
     chatMessages: Array<{ role: "user" | "assistant"; content: string }>
     isLoading: boolean
     chatBadgeCount: number
     chatTheme: ReturnType<typeof getChatMessageTheme>
-    onClearChat: () => void
+    onNewTab: () => void
+    canCreateNewTab: boolean
+    reviewThreads: ReviewThreadItem[]
+    historyOpen: boolean
+    onHistoryOpenChange: (open: boolean) => void
+    currentThreadId: number | null
+    onSelectThread: (tid: number) => void
   }) => {
     return (
       <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden h-full flex flex-col">
@@ -329,15 +397,53 @@ export default function ReviewResultPage() {
             </>
           )}
           trailing={(
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onClearChat}
-              className="h-7 text-muted-foreground hover:text-foreground rounded-full"
-            >
-              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-              クリア
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onNewTab}
+                disabled={!canCreateNewTab}
+                title={canCreateNewTab ? "新しいチャットを開始" : "1通以上メッセージを送信すると利用できます"}
+                className="h-7 text-muted-foreground hover:text-foreground rounded-full disabled:opacity-50 disabled:pointer-events-none"
+              >
+                <Plus className="h-3.5 w-3.5 mr-1.5" />
+                新規タブ
+              </Button>
+              {threads.length > 0 && (
+                <div className="relative border-l border-border pl-1.5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onHistoryOpenChange(!historyOpenProp)}
+                    className="h-7 text-muted-foreground hover:text-foreground rounded-full gap-1"
+                  >
+                    {historyOpenProp ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                    <History className="h-3.5 w-3.5" />
+                    <span className="text-xs">チャット履歴</span>
+                  </Button>
+                  {historyOpenProp && (
+                    <div className="absolute right-0 top-full mt-1 z-10 min-w-[200px] max-h-[240px] overflow-y-auto rounded-lg border border-border bg-card shadow-md py-1">
+                      {threads.map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => onSelectThread(t.id)}
+                          className={cn(
+                            "w-full text-left px-3 py-2 text-sm truncate",
+                            currentThreadId === t.id
+                              ? "bg-lime-500/15 text-lime-800 font-medium"
+                              : "text-foreground hover:bg-muted"
+                          )}
+                          title={t.title || `スレッド ${t.id}`}
+                        >
+                          {t.title || `スレッド ${t.id}`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         />
 
@@ -370,6 +476,10 @@ export default function ReviewResultPage() {
     }
     if (prevProps.isLoading !== nextProps.isLoading) return false
     if (prevProps.chatBadgeCount !== nextProps.chatBadgeCount) return false
+    if (prevProps.currentThreadId !== nextProps.currentThreadId) return false
+    if (prevProps.historyOpen !== nextProps.historyOpen) return false
+    if (prevProps.canCreateNewTab !== nextProps.canCreateNewTab) return false
+    if (prevProps.reviewThreads.length !== nextProps.reviewThreads.length) return false
     return true
   })
   
@@ -377,15 +487,15 @@ export default function ReviewResultPage() {
 
   return (
     <div
-      className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
+      className="h-screen min-w-0 bg-background flex flex-col overflow-hidden transition-all duration-300"
       style={mainContentStyle}
     >
       <header className="border-b border-border shrink-0 bg-gradient-to-r from-primary/5 via-transparent to-accent/5">
         <div className="px-5 py-1.5 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="sm" className="gap-2 h-8 text-muted-foreground hover:text-foreground" onClick={() => router.push("/your-page/past-questions")}>
+            <Button variant="ghost" size="sm" className="gap-2 h-8 text-muted-foreground hover:text-foreground" onClick={() => router.push(backHref)}>
               <ArrowLeft className="h-4 w-4" />
-              <span className="text-sm">戻る</span>
+              <span className="text-sm">{backLabel}</span>
             </Button>
             <div className="h-4 w-px bg-border" />
             <div className="flex items-center gap-2">
@@ -407,7 +517,7 @@ export default function ReviewResultPage() {
 
       <div
         className={cn(
-          "flex flex-1 min-h-0 overflow-hidden w-full",
+          "flex flex-1 min-h-0 min-w-0 overflow-hidden w-full",
           isLargeScreen ? "flex-row" : "flex-col",
         )}
       >
@@ -545,20 +655,23 @@ export default function ReviewResultPage() {
                     isLoading={isLoading}
                     chatBadgeCount={chatBadgeCount}
                     chatTheme={chatTheme}
-                    onClearChat={handleClearChat}
+                    onNewTab={handleNewTab}
+                    canCreateNewTab={chatMessages.some((m) => m.role === "user")}
+                    reviewThreads={reviewThreads}
+                    historyOpen={historyOpen}
+                    onHistoryOpenChange={setHistoryOpen}
+                    currentThreadId={threadId}
+                    onSelectThread={switchThread}
                   />
                 </div>
               )}
             </div>
-            {/* ChatInputを常にレンダリングして、条件に応じて表示/非表示を切り替える */}
-            <div 
-              className={cn(
-                "border-t border-border/70 bg-card shrink-0",
-                leftTab === "chat" ? "visible" : "invisible pointer-events-none"
-              )}
-            >
-              {leftChatInput}
-            </div>
+            {/* ChatInputはチャットタブのときのみレンダリング（下部領域の有効活用） */}
+            {leftTab === "chat" && (
+              <div className="border-t border-border/70 bg-card shrink-0">
+                {leftChatInput}
+              </div>
+            )}
           </div>
         </div>
 
@@ -642,7 +755,7 @@ export default function ReviewResultPage() {
               )}
             >
               {rightTab === "review" && (
-                <div className="space-y-8 max-w-2xl">
+                <div className="space-y-8 w-full">
                   {score !== undefined && (
                     <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
                       <div className="flex items-start gap-6">
@@ -799,20 +912,23 @@ export default function ReviewResultPage() {
                     isLoading={isLoading}
                     chatBadgeCount={chatBadgeCount}
                     chatTheme={chatTheme}
-                    onClearChat={handleClearChat}
+                    onNewTab={handleNewTab}
+                    canCreateNewTab={chatMessages.some((m) => m.role === "user")}
+                    reviewThreads={reviewThreads}
+                    historyOpen={historyOpen}
+                    onHistoryOpenChange={setHistoryOpen}
+                    currentThreadId={threadId}
+                    onSelectThread={switchThread}
                   />
                 </div>
               )}
             </div>
-            {/* ChatInputを常にレンダリングして、条件に応じて表示/非表示を切り替える */}
-            <div 
-              className={cn(
-                "border-t border-border/70 bg-card shrink-0",
-                rightTab === "chat" ? "visible" : "invisible pointer-events-none"
-              )}
-            >
-              {rightChatInput}
-            </div>
+            {/* ChatInputはチャットタブのときのみレンダリング（下部領域の有効活用） */}
+            {rightTab === "chat" && (
+              <div className="border-t border-border/70 bg-card shrink-0">
+                {rightChatInput}
+              </div>
+            )}
           </div>
         </div>
           </>
@@ -895,7 +1011,7 @@ export default function ReviewResultPage() {
                 )}
               >
                 {unifiedTab === "review" && (
-                  <div className="space-y-8 max-w-2xl">
+                  <div className="space-y-8 w-full">
                     {score !== undefined && (
                       <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
                         <div className="flex items-start gap-6">
@@ -1054,7 +1170,13 @@ export default function ReviewResultPage() {
                       isLoading={isLoading}
                       chatBadgeCount={chatBadgeCount}
                       chatTheme={chatTheme}
-                      onClearChat={handleClearChat}
+                      onNewTab={handleNewTab}
+                      canCreateNewTab={chatMessages.some((m) => m.role === "user")}
+                      reviewThreads={reviewThreads}
+                      historyOpen={historyOpen}
+                      onHistoryOpenChange={setHistoryOpen}
+                      currentThreadId={threadId}
+                      onSelectThread={switchThread}
                     />
                   </div>
                 )}
@@ -1074,18 +1196,31 @@ export default function ReviewResultPage() {
                   </div>
                 )}
               </div>
-              <div
-                className={cn(
-                  "border-t border-border/70 bg-card shrink-0",
-                  unifiedTab === "chat" ? "visible" : "invisible pointer-events-none"
-                )}
-              >
-                {rightChatInput}
-              </div>
+              {/* ChatInputはチャットタブのときのみレンダリング（下部領域の有効活用） */}
+              {unifiedTab === "chat" && (
+                <div className="border-t border-border/70 bg-card shrink-0">
+                  {rightChatInput}
+                </div>
+              )}
             </div>
           </div>
         )}
       </div>
     </div>
+  )
+}
+
+export default function ReviewResultPage() {
+  const params = useParams()
+  const searchParams = useSearchParams()
+  const reviewId = params.review_id as string
+  const threadIdFromUrl = searchParams.get("thread_id")
+  return (
+    <ReviewResultView
+      reviewId={reviewId}
+      threadIdFromUrl={threadIdFromUrl}
+      backHref="/your-page/past-questions"
+      backLabel="戻る"
+    />
   )
 }

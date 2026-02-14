@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Lightbulb, ListTodo, RotateCcw, Clock, ChevronDown, Sparkles, Calendar as CalendarIcon, Plus, CalendarDays } from "lucide-react"
 import { SortableRow } from "@/components/sortable-row"
+import { JuristutorLoading, MainAreaWrapper } from "@/components/loading"
 import { SidebarToggle } from "@/components/sidebar"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
@@ -2322,12 +2323,9 @@ function YourPageDashboardInner() {
 function YourPageDashboard() {
   return (
     <Suspense fallback={
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
-          <p className="text-sm text-slate-500">読み込み中...</p>
-        </div>
-      </div>
+      <MainAreaWrapper>
+        <JuristutorLoading message="ダッシュボードを読み込んでいます" fullScreen />
+      </MainAreaWrapper>
     }>
       <YourPageDashboardInner />
     </Suspense>

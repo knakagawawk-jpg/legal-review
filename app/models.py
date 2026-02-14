@@ -202,6 +202,14 @@ class Thread(Base):
     # スレッドの種類
     type = Column(String(20), nullable=False)  # 'free_chat', 'review_chat', 'short_answer_chat' など
     
+    # 講評チャットの場合、同一答案に複数スレッドを紐づける用（NULL可）
+    review_id = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        ForeignKey("reviews.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    
     # タイムスタンプ
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     last_message_at = Column(DateTime(timezone=True), nullable=True)  # 最終発言日時（一覧の並び替えに必須）
@@ -215,6 +223,7 @@ class Thread(Base):
     user = relationship("User", back_populates="threads")
     messages = relationship("Message", back_populates="thread", cascade="all, delete-orphan", order_by="Message.created_at")
     reviews = relationship("Review", foreign_keys="Review.thread_id", back_populates="thread")
+    review = relationship("Review", foreign_keys=[review_id], backref="threads_by_review")
     
     __table_args__ = (
         CheckConstraint("type IN ('free_chat', 'review_chat', 'short_answer_chat')", name="ck_thread_type"),
@@ -224,6 +233,8 @@ class Thread(Base):
         Index('idx_threads_user_type_favorite_pinned_last', 'user_id', 'type', 'favorite', 'pinned', 'last_message_at'),
         # 最低限版: (user_id, type, favorite, last_message_at DESC)
         Index('idx_threads_user_type_favorite_last', 'user_id', 'type', 'favorite', 'last_message_at'),
+        # 同一答案に紐づくスレッド一覧用
+        Index('idx_threads_review_id', 'review_id'),
     )
 
 

@@ -4,7 +4,6 @@ import { useState, useEffect, useRef, useCallback, useMemo, memo, type RefObject
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Skeleton } from "@/components/ui/skeleton"
 import {
   AlertCircle,
   ArrowLeft,
@@ -26,6 +25,7 @@ import { ChatMessage } from "@/components/chat/chat-message"
 import { ChatMessageList } from "@/components/chat/chat-message-list"
 import { ChatBar } from "@/components/chat/chat-bar"
 import { ChatInput } from "@/components/chat/chat-input"
+import { JuristutorLoading, MainAreaWrapper } from "@/components/loading"
 import { ChatLoadingIndicator } from "@/components/chat/chat-loading-indicator"
 import { getChatMessageTheme } from "@/components/chat/chat-message-theme"
 import { cn } from "@/lib/utils"
@@ -69,6 +69,7 @@ export default function ReviewResultPage() {
   const [chatLoaded, setChatLoaded] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const isLoadingRef = useRef(false)
+  const [chatInputValue, setChatInputValue] = useState("")
   const chatContainerLeftRef = useRef<HTMLDivElement>(null)
   const chatContainerRightRef = useRef<HTMLDivElement>(null)
 
@@ -189,28 +190,19 @@ export default function ReviewResultPage() {
 
   // ChatInputをメモ化して再マウントを防ぐ（早期リターンの前に配置）
   const leftChatInput = useMemo(
-    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} fullWidth />,
-    [handleSendMessage, isLoading]
+    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} fullWidth value={chatInputValue} onChange={setChatInputValue} />,
+    [handleSendMessage, isLoading, chatInputValue]
   )
   const rightChatInput = useMemo(
-    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} fullWidth />,
-    [handleSendMessage, isLoading]
+    () => <ChatInput onSend={handleSendMessage} isLoading={isLoading} fullWidth value={chatInputValue} onChange={setChatInputValue} />,
+    [handleSendMessage, isLoading, chatInputValue]
   )
 
   if (loading) {
     return (
-      <div
-        className="h-dvh bg-background flex flex-col overflow-hidden transition-all duration-300"
-        style={mainContentStyle}
-      >
-        <div className="container mx-auto px-5 py-12">
-          <div className="space-y-6">
-            <Skeleton className="h-12 w-64" />
-            <Skeleton className="h-64 w-full" />
-            <Skeleton className="h-64 w-full" />
-          </div>
-        </div>
-      </div>
+      <MainAreaWrapper>
+        <JuristutorLoading message="講評を取得しています" fullScreen />
+      </MainAreaWrapper>
     )
   }
 
@@ -348,7 +340,7 @@ export default function ReviewResultPage() {
 
   return (
     <div
-      className="h-screen bg-background flex flex-col overflow-hidden transition-all duration-300"
+      className="h-screen min-w-0 bg-background flex flex-col overflow-hidden transition-all duration-300"
       style={mainContentStyle}
     >
       <header className="border-b border-border shrink-0 bg-gradient-to-r from-primary/5 via-transparent to-accent/5">
@@ -371,7 +363,7 @@ export default function ReviewResultPage() {
 
       <div
         className={cn(
-          "flex flex-1 min-h-0 overflow-hidden w-full",
+          "flex flex-1 min-h-0 min-w-0 overflow-hidden w-full",
           isLargeScreen ? "flex-row" : "flex-col",
         )}
       >
@@ -1036,14 +1028,12 @@ export default function ReviewResultPage() {
                   </div>
                 )}
               </div>
-              <div
-                className={cn(
-                  "border-t border-border/70 bg-card shrink-0",
-                  unifiedTab === "chat" ? "visible" : "invisible pointer-events-none"
-                )}
-              >
-                {rightChatInput}
-              </div>
+              {/* ChatInputはチャットタブのときのみレンダリング（下部領域の有効活用） */}
+              {unifiedTab === "chat" && (
+                <div className="border-t border-border/70 bg-card shrink-0">
+                  {rightChatInput}
+                </div>
+              )}
             </div>
           </div>
         )}

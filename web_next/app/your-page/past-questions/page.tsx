@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react"
 import { ExternalLink, BookOpen, ChevronDown, Filter } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { JuristutorLoading } from "@/components/loading"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { FIXED_SUBJECTS, getSubjectName, getSubjectId } from "@/lib/subjects"
@@ -370,7 +371,7 @@ function PastExamsPage() {
         <Card className="shadow-sm border-amber-200/60">
           <CardContent className="p-4 space-y-4">
             {loading ? (
-              <div className="text-center text-muted-foreground py-8">読み込み中...</div>
+              <JuristutorLoading message="過去問一覧を取得しています" fullScreen={false} className="py-12" />
             ) : (
               <>
                 <ExamTable data={currentData.shihou} title="司法試験" />

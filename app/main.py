@@ -43,7 +43,7 @@ from .schemas import (
     NotebookCreate, NotebookUpdate, NotebookResponse, NotebookDetailResponse,
     NoteSectionCreate, NoteSectionUpdate, NoteSectionResponse, NoteSectionDetailResponse,
     NotePageCreate,
-    AdminUserResponse, AdminUserListResponse, AdminStatsResponse, AdminFeatureStatsResponse, AdminUserUpdateRequest, NotePageUpdate, NotePageResponse,
+    AdminUserResponse, AdminUserListResponse, AdminUserTokenUsageItem, AdminUserTokenUsageListResponse, AdminStatsResponse, AdminFeatureStatsResponse, AdminUserUpdateRequest, NotePageUpdate, NotePageResponse,
     SubmissionHistoryResponse, ShortAnswerHistoryResponse, UserReviewHistoryResponse,
     AdminReviewHistoryItemResponse, AdminReviewHistoryListResponse,
     ThreadCreate, ThreadResponse, ThreadListResponse,
@@ -57,7 +57,7 @@ from .schemas import (
     StudyItemCreate, StudyItemUpdate, StudyItemResponse, StudyItemReorderRequest,
     OfficialQuestionYearsResponse, OfficialQuestionActiveResponse,
     LlmRequestResponse, LlmRequestListResponse,
-    AdminUserResponse, AdminUserListResponse, AdminStatsResponse, AdminFeatureStatsResponse,
+    AdminUserResponse, AdminUserListResponse, AdminUserTokenUsageItem, AdminUserTokenUsageListResponse, AdminStatsResponse, AdminFeatureStatsResponse,
     AdminUserUpdateRequest, AdminDatabaseInfoResponse,
     AdminSubscriptionPlanItem, AdminSubscriptionPlanListResponse,
     PlanLimitUsageResponse, ReviewTicketCheckoutRequest, ReviewTicketCheckoutResponse, ReviewTicketUsageResponse,
@@ -1617,10 +1617,13 @@ async def get_or_create_review_chat_thread(
     if review.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # 既存のthreadがあればそれを返す
+    # 既存のthreadがあればそれを返す（review.thread_id の1本を返す）
     if review.thread_id:
         thread = db.query(Thread).filter(Thread.id == review.thread_id).first()
         if thread and thread.user_id == current_user.id and thread.type == "review_chat":
+            if getattr(thread, "review_id", None) is None:
+                thread.review_id = review.id
+                db.commit()
             resp = ThreadResponse.model_validate(thread)
             resp.review_id = review.id
             return resp
@@ -1637,6 +1640,7 @@ async def get_or_create_review_chat_thread(
     thread = Thread(
         user_id=current_user.id,
         type="review_chat",
+        review_id=review.id,
         title=title,
         favorite=0,
         pinned=False,
@@ -1652,6 +1656,82 @@ async def get_or_create_review_chat_thread(
     resp = ThreadResponse.model_validate(thread)
     resp.review_id = review.id
     return resp
+
+
+@app.get("/v1/reviews/{review_id}/threads", response_model=ThreadListResponse)
+async def list_review_threads(
+    review_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """同一答案に紐づく講評チャットスレッド一覧（認証必須）"""
+    review = db.query(Review).filter(Review.id == review_id).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    if review.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # review_id で紐づくスレッド + 従来の review.thread_id の1本を含める
+    threads_by_review_id = db.query(Thread).filter(
+        Thread.review_id == review_id,
+        Thread.user_id == current_user.id,
+        Thread.type == "review_chat",
+    ).all()
+    all_threads = {t.id: t for t in threads_by_review_id}
+    if review.thread_id and review.thread_id not in all_threads:
+        primary = db.query(Thread).filter(Thread.id == review.thread_id).first()
+        if primary and primary.user_id == current_user.id and primary.type == "review_chat":
+            all_threads[primary.id] = primary
+    threads = list(all_threads.values())
+    threads.sort(key=lambda t: (t.last_message_at or t.created_at), reverse=True)
+
+    thread_responses = []
+    for t in threads:
+        tr = ThreadResponse.model_validate(t)
+        tr.review_id = review_id
+        thread_responses.append(tr)
+    return ThreadListResponse(threads=thread_responses, total=len(thread_responses))
+
+
+@app.post("/v1/reviews/{review_id}/threads", response_model=ThreadResponse)
+async def create_review_chat_thread(
+    review_id: int,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """同一答案に紐づく新規講評チャットスレッドを作成（新規タブ用・認証必須）"""
+    review = db.query(Review).filter(Review.id == review_id).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    if review.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    title = None
+    try:
+        history = db.query(UserReviewHistory).filter(UserReviewHistory.review_id == review_id).first()
+        if history and history.question_title:
+            title = f"講評チャット: {history.question_title}"
+    except Exception:
+        title = None
+
+    thread = Thread(
+        user_id=current_user.id,
+        type="review_chat",
+        review_id=review.id,
+        title=title,
+        favorite=0,
+        pinned=False,
+    )
+    db.add(thread)
+    db.flush()
+    review.has_chat = True
+    db.commit()
+    db.refresh(thread)
+
+    resp = ThreadResponse.model_validate(thread)
+    resp.review_id = review.id
+    return resp
+
 
 @app.post("/v1/review/chat", response_model=ReviewChatResponse)
 async def chat_review(
@@ -2911,6 +2991,17 @@ async def get_thread(
     
     return ThreadResponse.model_validate(thread)
 
+def _get_review_by_thread(db: Session, thread_id: int, thread: Thread = None) -> Review | None:
+    """講評チャット用スレッドから Review を取得（thread.review_id 優先、なければ Review.thread_id で逆引き）"""
+    if thread is None:
+        thread = db.query(Thread).filter(Thread.id == thread_id).first()
+    if not thread:
+        return None
+    if getattr(thread, "review_id", None) is not None:
+        return db.query(Review).filter(Review.id == thread.review_id).first()
+    return db.query(Review).filter(Review.thread_id == thread_id).first()
+
+
 @app.get("/v1/threads/{thread_id}/review-id")
 async def get_thread_review_id(
     thread_id: int,
@@ -2928,7 +3019,7 @@ async def get_thread_review_id(
     if thread.type != "review_chat":
         raise HTTPException(status_code=400, detail="This thread is not a review chat")
     
-    review = db.query(Review).filter(Review.thread_id == thread_id).first()
+    review = _get_review_by_thread(db, thread_id, thread=thread)
     if not review:
         raise HTTPException(status_code=404, detail="Review not found for this thread")
     
@@ -3015,8 +3106,8 @@ async def create_message(
         latency_ms = None
 
         if thread.type == "review_chat":
-            # review_idは Review.thread_id から逆引きして復元（DBにはコンテキストを保存しない）
-            review = db.query(Review).filter(Review.thread_id == thread_id).first()
+            # review は thread.review_id 優先、なければ Review.thread_id で逆引き
+            review = _get_review_by_thread(db, thread_id, thread=thread)
             if not review:
                 raise HTTPException(status_code=404, detail="Review not found for this thread")
             if review.user_id != current_user.id:
@@ -3122,9 +3213,9 @@ async def create_message(
         if input_tokens is not None or output_tokens is not None or request_id:
             review_id = None
             if thread.type == "review_chat":
-                review = db.query(Review).filter(Review.thread_id == thread_id).first()
-                if review:
-                    review_id = review.id
+                rev = _get_review_by_thread(db, thread_id, thread=thread)
+                if rev:
+                    review_id = rev.id
             prompt_version = "review_chat_v1" if thread.type == "review_chat" else "free_chat_v1"
             llm_row = LlmRequest(
                 **build_llm_request_row(
@@ -3179,7 +3270,7 @@ async def clear_thread_messages(
 
     # review_chat の場合、Review.has_chat も下げる（thread自体は残す）
     if thread.type == "review_chat":
-        review = db.query(Review).filter(Review.thread_id == thread_id).first()
+        review = _get_review_by_thread(db, thread_id, thread=thread)
         if review and review.user_id == current_user.id:
             review.has_chat = False
 
@@ -3229,10 +3320,10 @@ async def delete_thread(
     if thread.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    # review_chatの場合、関連するReviewのthread_idとhas_chatをリセット
+    # review_chatの場合、このスレッドがReview.thread_idで指されているときだけリセット
     if thread.type == "review_chat":
-        review = db.query(Review).filter(Review.thread_id == thread_id).first()
-        if review:
+        review = _get_review_by_thread(db, thread_id, thread=thread)
+        if review and review.thread_id == thread_id:
             review.thread_id = None
             review.has_chat = False
     
@@ -5385,6 +5476,174 @@ async def _get_admin_users_internal(
     return AdminUserListResponse(users=user_responses, total=total)
 
 
+@app.get("/v1/admin/user-token-usage", response_model=AdminUserTokenUsageListResponse)
+async def get_admin_user_token_usage(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+    search: Optional[str] = Query(None),
+    is_active: Optional[bool] = Query(None),
+    database_url: Optional[str] = Query(None, description="データベースURL（指定しない場合はデフォルトDB）"),
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """管理者用: ユーザー別トークン使用量一覧を取得（データベース切り替え対応）"""
+    try:
+        if database_url:
+            if not database_url.startswith("sqlite:///"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="現在はSQLiteデータベースのみサポートしています"
+                )
+            db_gen = get_db_session_for_url(database_url)
+            db = next(db_gen)
+            try:
+                return await _get_admin_user_token_usage_internal(db, skip, limit, search, is_active)
+            finally:
+                try:
+                    next(db_gen, None)
+                except StopIteration:
+                    pass
+        else:
+            return await _get_admin_user_token_usage_internal(db, skip, limit, search, is_active)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin user-token-usage error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="ユーザー別トークン使用量の取得に失敗しました"
+        )
+
+
+async def _get_admin_user_token_usage_internal(
+    db: Session,
+    skip: int,
+    limit: int,
+    search: Optional[str],
+    is_active: Optional[bool]
+) -> AdminUserTokenUsageListResponse:
+    """ユーザー別トークン使用量取得の内部実装"""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    jst = ZoneInfo("Asia/Tokyo")
+    utc = ZoneInfo("UTC")
+    now_jst = datetime.now(jst)
+    today_start_jst = now_jst.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_utc = today_start_jst.astimezone(utc)
+    month_start_jst = now_jst.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_start_utc = month_start_jst.astimezone(utc)
+
+    query = db.query(User)
+    if search:
+        query = query.filter(
+            or_(
+                User.email.ilike(f"%{search}%"),
+                User.name.ilike(f"%{search}%")
+            )
+        )
+    if is_active is not None:
+        query = query.filter(User.is_active == is_active)
+
+    users = query.order_by(User.created_at.desc()).limit(10000).all()
+    if not users:
+        return AdminUserTokenUsageListResponse(items=[], total=0)
+
+    user_ids = [u.id for u in users]
+
+    # 全期間トークン・コスト
+    all_time = (
+        db.query(
+            LlmRequest.user_id,
+            func.coalesce(func.sum(LlmRequest.input_tokens), 0).label("input_tokens"),
+            func.coalesce(func.sum(LlmRequest.output_tokens), 0).label("output_tokens"),
+            func.coalesce(func.sum(LlmRequest.cost_yen), 0).label("cost_yen"),
+        )
+        .filter(LlmRequest.user_id.in_(user_ids))
+        .group_by(LlmRequest.user_id)
+        .all()
+    )
+    all_time_map = {r.user_id: (int(r.input_tokens or 0), int(r.output_tokens or 0), float(r.cost_yen or 0)) for r in all_time}
+
+    # 今日のトークン
+    today_rows = (
+        db.query(
+            LlmRequest.user_id,
+            func.coalesce(func.sum(LlmRequest.input_tokens + LlmRequest.output_tokens), 0).label("tokens"),
+        )
+        .filter(LlmRequest.user_id.in_(user_ids), LlmRequest.created_at >= today_start_utc)
+        .group_by(LlmRequest.user_id)
+        .all()
+    )
+    today_map = {r.user_id: int(r.tokens or 0) for r in today_rows}
+
+    # 今月のトークン
+    month_rows = (
+        db.query(
+            LlmRequest.user_id,
+            func.coalesce(func.sum(LlmRequest.input_tokens + LlmRequest.output_tokens), 0).label("tokens"),
+        )
+        .filter(LlmRequest.user_id.in_(user_ids), LlmRequest.created_at >= month_start_utc)
+        .group_by(LlmRequest.user_id)
+        .all()
+    )
+    month_map = {r.user_id: int(r.tokens or 0) for r in month_rows}
+
+    # マージして total_tokens で降順ソート
+    rows = []
+    for u in users:
+        inp, out, cost = all_time_map.get(u.id, (0, 0, 0.0))
+        total_tok = inp + out
+        rows.append((u, inp, out, cost, today_map.get(u.id, 0), month_map.get(u.id, 0), total_tok))
+    rows.sort(key=lambda x: x[6], reverse=True)
+
+    total = len(rows)
+    page = rows[skip : skip + limit]
+    page_user_ids = [r[0].id for r in page]
+
+    # 機能別コスト（user_id, feature_type ごと）
+    feature_rows = (
+        db.query(
+            LlmRequest.user_id,
+            LlmRequest.feature_type,
+            func.coalesce(func.sum(LlmRequest.cost_yen), 0).label("cost_yen"),
+        )
+        .filter(LlmRequest.user_id.in_(page_user_ids))
+        .group_by(LlmRequest.user_id, LlmRequest.feature_type)
+        .all()
+    )
+    feature_map = {}
+    for r in feature_rows:
+        if r.user_id not in feature_map:
+            feature_map[r.user_id] = {}
+        feature_map[r.user_id][r.feature_type] = float(r.cost_yen or 0)
+
+    plan_limits_module = __import__("app.plan_limits", fromlist=["get_user_plan"])
+    items = []
+    for u, inp, out, cost, today_tok, month_tok, _ in page:
+        plan = plan_limits_module.get_user_plan(db, u)
+        plan_code = plan.plan_code if plan else None
+        plan_name = plan.name if plan else None
+        items.append(
+            AdminUserTokenUsageItem(
+                id=u.id,
+                email=u.email,
+                name=u.name,
+                plan_code=plan_code,
+                plan_name=plan_name,
+                total_tokens=inp + out,
+                total_input_tokens=inp,
+                total_output_tokens=out,
+                total_cost_yen=cost,
+                today_tokens=today_tok,
+                this_month_tokens=month_tok,
+                feature_cost_yen=feature_map.get(u.id, {}),
+            )
+        )
+
+    return AdminUserTokenUsageListResponse(items=items, total=total)
+
+
 @app.get("/v1/admin/stats", response_model=AdminStatsResponse)
 async def get_admin_stats(
     database_url: Optional[str] = Query(None, description="データベースURL（指定しない場合はデフォルトDB）"),
@@ -5605,7 +5864,7 @@ async def update_admin_user(
     token_stats = db.query(
         func.sum(LlmRequest.input_tokens).label('input_tokens'),
         func.sum(LlmRequest.output_tokens).label('output_tokens'),
-        func.sum(LlmRequest.total_cost_yen).label('cost_yen')
+        func.sum(LlmRequest.cost_yen).label('cost_yen')
     ).filter(LlmRequest.user_id == target_user.id).first()
     
     total_tokens = (token_stats.input_tokens or 0) + (token_stats.output_tokens or 0)

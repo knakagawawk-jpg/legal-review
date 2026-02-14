@@ -655,7 +655,7 @@ function TopicsPage() {
               setFavoriteFilter(value as "fav-only" | "fav-except" | "all")
             }}
           >
-            <SelectTrigger className="h-7 text-xs w-28">
+            <SelectTrigger className="h-7 text-xs w-[7.5rem]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

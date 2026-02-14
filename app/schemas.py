@@ -696,6 +696,29 @@ class AdminUserListResponse(BaseModel):
     total: int
 
 
+class AdminUserTokenUsageItem(BaseModel):
+    """管理者用: ユーザー別トークン使用量1件"""
+    id: int
+    email: str
+    name: Optional[str] = None
+    plan_code: Optional[str] = None
+    plan_name: Optional[str] = None
+    total_tokens: int = 0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_cost_yen: float = 0.0
+    today_tokens: int = 0
+    this_month_tokens: int = 0
+    # 機能別コスト（Barのセグメント表示用）。key: feature_type, value: cost_yen
+    feature_cost_yen: Dict[str, float] = {}
+
+
+class AdminUserTokenUsageListResponse(BaseModel):
+    """管理者用: ユーザー別トークン使用量一覧"""
+    items: List[AdminUserTokenUsageItem]
+    total: int
+
+
 class AdminStatsResponse(BaseModel):
     """管理者用統計情報レスポンス"""
     # ユーザー統計

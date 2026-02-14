@@ -322,6 +322,28 @@ export interface AdminUserListResponse {
   total: number
 }
 
+/** 管理者用: ユーザー別トークン使用量1件 */
+export interface AdminUserTokenUsageItem {
+  id: number
+  email: string
+  name?: string | null
+  plan_code?: string | null
+  plan_name?: string | null
+  total_tokens: number
+  total_input_tokens: number
+  total_output_tokens: number
+  total_cost_yen: number
+  today_tokens: number
+  this_month_tokens: number
+  /** 機能別コスト（Barセグメント用）。key: feature_type, value: cost_yen */
+  feature_cost_yen?: Record<string, number>
+}
+
+export interface AdminUserTokenUsageListResponse {
+  items: AdminUserTokenUsageItem[]
+  total: number
+}
+
 export interface AdminStats {
   total_users: number
   active_users: number

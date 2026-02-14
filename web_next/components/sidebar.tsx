@@ -86,40 +86,20 @@ function getNavigation() {
 
 // サイドバーの状態を管理するProviderコンポーネント
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
-  const [mounted, setMounted] = useState(false)
+  // 初期値は常に true に統一（SSR/クライアントで一致させ、ハイドレーション不整合を防ぐ）
+  // 閉じたときに「開く」ボタンが消える不具合は、ここがクライアントで localStorage 由来の
+  // false になりサーバーと食い違うことが原因で起きていた
+  const [isOpen, setIsOpen] = useState(true)
 
-  // localStorageからサイドバーの状態を読み込む（デフォルトは開く）
-  const getInitialState = () => {
-    if (typeof window === 'undefined') return true
-    try {
-      // 機能Cookieの同意をチェック
-      if (!hasFunctionalConsent()) {
-        return true // 同意がない場合はデフォルト値
-      }
-      const saved = localStorage.getItem('sidebar_is_open')
-      return saved !== null ? saved === 'true' : true // デフォルトは開く
-    } catch {
-      return true
-    }
-  }
-
-  const [isOpen, setIsOpen] = useState(getInitialState)
-
-  // クライアント側でのみマウントされたことを確認（Hydrationエラーを防ぐ）
+  // マウント後に localStorage から状態を復元（クライアントのみ）
   useEffect(() => {
-    setMounted(true)
-    // マウント時にlocalStorageから状態を読み込む
+    if (typeof window === "undefined") return
     if (hasFunctionalConsent()) {
-      const saved = localStorage.getItem('sidebar_is_open')
+      const saved = localStorage.getItem("sidebar_is_open")
       if (saved !== null) {
-        setIsOpen(saved === 'true')
-      } else {
-        // 初回アクセス時は開く
-        setIsOpen(true)
+        setIsOpen(saved === "true")
       }
-    } else {
-      // 同意がない場合はデフォルト値
-      setIsOpen(true)
+      // 初回は useState(true) のまま
     }
   }, [])
 

@@ -458,7 +458,7 @@ export default function ReviewPage() {
         </div>
       </header>
 
-      <main className="flex flex-1 flex-col mx-auto w-full max-w-5xl p-3 gap-2 min-h-0 overflow-auto">
+      <main className="flex flex-1 flex-col min-h-0 mx-auto w-full max-w-5xl p-3 gap-2 overflow-hidden">
 
         {/* エラー表示 */}
         {error && (
@@ -471,9 +471,9 @@ export default function ReviewPage() {
 
         {/* Step 1: 問題準備 + 答案入力 */}
         {step === 1 && (
-          <>
+          <div className="flex flex-1 flex-col min-h-0 gap-2 overflow-hidden">
             {/* 問題選択/入力エリア */}
-            <div className="shrink-0 rounded-lg border border-slate-200/80 bg-white shadow-sm flex-shrink-0">
+            <div className="shrink-0 rounded-lg border border-slate-200/80 bg-white shadow-sm flex-shrink-0 overflow-auto">
               {mode === "existing" ? (
                 <>
                   {examType && year && subject !== null ? (
@@ -676,8 +676,8 @@ export default function ReviewPage() {
               )}
             </div>
 
-            {/* 答案入力エリア */}
-            <div className="flex flex-1 min-h-0 flex-col rounded-lg border border-slate-200/80 bg-white shadow-sm">
+            {/* 答案入力エリア（フッター直上まで伸び、枠内はスクロール） */}
+            <div className="flex flex-1 min-h-0 flex-col rounded-lg border border-slate-200/80 bg-white shadow-sm overflow-hidden">
               {/* 進捗バー */}
               <div className="h-1 shrink-0 overflow-hidden rounded-t-lg bg-slate-100">
                 <div
@@ -716,18 +716,20 @@ export default function ReviewPage() {
                 </div>
               </div>
 
-              {/* 入力欄 */}
-              <div className="flex-1 min-h-0 p-2 overflow-hidden">
+              {/* 入力欄（枠の下限＝フッター上まで。残り高さをすべて使う） */}
+              <div className="flex flex-1 flex-col min-h-0 p-2">
                 <Textarea
                   value={answerText}
                   onChange={(e) => setAnswerText(e.target.value)}
                   placeholder="答案を入力してください..."
-                  className="h-full w-full resize-none rounded border-slate-200 bg-slate-50/50 font-mono text-xs leading-relaxed focus:bg-white"
+                  className="min-h-0 flex-1 w-full resize-none rounded border-slate-200 bg-slate-50/50 font-mono text-xs leading-relaxed focus:bg-white overflow-y-auto"
                 />
               </div>
+            </div>
 
-              {/* フッター（講評開始ボタン） */}
-              <div className="shrink-0 flex items-center justify-end gap-2 border-t border-slate-100 px-2.5 py-1.5">
+            {/* 固定フッター（講評開始ボタン） */}
+            {step === 1 && (
+              <div className="shrink-0 flex items-center justify-end gap-2 border-t border-slate-200 bg-white/95 backdrop-blur-sm px-2.5 py-2 rounded-b-lg">
                 {loading && (
                   <Button
                     size="sm"
@@ -760,12 +762,13 @@ export default function ReviewPage() {
                   )}
                 </Button>
               </div>
-            </div>
-          </>
+            )}
+          </div>
         )}
 
         {/* Step 2: 生成 */}
         {step === 2 && (
+          <div className="flex-1 min-h-0 overflow-auto">
           <Card>
             <CardHeader>
               <CardTitle>Step 2: 講評生成</CardTitle>
@@ -847,6 +850,7 @@ export default function ReviewPage() {
               </div>
             </CardContent>
           </Card>
+          </div>
         )}
 
       </main>

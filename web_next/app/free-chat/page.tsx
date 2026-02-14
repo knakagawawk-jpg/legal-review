@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import { JuristutorLoading, MainAreaWrapper } from "@/components/loading"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle, Loader2 } from "lucide-react"
+import { AlertCircle } from "lucide-react"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { apiClient } from "@/lib/api-client"
@@ -37,18 +38,20 @@ export default function FreeChatPage() {
     createNewThread()
   }, [router])
 
+  if (loading) {
+    return (
+      <MainAreaWrapper>
+        <JuristutorLoading message="新しいチャットを作成しています" fullScreen />
+      </MainAreaWrapper>
+    )
+  }
+
   return (
     <div 
       className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center transition-all duration-300"
       style={mainContentStyle}
     >
       <div className="text-center space-y-4">
-        {loading && (
-          <>
-            <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-            <p className="text-lg text-muted-foreground">新しいチャットを作成中...</p>
-          </>
-        )}
         {error && (
           <Alert variant="destructive" className="max-w-md">
             <AlertCircle className="h-4 w-4" />

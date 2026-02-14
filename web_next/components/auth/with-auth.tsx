@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
-import { Loader2 } from "lucide-react"
+import { JuristutorLoading, MainAreaWrapper } from "@/components/loading"
 import { authStorage } from "@/lib/auth-storage"
 
 interface WithAuthOptions {
@@ -52,30 +52,18 @@ export function withAuth<P extends object>(
     // ローディング中
     if (isLoading) {
       return (
-        <div className="flex h-screen items-center justify-center bg-slate-50">
-          <div className="text-center space-y-4">
-            <Loader2 className="w-10 h-10 animate-spin mx-auto text-indigo-600" />
-            <div className="space-y-2">
-              <p className="text-lg font-medium text-slate-800">認証情報を確認中...</p>
-              <p className="text-sm text-slate-500">しばらくお待ちください</p>
-            </div>
-          </div>
-        </div>
+        <MainAreaWrapper>
+          <JuristutorLoading message="認証情報を確認中..." fullScreen />
+        </MainAreaWrapper>
       )
     }
 
-    // 認証が必要だが未認証の場合
+    // 認証が必要だが未認証の場合（リダイレクト中）
     if (requireAuth && !isAuthenticated) {
       return (
-        <div className="flex h-screen items-center justify-center bg-slate-50">
-          <div className="text-center space-y-4">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto text-indigo-600" />
-            <div className="space-y-2">
-              <p className="text-lg font-medium text-slate-800">認証が必要です</p>
-              <p className="text-sm text-slate-500">ログインページにリダイレクトしています...</p>
-            </div>
-          </div>
-        </div>
+        <MainAreaWrapper>
+          <JuristutorLoading message="ログインページへ移動しています" fullScreen />
+        </MainAreaWrapper>
       )
     }
 

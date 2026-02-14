@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useRef, useEffect, memo } from "react"
-import { Send, Square } from "lucide-react"
+import { Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
@@ -14,11 +14,17 @@ interface ChatInputProps {
   onStop?: () => void
   /** 講評結果ページなど、パネル幅いっぱいに入力欄を表示する場合にtrue */
   fullWidth?: boolean
+  /** 制御用: 指定時は左右など複数欄で同じ入力を同期する */
+  value?: string
+  onChange?: (value: string) => void
 }
 
-export const ChatInput = memo(function ChatInput({ onSend, isLoading, onStop, fullWidth }: ChatInputProps) {
-  const [input, setInput] = useState("")
+export const ChatInput = memo(function ChatInput({ onSend, isLoading, onStop, fullWidth, value: controlledValue, onChange: controlledOnChange }: ChatInputProps) {
+  const [internalInput, setInternalInput] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const isControlled = controlledValue !== undefined && controlledOnChange !== undefined
+  const input = isControlled ? controlledValue : internalInput
+  const setInput = isControlled ? controlledOnChange : setInternalInput
   const onSendRef = useRef(onSend)
   const onStopRef = useRef(onStop)
 
@@ -38,7 +44,8 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, onStop, fu
 
   const handleSubmit = () => {
     if (input.trim() && !isLoading) {
-      onSendRef.current(input)
+      const toSend = input.trim()
+      onSendRef.current(toSend)
       setInput("")
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto"
@@ -99,13 +106,14 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, onStop, fu
                 : "bg-slate-200 text-slate-400 cursor-not-allowed",
             )}
           >
-            <Send className="h-4 w-4" />
+            <span className="text-lg font-medium leading-none">↑</span>
           </Button>
         )}
       </div>
     </ChatInputBar>
   )
 }, (prevProps, nextProps) => {
-  // isLoading、onStop、fullWidthの変更のみを再レンダリングのトリガーとする
-  return prevProps.isLoading === nextProps.isLoading && prevProps.onStop === nextProps.onStop && prevProps.fullWidth === nextProps.fullWidth
+  if (prevProps.isLoading !== nextProps.isLoading || prevProps.onStop !== nextProps.onStop || prevProps.fullWidth !== nextProps.fullWidth) return false
+  if (prevProps.value !== nextProps.value) return false
+  return true
 })

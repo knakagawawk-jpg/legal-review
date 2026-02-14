@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import Link from "next/link"
-import { ExternalLink, History, BookOpen, ChevronDown, Filter, Menu, Lightbulb, ListTodo, Heart, Calendar as CalendarIcon, Pencil, Check, X, Maximize2, Plus, CalendarDays } from "lucide-react"
+import { ExternalLink, History, BookOpen, ChevronDown, Filter, Menu, Lightbulb, ListTodo, Heart, Calendar as CalendarIcon, Pencil, Check, X, Maximize2, Plus, CalendarDays, Target } from "lucide-react"
 import { SortableRow } from "@/components/sortable-row"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -786,6 +786,19 @@ function StudyManagementPage() {
         </div>
       </div>
       
+      {/* 目標達成率 */}
+      <Card className="shadow-sm border-amber-200/60">
+        <CardHeader className="py-1.5 px-3">
+          <CardTitle className="text-xs font-medium flex items-center gap-1.5 text-amber-900/80">
+            <Target className="h-3.5 w-3.5 text-amber-200/60" />
+            目標達成率
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-3 pb-3">
+          <div className="text-sm text-muted-foreground">（表示エリア）</div>
+        </CardContent>
+      </Card>
+
       {/* Your MEMO */}
       <Card className="shadow-sm border-amber-200/60">
         <CardHeader className="py-1.5 px-3">
@@ -935,7 +948,7 @@ function StudyManagementPage() {
                 setMemoFavoriteFilter(value as "fav-only" | "fav-except" | "all")
               }}
             >
-              <SelectTrigger className="h-7 text-xs w-28">
+              <SelectTrigger className="h-7 text-xs w-[7.5rem]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1224,7 +1237,7 @@ function StudyManagementPage() {
                 setTopicFavoriteFilter(value as "fav-only" | "fav-except" | "all")
               }}
             >
-              <SelectTrigger className="h-7 text-xs w-28">
+              <SelectTrigger className="h-7 text-xs w-[7.5rem]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1832,7 +1845,7 @@ function ChatHistorySection() {
               setFavoriteFilter(value as "fav-only" | "fav-except" | "all")
             }}
           >
-            <SelectTrigger className="h-7 text-xs w-28">
+            <SelectTrigger className="h-7 text-xs w-[7.5rem]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

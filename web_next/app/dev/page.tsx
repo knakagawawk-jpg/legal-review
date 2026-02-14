@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -12,12 +13,20 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
-import { AlertCircle, Loader2, Search, Eye, Trash2, Shield, ShieldOff, UserCheck, UserX } from "lucide-react"
-import type { ReviewResponse, LlmRequestListResponse, AdminReviewHistoryItem, AdminReviewHistoryListResponse, AdminSubscriptionPlan } from "@/types/api"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { AlertCircle, Loader2, Search, Eye, Trash2, Shield, ShieldOff, UserCheck, UserX, Coins, TrendingUp, Lightbulb, Maximize2 } from "lucide-react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+import type { ReviewResponse, LlmRequestListResponse, AdminReviewHistoryItem, AdminReviewHistoryListResponse, AdminSubscriptionPlan, AdminUserTokenUsageItem, LlmRequest, Thread, Message } from "@/types/api"
 import { useSidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 import { getSubjectName } from "@/lib/subjects"
 import { withAuth } from "@/components/auth/with-auth"
+import { getChatMessageTheme } from "@/components/chat/chat-message-theme"
+import { ChatMessageShell } from "@/components/chat/chat-message-shell"
+import { ChatMarkdown } from "@/components/chat/chat-markdown"
+import { ScoreRing } from "@/components/score-ring"
+import { FeedbackCard } from "@/components/feedback-card"
 
 type DevReviewData = {
   review_id?: number
@@ -120,12 +129,12 @@ function DevPage() {
 
         {/* タブ */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="dashboard">📊 ダッシュボード</TabsTrigger>
-            <TabsTrigger value="users">👥 ユーザー管理</TabsTrigger>
-            <TabsTrigger value="stats">📈 統計情報</TabsTrigger>
-            <TabsTrigger value="llm">🧾 LLMログ</TabsTrigger>
-            <TabsTrigger value="dev">📋 講評データ</TabsTrigger>
+          <TabsList className="flex flex-wrap gap-1 h-auto p-1">
+            <TabsTrigger value="dashboard" className="flex-1 min-w-0">📊 ダッシュボード</TabsTrigger>
+            <TabsTrigger value="users" className="flex-1 min-w-0">👥 ユーザー管理</TabsTrigger>
+            <TabsTrigger value="tokens" className="flex-1 min-w-0">🪙 ユーザー使用Token</TabsTrigger>
+            <TabsTrigger value="llm" className="flex-1 min-w-0">🧾 LLMログ</TabsTrigger>
+            <TabsTrigger value="llm-check" className="flex-1 min-w-0">🔍 LLM確認</TabsTrigger>
           </TabsList>
 
           <TabsContent value="dashboard">
@@ -136,16 +145,16 @@ function DevPage() {
             <AdminUsers databaseUrl={selectedDatabaseUrl || undefined} />
           </TabsContent>
 
-          <TabsContent value="stats">
-            <AdminStats databaseUrl={selectedDatabaseUrl || undefined} />
+          <TabsContent value="tokens">
+            <AdminUserTokenUsage databaseUrl={selectedDatabaseUrl || undefined} />
           </TabsContent>
 
           <TabsContent value="llm">
             <LlmRequestTable databaseUrl={selectedDatabaseUrl || undefined} />
           </TabsContent>
 
-          <TabsContent value="dev">
-            <DevTools databaseUrl={selectedDatabaseUrl || undefined} />
+          <TabsContent value="llm-check">
+            <AdminLlmCheck databaseUrl={selectedDatabaseUrl || undefined} />
           </TabsContent>
         </Tabs>
       </div>
@@ -1437,6 +1446,42 @@ function AdminDashboard({ databaseUrl }: { databaseUrl?: string }) {
               </div>
             ))}
           </div>
+          {/* 機能別統計（テーブル形式） */}
+          {stats.feature_stats && Object.keys(stats.feature_stats).length > 0 && (
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold mb-3">一覧表</h3>
+              <div className="border rounded-lg overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>機能</TableHead>
+                      <TableHead>リクエスト数</TableHead>
+                      <TableHead>総トークン数</TableHead>
+                      <TableHead>入力トークン</TableHead>
+                      <TableHead>出力トークン</TableHead>
+                      <TableHead>総コスト</TableHead>
+                      <TableHead>平均レイテンシ</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {Object.entries(stats.feature_stats).map(([feature, data]: [string, any]) => (
+                      <TableRow key={feature}>
+                        <TableCell>
+                          <Badge variant="secondary">{feature}</Badge>
+                        </TableCell>
+                        <TableCell>{(data.request_count || 0).toLocaleString()}</TableCell>
+                        <TableCell>{(data.total_tokens || 0).toLocaleString()}</TableCell>
+                        <TableCell>{(data.total_input_tokens || 0).toLocaleString()}</TableCell>
+                        <TableCell>{(data.total_output_tokens || 0).toLocaleString()}</TableCell>
+                        <TableCell>¥{(data.total_cost_yen || 0).toFixed(2)}</TableCell>
+                        <TableCell>{data.avg_latency_ms ? `${data.avg_latency_ms.toFixed(0)}ms` : "-"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -1575,7 +1620,7 @@ function AdminUsers({ databaseUrl }: { databaseUrl?: string }) {
                   <TableHead>メールアドレス</TableHead>
                   <TableHead>名前</TableHead>
                   <TableHead>状態</TableHead>
-                  <TableHead>プラン</TableHead>
+                  <TableHead className="w-[180px] max-w-[180px]">プラン</TableHead>
                   <TableHead>作成日</TableHead>
                   <TableHead>最終ログイン</TableHead>
                   <TableHead>講評数</TableHead>
@@ -1614,14 +1659,17 @@ function AdminUsers({ databaseUrl }: { databaseUrl?: string }) {
                         {user.is_admin && <Badge variant="outline">管理者</Badge>}
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-w-[180px] overflow-hidden">
                       <Select
                         value={user.plan_code || ""}
                         onValueChange={(v) => {
                           handleUpdateUser(user.id, { plan_code: v })
                         }}
                       >
-                        <SelectTrigger className="h-8 w-[160px]">
+                        <SelectTrigger
+                          className="h-8 w-[160px] min-w-0 max-w-full overflow-hidden [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate"
+                          title={user.plan_code ? (() => { const p = plans.find((x) => x.plan_code === user.plan_code); return p ? `${p.name} (${p.plan_code})` : user.plan_code; })() : undefined}
+                        >
                           <SelectValue placeholder="未設定" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1735,26 +1783,162 @@ function AdminUsers({ databaseUrl }: { databaseUrl?: string }) {
   )
 }
 
-function AdminStats({ databaseUrl }: { databaseUrl?: string }) {
-  const [stats, setStats] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+// Zip参考: 機能別コストのBar表示（使用割合・内訳）
+const FEATURE_KEYS = ["review", "review_chat", "free_chat", "recent_review", "chat_title"] as const
+const FEATURE_LABELS: Record<string, string> = {
+  review: "Review",
+  review_chat: "ReviewChat",
+  free_chat: "FreeChat",
+  recent_review: "Recent",
+  chat_title: "Title",
+}
+const FEATURE_COLORS = [
+  "hsl(220, 70%, 50%)",
+  "hsl(160, 60%, 45%)",
+  "hsl(30, 80%, 55%)",
+  "hsl(280, 60%, 50%)",
+  "hsl(0, 65%, 50%)",
+]
+
+function TokenUsageBar({
+  featureCostYen,
+  totalCostYen,
+  maxCost,
+  isFixed,
+  onBarClick,
+}: {
+  featureCostYen: Record<string, number>
+  totalCostYen: number
+  maxCost: number
+  isFixed?: boolean
+  onBarClick?: (e: React.MouseEvent) => void
+}) {
+  const [isHovered, setIsHovered] = useState(false)
+  const total = totalCostYen || 0
+  const max = maxCost > 0 ? maxCost : 1
+  const percentage = Math.min((total / max) * 100, 100)
+  const segments = FEATURE_KEYS.map((key, i) => ({
+    key,
+    label: FEATURE_LABELS[key] || key,
+    color: FEATURE_COLORS[i],
+    amount: featureCostYen[key] ?? 0,
+  })).filter((s) => s.amount > 0)
+  const segmentTotal = segments.reduce((sum, s) => sum + s.amount, 0)
+  const segmentPcts = segmentTotal > 0 ? segments.map((s) => (s.amount / segmentTotal) * 100) : []
+  const hasCostNoBreakdown = total > 0 && segments.length === 0
+  const displaySegments = hasCostNoBreakdown
+    ? [{ key: "other", label: "その他", color: "hsl(var(--muted-foreground) / 0.5)", amount: total }]
+    : segments
+  const displayPcts = hasCostNoBreakdown ? [100] : segmentPcts
+  const shouldShowDetails = isHovered || isFixed
+
+  return (
+    <div className="flex flex-col gap-2 min-w-0">
+      <div
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => !isFixed && setIsHovered(false)}
+        onClick={onBarClick}
+        className="relative flex items-center gap-2 cursor-pointer group"
+      >
+        <div className="flex-1 min-w-[80px] bg-muted rounded-md overflow-hidden h-7 shadow-sm hover:shadow-md transition-shadow">
+          <div
+            className="flex h-full rounded-md overflow-hidden transition-all"
+            style={{ width: `${percentage}%` }}
+          >
+            {displaySegments.map((segment, index) => (
+              <div
+                key={segment.key}
+                className="relative h-full transition-opacity"
+                style={{
+                  width: `${displayPcts[index] ?? 0}%`,
+                  backgroundColor: segment.color,
+                }}
+              >
+                {index > 0 && (
+                  <div className="absolute left-0 top-0 bottom-0 w-px bg-black/10" />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+        <span className="text-sm font-medium text-muted-foreground min-w-[3.5rem] shrink-0">
+          {percentage.toFixed(1)}%
+        </span>
+      </div>
+      {shouldShowDetails && displaySegments.length > 0 && (
+        <div className="text-xs bg-accent/20 rounded-md p-3 border border-accent/40 space-y-1">
+          <div className="font-semibold text-foreground mb-2">使用内訳（コスト）</div>
+          {displaySegments.map((segment) => (
+            <div key={segment.key} className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-3 h-3 rounded-sm shrink-0"
+                  style={{ backgroundColor: segment.color }}
+                />
+                <span className="text-muted-foreground">{segment.label}</span>
+              </div>
+              <span className="font-semibold">¥{segment.amount.toFixed(2)}</span>
+            </div>
+          ))}
+          <div className="pt-2 border-t border-border/50 mt-2">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">合計</span>
+              <span className="font-bold">¥{total.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AdminUserTokenUsage({ databaseUrl }: { databaseUrl?: string }) {
+  const [items, setItems] = useState<AdminUserTokenUsageItem[]>([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [search, setSearch] = useState("")
+  const [isActiveFilter, setIsActiveFilter] = useState<boolean | null>(null)
+  const [skip, setSkip] = useState(0)
+  const [fixedRowId, setFixedRowId] = useState<number | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const limit = 50
 
   useEffect(() => {
-    loadStats()
-  }, [databaseUrl])
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setFixedRowId(null)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
-  const loadStats = async () => {
+  useEffect(() => {
+    loadTokenUsage()
+  }, [skip, search, isActiveFilter, databaseUrl])
+
+  const loadTokenUsage = async () => {
     setLoading(true)
     setError(null)
     try {
-      const url = databaseUrl 
-        ? `/api/admin/stats?database_url=${encodeURIComponent(databaseUrl)}`
-        : "/api/admin/stats"
-      const res = await fetch(url)
-      if (!res.ok) throw new Error("統計情報の取得に失敗しました")
+      const params = new URLSearchParams()
+      params.set("skip", String(skip))
+      params.set("limit", String(limit))
+      if (search) params.set("search", search)
+      if (isActiveFilter !== null) params.set("is_active", String(isActiveFilter))
+      if (databaseUrl) params.set("database_url", databaseUrl)
+      const res = await fetch(`/api/admin/user-token-usage?${params.toString()}`)
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        const msg = res.status === 404
+          ? "APIが見つかりません。バックエンド（FastAPI）を再起動してから再度お試しください。"
+          : (errData.error || "トークン使用量の取得に失敗しました")
+        throw new Error(msg)
+      }
       const data = await res.json()
-      setStats(data)
+      setItems(data.items || [])
+      setTotal(data.total ?? 0)
     } catch (err: any) {
       setError(err.message || "エラーが発生しました")
     } finally {
@@ -1762,17 +1946,17 @@ function AdminStats({ databaseUrl }: { databaseUrl?: string }) {
     }
   }
 
-  if (loading) {
+  if (loading && items.length === 0) {
     return (
       <div className="space-y-4">
         {[1, 2, 3].map((i) => (
-          <Skeleton key={i} className="h-32 w-full" />
+          <Skeleton key={i} className="h-24 w-full" />
         ))}
       </div>
     )
   }
 
-  if (error) {
+  if (error && items.length === 0) {
     return (
       <Alert variant="destructive">
         <AlertCircle className="h-4 w-4" />
@@ -1782,113 +1966,622 @@ function AdminStats({ databaseUrl }: { databaseUrl?: string }) {
     )
   }
 
-  if (!stats) return null
+  // プラン毎にグループ（プラン名 = テーブルタイトル）
+  const planKey = (row: AdminUserTokenUsageItem) => row.plan_name ?? row.plan_code ?? "未設定"
+  const byPlan = items.reduce((acc, row) => {
+    const key = planKey(row)
+    if (!acc[key]) acc[key] = []
+    acc[key].push(row)
+    return acc
+  }, {} as Record<string, AdminUserTokenUsageItem[]>)
+  const planOrder = Array.from(new Set(items.map(planKey)))
+
+  return (
+    <div ref={containerRef} className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Coins className="h-5 w-5" />
+            ユーザー使用Token
+          </CardTitle>
+          <CardDescription>
+            プラン別のトークン使用量。バーはそのプラン内の最大コストに対する割合です。バーをクリックで内訳を固定表示。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-4 items-center">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="メール・名前で検索"
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setSkip(0) }}
+                className="pl-9"
+              />
+            </div>
+            <Select
+              value={isActiveFilter === null ? "all" : isActiveFilter ? "active" : "inactive"}
+              onValueChange={(v) => {
+                setIsActiveFilter(v === "all" ? null : v === "active")
+                setSkip(0)
+              }}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="状態" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">すべて</SelectItem>
+                <SelectItem value="active">有効のみ</SelectItem>
+                <SelectItem value="inactive">無効のみ</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {items.length === 0 ? (
+            <div className="rounded-md border py-12 text-center text-muted-foreground">
+              該当するユーザーがいません
+            </div>
+          ) : (
+            <div className="space-y-8">
+              {planOrder.map((planName) => {
+                const planItems = byPlan[planName] ?? []
+                const maxCost = planItems.length > 0
+                  ? Math.max(...planItems.map((r) => r.total_cost_yen ?? 0), 1)
+                  : 1
+                return (
+                  <Card key={planName} className="overflow-hidden">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-lg">{planName}</CardTitle>
+                      <CardDescription>{planItems.length}ユーザー</CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <div className="rounded-md border overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="w-[240px]">ユーザー</TableHead>
+                              <TableHead className="min-w-[420px] w-full">使用割合</TableHead>
+                              <TableHead className="text-right w-[100px]">コスト(円)</TableHead>
+                              <TableHead className="text-right w-[80px]">今日</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {planItems.map((row) => (
+                              <TableRow key={row.id}>
+                                <TableCell>
+                                  <div className="font-medium">{row.email}</div>
+                                  {row.name && <div className="text-xs text-muted-foreground">{row.name}</div>}
+                                </TableCell>
+                                <TableCell className="align-top py-3">
+                                  <TokenUsageBar
+                                    featureCostYen={row.feature_cost_yen ?? {}}
+                                    totalCostYen={row.total_cost_yen ?? 0}
+                                    maxCost={maxCost}
+                                    isFixed={fixedRowId === row.id}
+                                    onBarClick={(e) => {
+                                      e.stopPropagation()
+                                      setFixedRowId((prev) => (prev === row.id ? null : row.id))
+                                    }}
+                                  />
+                                </TableCell>
+                                <TableCell className="text-right">¥{(row.total_cost_yen ?? 0).toFixed(2)}</TableCell>
+                                <TableCell className="text-right">{(row.today_tokens || 0).toLocaleString()}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          )}
+
+          {/* 使用カテゴリ凡例（Zipと同様） */}
+          <div className="pt-4 border-t border-border/50">
+            <div className="text-sm font-medium text-muted-foreground mb-2">使用内訳の凡例</div>
+            <div className="flex flex-wrap gap-4">
+              {FEATURE_KEYS.map((key, i) => (
+                <div key={key} className="flex items-center gap-2">
+                  <div
+                    className="w-4 h-4 rounded-sm shrink-0"
+                    style={{ backgroundColor: FEATURE_COLORS[i] }}
+                  />
+                  <span className="text-sm text-muted-foreground">{FEATURE_LABELS[key]}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex justify-between items-center">
+            <div className="text-sm text-muted-foreground">
+              {total > 0 && `${skip + 1} - ${Math.min(skip + limit, total)} / ${total}`}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setSkip(Math.max(0, skip - limit))}
+                disabled={skip === 0 || loading}
+              >
+                前へ
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setSkip(skip + limit)}
+                disabled={skip + limit >= total || loading}
+              >
+                次へ
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+// LLM確認タブ: タイプ選択で直近30件表示、枠Aリンクで内容を取得して表示
+const LLM_FEATURE_TYPES = [
+  { value: "review", label: "Review（講評）" },
+  { value: "review_chat", label: "Review Chat（講評チャット）" },
+  { value: "free_chat", label: "Free Chat（フリーチャット）" },
+  { value: "recent_review", label: "Recent Review" },
+  { value: "chat_title", label: "Chat Title" },
+] as const
+
+function AdminLlmCheck({ databaseUrl }: { databaseUrl?: string }) {
+  const [featureType, setFeatureType] = useState<string>("")
+  const [items, setItems] = useState<LlmRequest[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [reviewMetaMap, setReviewMetaMap] = useState<Record<number, { exam_type: string | null; year: number | null; subject_name: string | null }>>({})
+  const [threadTitleMap, setThreadTitleMap] = useState<Record<number, string>>({})
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detailKind, setDetailKind] = useState<"review" | "chat">("review")
+  const [detailReviewId, setDetailReviewId] = useState<number | null>(null)
+  const [detailThreadId, setDetailThreadId] = useState<number | null>(null)
+  const [detailReview, setDetailReview] = useState<ReviewResponse | null>(null)
+  const [detailThread, setDetailThread] = useState<Thread | null>(null)
+  const [detailMessages, setDetailMessages] = useState<Message[]>([])
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!featureType) {
+      setItems([])
+      setReviewMetaMap({})
+      setThreadTitleMap({})
+      return
+    }
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    const params = new URLSearchParams()
+    params.set("feature_type", featureType)
+    params.set("limit", "30")
+    if (databaseUrl) params.set("database_url", databaseUrl)
+    fetch(`/api/admin/llm-requests?${params.toString()}`)
+      .then((res) => {
+        if (!res.ok) throw new Error("LLM一覧の取得に失敗しました")
+        return res.json()
+      })
+      .then((data: LlmRequestListResponse) => {
+        if (cancelled) return
+        const list = data.items || []
+        setItems(list)
+        const reviewIds = [...new Set(list.filter((r) => r.review_id != null).map((r) => r.review_id!))]
+        const threadIds = [...new Set(list.filter((r) => r.thread_id != null).map((r) => r.thread_id!))]
+        if (reviewIds.length > 0) {
+          const histParams = new URLSearchParams()
+          histParams.set("limit", "500")
+          if (databaseUrl) histParams.set("database_url", databaseUrl)
+          fetch(`/api/admin/review-history?${histParams.toString()}`)
+            .then((hRes) => (hRes.ok ? hRes.json() : { items: [] }))
+            .then((hData: AdminReviewHistoryListResponse) => {
+              if (cancelled) return
+              const map: Record<number, { exam_type: string | null; year: number | null; subject_name: string | null }> = {}
+              for (const h of hData.items || []) {
+                if (reviewIds.includes(h.review_id))
+                  map[h.review_id] = {
+                    exam_type: h.exam_type ?? null,
+                    year: h.year ?? null,
+                    subject_name: h.subject_name ?? null,
+                  }
+              }
+              setReviewMetaMap(map)
+            })
+            .catch(() => {})
+        } else {
+          setReviewMetaMap({})
+        }
+        if (threadIds.length > 0) {
+          const titleMap: Record<number, string> = {}
+          Promise.all(
+            threadIds.slice(0, 50).map((tid) =>
+              fetch(`/api/threads/${tid}`)
+                .then((tRes) => (tRes.ok ? tRes.json() : null))
+                .then((t: Thread | null) => {
+                  if (t && !cancelled) titleMap[t.id] = t.title || "(無題)"
+                })
+            )
+          ).then(() => {
+            if (!cancelled) setThreadTitleMap(titleMap)
+          })
+        } else {
+          setThreadTitleMap({})
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err.message || "エラーが発生しました")
+          setItems([])
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [featureType, databaseUrl])
+
+  const openReviewDetail = (reviewId: number) => {
+    setDetailKind("review")
+    setDetailReviewId(reviewId)
+    setDetailThreadId(null)
+    setDetailReview(null)
+    setDetailThread(null)
+    setDetailMessages([])
+    setDetailError(null)
+    setDetailOpen(true)
+    setDetailLoading(true)
+    const url = databaseUrl
+      ? `/api/reviews/${reviewId}?database_url=${encodeURIComponent(databaseUrl)}`
+      : `/api/reviews/${reviewId}`
+    fetch(url)
+      .then((res) => {
+        if (!res.ok) throw new Error("講評の取得に失敗しました")
+        return res.json()
+      })
+      .then((data: ReviewResponse) => {
+        setDetailReview(data)
+      })
+      .catch((err) => setDetailError(err.message || "取得に失敗しました"))
+      .finally(() => setDetailLoading(false))
+  }
+
+  const openChatDetail = (threadId: number) => {
+    setDetailKind("chat")
+    setDetailThreadId(threadId)
+    setDetailReviewId(null)
+    setDetailReview(null)
+    setDetailThread(null)
+    setDetailMessages([])
+    setDetailError(null)
+    setDetailOpen(true)
+    setDetailLoading(true)
+    Promise.all([
+      fetch(`/api/threads/${threadId}`).then((r) => (r.ok ? r.json() : null)),
+      fetch(`/api/threads/${threadId}/messages`).then((r) => (r.ok ? r.json() : { messages: [] })),
+    ])
+      .then(([thread, msgData]: [Thread | null, { messages?: Message[] }]) => {
+        setDetailThread(thread || null)
+        setDetailMessages(msgData.messages || [])
+      })
+      .catch((err) => setDetailError(err?.message || "取得に失敗しました"))
+      .finally(() => setDetailLoading(false))
+  }
+
+  const getUsageId = (row: LlmRequest) => {
+    if (row.review_id != null) return `review_id: ${row.review_id}`
+    if (row.thread_id != null) return `thread_id: ${row.thread_id}`
+    if (row.session_id != null) return `session_id: ${row.session_id}`
+    return "-"
+  }
+
+  const getFrameALabel = (row: LlmRequest) => {
+    if (row.feature_type === "review" || row.feature_type === "recent_review") {
+      if (row.review_id == null) return "-"
+      const meta = reviewMetaMap[row.review_id]
+      if (!meta) return "（取得中…）"
+      const parts = [meta.exam_type, meta.year != null ? String(meta.year) : null, meta.subject_name].filter(Boolean)
+      return parts.length ? parts.join("・") : "-"
+    }
+    if (row.feature_type === "review_chat" || row.feature_type === "free_chat" || row.feature_type === "chat_title") {
+      if (row.thread_id == null) return "-"
+      return threadTitleMap[row.thread_id] ?? "（取得中…）"
+    }
+    return "-"
+  }
+
+  const handleFrameAClick = (row: LlmRequest) => {
+    if (row.feature_type === "review" || row.feature_type === "recent_review") {
+      if (row.review_id != null) openReviewDetail(row.review_id)
+    } else if ((row.feature_type === "review_chat" || row.feature_type === "free_chat" || row.feature_type === "chat_title") && row.thread_id != null) {
+      openChatDetail(row.thread_id)
+    }
+  }
+
+  const formatDate = (s: string) => (s ? new Date(s).toLocaleString("ja-JP") : "-")
+  const chatTheme = getChatMessageTheme("review")
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>詳細統計情報</CardTitle>
-          <CardDescription>システム全体の統計データ</CardDescription>
+          <CardTitle>🔍 LLM確認</CardTitle>
+          <CardDescription>
+            LLMタイプを選択すると直近30件を表示します。枠Aのリンクをクリックで内容を表示します（管理者用・閲覧のみ）。
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {/* ユーザー統計 */}
-          <div>
-            <h3 className="text-lg font-semibold mb-4">ユーザー統計</h3>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="border rounded-lg p-4">
-                <div className="text-sm text-muted-foreground">総ユーザー数</div>
-                <div className="text-2xl font-bold">{stats.total_users?.toLocaleString() || 0}</div>
-              </div>
-              <div className="border rounded-lg p-4">
-                <div className="text-sm text-muted-foreground">アクティブユーザー</div>
-                <div className="text-2xl font-bold">{stats.active_users?.toLocaleString() || 0}</div>
-              </div>
-              <div className="border rounded-lg p-4">
-                <div className="text-sm text-muted-foreground">管理者ユーザー</div>
-                <div className="text-2xl font-bold">{stats.admin_users?.toLocaleString() || 0}</div>
-              </div>
-            </div>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-4">
+            <label className="text-sm font-medium">LLMタイプ</label>
+            <Select value={featureType || "_none"} onValueChange={(v) => setFeatureType(v === "_none" ? "" : v)}>
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="選択してください" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none">選択してください</SelectItem>
+                {LLM_FEATURE_TYPES.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>
+                    {t.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-
-          {/* トークン・コスト統計 */}
-          <div>
-            <h3 className="text-lg font-semibold mb-4">トークン・コスト統計</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="border rounded-lg p-4">
-                <div className="text-sm text-muted-foreground">総トークン数</div>
-                <div className="text-2xl font-bold">{(stats.total_tokens || 0).toLocaleString()}</div>
-                <div className="text-xs text-muted-foreground mt-2">
-                  入力: {(stats.total_input_tokens || 0).toLocaleString()} / 出力: {(stats.total_output_tokens || 0).toLocaleString()}
-                </div>
-              </div>
-              <div className="border rounded-lg p-4">
-                <div className="text-sm text-muted-foreground">総コスト</div>
-                <div className="text-2xl font-bold">¥{stats.total_cost_yen?.toFixed(2) || "0.00"}</div>
-                <div className="text-xs text-muted-foreground mt-2">
-                  今日: ¥{stats.today_cost_yen?.toFixed(2) || "0.00"} / 今月: ¥{stats.this_month_cost_yen?.toFixed(2) || "0.00"}
-                </div>
-              </div>
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          {loading && (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              読み込み中…
             </div>
-          </div>
-
-          {/* アクセス統計 */}
-          <div>
-            <h3 className="text-lg font-semibold mb-4">アクセス統計</h3>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="border rounded-lg p-4">
-                <div className="text-sm text-muted-foreground">講評生成数</div>
-                <div className="text-2xl font-bold">{(stats.review_count || 0).toLocaleString()}</div>
-              </div>
-              <div className="border rounded-lg p-4">
-                <div className="text-sm text-muted-foreground">チャットセッション数</div>
-                <div className="text-2xl font-bold">{(stats.thread_count || 0).toLocaleString()}</div>
-              </div>
-              <div className="border rounded-lg p-4">
-                <div className="text-sm text-muted-foreground">短答式セッション数</div>
-                <div className="text-2xl font-bold">{(stats.short_answer_session_count || 0).toLocaleString()}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* 機能別統計 */}
-          {stats.feature_stats && Object.keys(stats.feature_stats).length > 0 && (
-            <div>
-              <h3 className="text-lg font-semibold mb-4">機能別統計</h3>
-              <div className="border rounded-lg overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>機能</TableHead>
-                      <TableHead>リクエスト数</TableHead>
-                      <TableHead>総トークン数</TableHead>
-                      <TableHead>入力トークン</TableHead>
-                      <TableHead>出力トークン</TableHead>
-                      <TableHead>総コスト</TableHead>
-                      <TableHead>平均レイテンシ</TableHead>
+          )}
+          {!loading && featureType && items.length === 0 && (
+            <p className="text-muted-foreground">該当するデータがありません。</p>
+          )}
+          {!loading && items.length > 0 && (
+            <div className="border rounded-lg overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ユーザーID</TableHead>
+                    <TableHead>当該LLM使用のID</TableHead>
+                    <TableHead>枠A</TableHead>
+                    <TableHead>日付</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell>{row.user_id}</TableCell>
+                      <TableCell className="font-mono text-sm">{getUsageId(row)}</TableCell>
+                      <TableCell>
+                        {(row.feature_type === "review" || row.feature_type === "recent_review" ? row.review_id != null : row.thread_id != null) ? (
+                          <button
+                            type="button"
+                            className="text-primary underline hover:no-underline text-left"
+                            onClick={() => handleFrameAClick(row)}
+                          >
+                            {getFrameALabel(row)}
+                          </button>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground text-sm">{formatDate(row.created_at)}</TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {Object.entries(stats.feature_stats).map(([feature, data]: [string, any]) => (
-                      <TableRow key={feature}>
-                        <TableCell>
-                          <Badge variant="secondary">{feature}</Badge>
-                        </TableCell>
-                        <TableCell>{(data.request_count || 0).toLocaleString()}</TableCell>
-                        <TableCell>{(data.total_tokens || 0).toLocaleString()}</TableCell>
-                        <TableCell>{(data.total_input_tokens || 0).toLocaleString()}</TableCell>
-                        <TableCell>{(data.total_output_tokens || 0).toLocaleString()}</TableCell>
-                        <TableCell>¥{(data.total_cost_yen || 0).toFixed(2)}</TableCell>
-                        <TableCell>{data.avg_latency_ms ? `${data.avg_latency_ms.toFixed(0)}ms` : "-"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+            <DialogTitle className="flex-1 min-w-0">
+              {detailKind === "review" && detailReviewId != null && `講評詳細 (review_id: ${detailReviewId})`}
+              {detailKind === "chat" && (detailThread ? `チャット: ${detailThread.title || "(無題)"}` : "チャット詳細")}
+            </DialogTitle>
+            {(detailKind === "review" && detailReviewId != null) || (detailKind === "chat" && detailThread?.review_id != null) ? (
+              <Link
+                href={(() => {
+                  const rid = detailKind === "review" ? detailReviewId! : detailThread!.review_id!
+                  const params = new URLSearchParams()
+                  if (detailKind === "chat" && detailThreadId != null) params.set("thread_id", String(detailThreadId))
+                  if (databaseUrl) params.set("database_url", databaseUrl)
+                  const q = params.toString()
+                  return `/dev/review/${rid}${q ? `?${q}` : ""}`
+                })()}
+                className="shrink-0"
+              >
+                <Button type="button" variant="outline" size="sm" className="gap-1.5">
+                  <Maximize2 className="h-4 w-4" />
+                  拡大表示
+                </Button>
+              </Link>
+            ) : null}
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto min-h-0 space-y-4 pr-2">
+            {detailLoading && (
+              <div className="flex items-center gap-2 text-muted-foreground py-8">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                読み込み中…
+              </div>
+            )}
+            {detailError && (
+              <Alert variant="destructive">
+                <AlertDescription>{detailError}</AlertDescription>
+              </Alert>
+            )}
+            {!detailLoading && !detailError && detailKind === "review" && detailReview && (() => {
+              const reviewJson = detailReview.review_json || {}
+              const evaluation = reviewJson.evaluation || reviewJson
+              const overallReview = evaluation.overall_review || {}
+              const score = overallReview.score
+              const strengths = evaluation.strengths || []
+              const weaknesses = evaluation.weaknesses || []
+              const importantPoints = evaluation.important_points || []
+              const futureConsiderations = evaluation.future_considerations || []
+              return (
+                <div className="space-y-8">
+                  {score !== undefined && (
+                    <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
+                      <div className="flex items-start gap-6">
+                        <ScoreRing score={score} />
+                        <div className="flex-1 pt-2">
+                          <h2 className="text-lg font-bold text-foreground mb-3">総合評価</h2>
+                          <p className="text-sm text-muted-foreground leading-relaxed">
+                            {overallReview.comment || "コメントがありません"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {strengths.length > 0 && (
+                    <div>
+                      <h3 className="text-xs font-bold text-success uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <div className="p-1.5 rounded-lg bg-success/10">
+                          <TrendingUp className="h-3.5 w-3.5" />
+                        </div>
+                        評価した点
+                      </h3>
+                      <div className="space-y-3">
+                        {strengths.map((s: any, i: number) => (
+                          <FeedbackCard key={i} type="strength" category={s.category} description={s.description} paragraphs={s.paragraph_numbers} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {weaknesses.length > 0 && (
+                    <div>
+                      <h3 className="text-xs font-bold text-error uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <div className="p-1.5 rounded-lg bg-error/10">
+                          <AlertCircle className="h-3.5 w-3.5" />
+                        </div>
+                        改善点
+                      </h3>
+                      <div className="space-y-3">
+                        {weaknesses.map((w: any, i: number) => (
+                          <FeedbackCard key={i} type="weakness" category={w.category} description={w.description} paragraphs={w.paragraph_numbers} suggestion={w.suggestion} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {importantPoints.length > 0 && (
+                    <div>
+                      <h3 className="text-xs font-bold text-primary uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <div className="p-1.5 rounded-lg bg-primary/10">
+                          <Lightbulb className="h-3.5 w-3.5" />
+                        </div>
+                        重要な段落
+                      </h3>
+                      <div className="space-y-3">
+                        {importantPoints.map((point: any, i: number) => (
+                          <div key={i} className="bg-card rounded-2xl border border-border p-5">
+                            <div className="flex items-center gap-2 mb-4">
+                              <span className="text-xs font-bold px-3 py-1 rounded-full bg-gradient-to-r from-primary/20 to-accent/20 text-primary">
+                                第{point.paragraph_number}段落
+                              </span>
+                            </div>
+                            <div className="space-y-4 text-sm">
+                              <div className="flex gap-3">
+                                <div className="w-1 rounded-full bg-success shrink-0" />
+                                <div>
+                                  <span className="text-xs font-semibold text-success uppercase tracking-wider">良い点</span>
+                                  <p className="mt-1 text-muted-foreground">{point.what_is_good}</p>
+                                </div>
+                              </div>
+                              <div className="flex gap-3">
+                                <div className="w-1 rounded-full bg-error shrink-0" />
+                                <div>
+                                  <span className="text-xs font-semibold text-error uppercase tracking-wider">不足点</span>
+                                  <p className="mt-1 text-muted-foreground">{point.what_is_lacking}</p>
+                                </div>
+                              </div>
+                              <div className="pt-3 border-t border-border">
+                                <p className="text-xs text-foreground/70 italic leading-relaxed">{point.why_important}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {futureConsiderations.length > 0 && (
+                    <div className="bg-gradient-to-br from-secondary/60 to-accent/20 rounded-2xl p-6 border border-border/50">
+                      <h3 className="text-xs font-bold text-foreground uppercase tracking-wider mb-4">今後意識すべきこと</h3>
+                      <ul className="space-y-3">
+                        {futureConsiderations.map((item: any, i: number) => {
+                          const content = typeof item === "string" ? item : item.content
+                          const blockNumber = typeof item === "object" && "block_number" in item ? item.block_number : i + 1
+                          return (
+                            <li key={i} className="flex items-start gap-3 text-sm text-foreground/80">
+                              <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-bold shrink-0">{blockNumber}</span>
+                              <span className="leading-relaxed">{content}</span>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="prose prose-sm max-w-none bg-muted/30 p-4 rounded-lg">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{detailReview.review_markdown || ""}</ReactMarkdown>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold mb-2">答案</h4>
+                    <pre className="text-sm whitespace-pre-wrap bg-muted/50 p-4 rounded-lg overflow-x-auto">{detailReview.answer_text || ""}</pre>
+                  </div>
+                  {detailReview.question_text && (
+                    <div>
+                      <h4 className="text-sm font-semibold mb-2">問題文</h4>
+                      <pre className="text-sm whitespace-pre-wrap bg-muted/50 p-4 rounded-lg overflow-x-auto">{detailReview.question_text}</pre>
+                    </div>
+                  )}
+                  {detailReview.purpose && (
+                    <div>
+                      <h4 className="text-sm font-semibold mb-2">出題趣旨</h4>
+                      <pre className="text-sm whitespace-pre-wrap bg-muted/50 p-4 rounded-lg overflow-x-auto">{detailReview.purpose}</pre>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+            {!detailLoading && !detailError && detailKind === "chat" && (
+              <div className="space-y-3">
+                {detailMessages
+                  .filter((msg) => msg.role === "user" || msg.role === "assistant")
+                  .map((msg) => (
+                    <ChatMessageShell
+                      key={msg.id}
+                      isUser={msg.role === "user"}
+                      layout={chatTheme.layout}
+                      className={chatTheme.rowClassName}
+                      bubbleClassName={[
+                        chatTheme.bubbleBaseClassName,
+                        msg.role === "user" ? chatTheme.bubbleUserClassName : chatTheme.bubbleAssistantClassName,
+                      ].join(" ")}
+                      content={<ChatMarkdown content={msg.content || ""} className={chatTheme.markdownClassName} />}
+                    />
+                  ))}
+                {detailMessages.filter((m) => m.role === "user" || m.role === "assistant").length === 0 && (
+                  <p className="text-muted-foreground text-sm">メッセージがありません。</p>
+                )}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
