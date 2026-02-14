@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import Link from "next/link"
-import { ExternalLink, History, BookOpen, ChevronDown, Filter, Menu, Lightbulb, ListTodo, Heart, Calendar as CalendarIcon, Pencil, Check, X, Maximize2, Plus, CalendarDays, Target } from "lucide-react"
+import { ExternalLink, History, BookOpen, ChevronDown, ChevronUp, Filter, Menu, Lightbulb, ListTodo, Heart, Calendar as CalendarIcon, Pencil, Check, X, Maximize2, Plus, CalendarDays, Target } from "lucide-react"
 import { SortableRow } from "@/components/sortable-row"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -318,6 +318,7 @@ function StudyManagementPage() {
   // 折りたたみ状態
   const [memoOpen, setMemoOpen] = useState(true)
   const [topicOpen, setTopicOpen] = useState(true)
+  const [goalAchievementCardVisible, setGoalAchievementCardVisible] = useState(true)
   
   // MEMO用フィルター
   const [memoSubjectFilter, setMemoSubjectFilter] = useState<string | null>(null)
@@ -786,18 +787,144 @@ function StudyManagementPage() {
         </div>
       </div>
       
-      {/* 目標達成率 */}
-      <Card className="shadow-sm border-amber-200/60">
-        <CardHeader className="py-1.5 px-3">
-          <CardTitle className="text-xs font-medium flex items-center gap-1.5 text-amber-900/80">
-            <Target className="h-3.5 w-3.5 text-amber-200/60" />
-            目標達成率
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-3 pb-3">
-          <div className="text-sm text-muted-foreground">（表示エリア）</div>
-        </CardContent>
-      </Card>
+      {/* 目標達成率（今月の勉強時間カードと同様のレイアウト） */}
+      {goalAchievementCardVisible && (
+        <div className="rounded-xl border border-amber-200/40 bg-gradient-to-br from-white to-amber-50/30 shadow-md transition-all duration-300">
+          <div className="py-3 px-4 border-b border-amber-100/40 flex items-center justify-between bg-gradient-to-r from-amber-50/50 to-transparent">
+            <div className="text-sm font-semibold flex items-center gap-2 text-amber-900">
+              <Target className="h-5 w-5 text-amber-600" />
+              目標達成率
+            </div>
+            <button
+              type="button"
+              onClick={() => setGoalAchievementCardVisible(false)}
+              className="text-gray-400 hover:text-gray-600 transition-colors p-1"
+            >
+              <ChevronUp className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="p-6">
+            <div className="flex gap-8">
+              {/* 左側：大きな円グラフ */}
+              <div className="flex flex-col items-center justify-start flex-shrink-0">
+                <div className="relative w-40 h-40">
+                  <svg className="w-full h-full" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="42" fill="none" stroke="#fef3c7" strokeWidth="6" />
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="42"
+                      fill="none"
+                      stroke="url(#gradientCircleGoal)"
+                      strokeWidth="6"
+                      strokeDasharray={`${42 * Math.PI * (72 / 100)}, ${42 * Math.PI * 2}`}
+                      strokeLinecap="round"
+                      transform="rotate(-90 50 50)"
+                    />
+                    <defs>
+                      <linearGradient id="gradientCircleGoal" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#f59e0b" />
+                        <stop offset="100%" stopColor="#d97706" />
+                      </linearGradient>
+                    </defs>
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-3xl font-bold bg-gradient-to-br from-amber-600 to-amber-700 bg-clip-text text-transparent">72%</span>
+                    <span className="text-xs text-gray-500 font-medium mt-1">達成</span>
+                  </div>
+                </div>
+                <div className="mt-4 text-center">
+                  <p className="text-lg font-bold text-amber-900">72 / 100</p>
+                  <p className="text-xs text-gray-600 mt-0.5">時間</p>
+                </div>
+              </div>
+
+              {/* 右側：上下に分割 */}
+              <div className="flex-1 flex flex-col gap-3 min-w-0">
+                {/* 上部：目標達成率、短答、講評（横並び） */}
+                <div className="flex gap-1.5">
+                  <div style={{ flex: "2" }} className="rounded-lg px-2.5 py-1">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-xs font-semibold text-blue-900">目標達成率</span>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <span className="text-xs font-bold text-blue-700">72%</span>
+                          <span className="text-xs font-bold text-blue-700">18/25</span>
+                        </div>
+                      </div>
+                      <div className="w-full bg-blue-100 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="bg-gradient-to-r from-blue-400 to-blue-600 h-full rounded-full"
+                          style={{ width: "72%" }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ flex: "0.8" }} className="rounded-lg px-2.5 py-1">
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-xs font-semibold text-emerald-900">短答実施数</span>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <span className="text-xs font-bold text-emerald-700">72%</span>
+                          <span className="text-xs font-bold text-emerald-700">18/25</span>
+                        </div>
+                      </div>
+                      <div className="w-full bg-emerald-100 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="bg-gradient-to-r from-emerald-400 to-emerald-600 h-full rounded-full"
+                          style={{ width: "72%" }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ flex: "0.8" }} className="rounded-lg px-2.5 py-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-xs font-semibold text-rose-900">今月の講評</span>
+                      <span className="text-xs font-bold text-rose-600 flex-shrink-0">
+                        {planLimits?.reviews_used ?? "-"} / {planLimits?.reviews_limit ?? "-"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 下部：科目別テーブル */}
+                <div className="border-t border-amber-100/60 pt-2 mt-2">
+                  <div className="text-xs font-semibold flex items-center gap-2 text-amber-900 mb-2">
+                    📊 科目別勉強時間
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-amber-50/80 border-y border-amber-200/40">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-semibold text-amber-900">科目</th>
+                          <th className="px-3 py-2 text-right font-semibold text-amber-900">実績/目標</th>
+                          <th className="px-3 py-2 text-center font-semibold text-amber-900">達成度</th>
+                          <th className="px-3 py-2 text-center font-semibold text-amber-900">ステータス</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td colSpan={4} className="px-3 py-4 text-center text-muted-foreground">データがありません</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!goalAchievementCardVisible && (
+        <button
+          type="button"
+          onClick={() => setGoalAchievementCardVisible(true)}
+          className="w-full py-2 text-xs font-medium text-amber-700 hover:text-amber-900 bg-amber-50/60 hover:bg-amber-100/60 border border-amber-200/40 rounded-lg transition-colors"
+        >
+          目標達成率を表示
+        </button>
+      )}
 
       {/* Your MEMO */}
       <Card className="shadow-sm border-amber-200/60">
