@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import sys
 from pathlib import Path
@@ -119,6 +120,28 @@ def generate_review(
 
 # _jsonize_answer関数は削除（1段階処理では不要）
 
+PARAGRAPH_MARKER_PREFIX = "$$["  # 答案には出てこない形式。表示時に ¶N 等に変換する。
+
+
+def add_paragraph_markers(answer_text: str) -> str:
+    """
+    答案を改行区切り（非空行ごと）で分割し、各非空行の行頭に $$[1], $$[2], ... を付与する。
+    空行はそのまま保持する。段落番号は空行をカウントしない。
+    """
+    if not answer_text:
+        return answer_text
+    lines = answer_text.split("\n")
+    para_num = 0
+    result_lines = []
+    for line in lines:
+        if line.strip():
+            para_num += 1
+            result_lines.append(f"{PARAGRAPH_MARKER_PREFIX}{para_num}] {line}")
+        else:
+            result_lines.append(line)
+    return "\n".join(result_lines)
+
+
 def _evaluate_answer(
     client: Anthropic,
     subject: str,
@@ -149,12 +172,21 @@ def _evaluate_answer(
         # 科目別の留意事項を読み込む
         subject_guidelines = _load_subject_guidelines(subject)
         
-        # 変数を置換
+        # 答案に段落番号が既に付与されているかチェック
+        import re
+        has_markers = bool(re.search(r'\$\$\[\d+\]', answer_text))
+        
+        # 段落番号がまだ付与されていない場合のみ付与
+        if has_markers:
+            marked_answer = answer_text
+        else:
+            marked_answer = add_paragraph_markers(answer_text)
+        
         prompt = template.replace("{SUBJECT_SPECIFIC_GUIDELINES}", subject_guidelines)
         prompt = prompt.replace("{PURPOSE_TEXT}", purpose_text or "（出題趣旨なし）")
         prompt = prompt.replace("{GRADING_IMPRESSION_TEXT}", grading_impression_text or "（採点実感なし）")
         prompt = prompt.replace("{QUESTION_TEXT}", question_text or "（問題文なし）")
-        prompt = prompt.replace("{ANSWER_TEXT}", answer_text)
+        prompt = prompt.replace("{ANSWER_TEXT}", marked_answer)
         
         # プロンプトの構築
         system_prompt = "あなたは司法試験・予備試験の法律答案講評の品質を評価する専門家です。"

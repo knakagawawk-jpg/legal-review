@@ -16,7 +16,7 @@ export function StrengthCard({ category, description, paragraph_numbers }: Stren
           {category}
         </Badge>
         <div className="flex gap-1 flex-wrap">
-          {paragraph_numbers.map((num) => (
+          {paragraph_numbers.filter((num) => num > 0).map((num) => (
             <button
               key={num}
               className="px-2 py-0.5 text-xs rounded-md bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors cursor-pointer"
@@ -25,7 +25,7 @@ export function StrengthCard({ category, description, paragraph_numbers }: Stren
                 console.log(`Jump to paragraph ${num}`)
               }}
             >
-              ¶{num}
+              §{num}
             </button>
           ))}
         </div>

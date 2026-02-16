@@ -21,7 +21,7 @@ export function WeaknessCard({ category, description, paragraph_numbers, suggest
           {category}
         </Badge>
         <div className="flex gap-1 flex-wrap">
-          {paragraph_numbers.map((num) => (
+          {paragraph_numbers.filter((num) => num > 0).map((num) => (
             <button
               key={num}
               className="px-2 py-0.5 text-xs rounded-md bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors cursor-pointer"
@@ -29,7 +29,7 @@ export function WeaknessCard({ category, description, paragraph_numbers, suggest
                 console.log(`Jump to paragraph ${num}`)
               }}
             >
-              ¶{num}
+              §{num}
             </button>
           ))}
         </div>

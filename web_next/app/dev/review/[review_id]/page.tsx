@@ -1,7 +1,7 @@
 "use client"
 
 import { useParams, useSearchParams } from "next/navigation"
-import { ReviewResultView } from "@/app/your-page/review/[review_id]/page"
+import { ReviewResultView } from "@/components/review-result-view"
 import { withAuth } from "@/components/auth/with-auth"
 
 function DevReviewPageInner() {

@@ -12,12 +12,19 @@ interface ChatMessageProps {
 export function ChatMessage({ role, content }: ChatMessageProps) {
   const isUser = role === "user"
   const theme = getChatMessageTheme("review")
+  const contentWrapperClassName = isUser
+    ? (theme.contentWrapperUserClassName ?? theme.contentWrapperClassName)
+    : (theme.contentWrapperAssistantClassName ?? theme.contentWrapperClassName)
+  const markdownClassName = isUser
+    ? (theme.markdownUserClassName ?? theme.markdownClassName)
+    : (theme.markdownAssistantClassName ?? theme.markdownClassName)
 
   return (
     <ChatMessageShell
       isUser={isUser}
       layout={theme.layout}
       className={theme.rowClassName}
+      contentWrapperClassName={contentWrapperClassName}
       bubbleClassName={[
         theme.bubbleBaseClassName,
         isUser ? theme.bubbleUserClassName : theme.bubbleAssistantClassName,
@@ -25,7 +32,7 @@ export function ChatMessage({ role, content }: ChatMessageProps) {
       content={(
         <ChatMarkdown
           content={content}
-          className={theme.markdownClassName}
+          className={markdownClassName}
         />
       )}
     />

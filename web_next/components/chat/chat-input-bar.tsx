@@ -19,7 +19,7 @@ export function ChatInputBar({
   helperClassName,
 }: ChatInputBarProps) {
   return (
-    <div className={cn("border-t border-indigo-100/50 bg-white/80 backdrop-blur-md p-4", className)}>
+    <div className={cn("border-t border-indigo-100/50 bg-white p-4", className)}>
       <div className={cn("mx-auto max-w-3xl", contentClassName)}>
         {children}
         {helperText && <div className={cn("mt-2 flex justify-end", helperClassName)}>{helperText}</div>}

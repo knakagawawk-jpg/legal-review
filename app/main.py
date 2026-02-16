@@ -65,7 +65,7 @@ from .schemas import (
     SubscriptionCheckoutRequest, SubscriptionCheckoutResponse
 )
 from pydantic import BaseModel
-from .llm_service import generate_review, chat_about_review, free_chat, generate_recent_review_problems, generate_chat_title
+from .llm_service import generate_review, chat_about_review, free_chat, generate_recent_review_problems, generate_chat_title, add_paragraph_markers
 from .llm_usage import build_llm_request_row
 from .auth import get_current_user, get_current_user_required, get_current_admin, verify_google_token, get_or_create_user, create_access_token
 from . import plan_limits as plan_limits_module
@@ -1389,13 +1389,16 @@ async def create_review(
         # プラン制限: 講評の合計回数
         plan_limits_module.check_review_limit(db, current_user)
 
+        # 区切り付き答案（$$[1], $$[2], ...）をDBに保存する
+        marked_answer = add_paragraph_markers(req.answer_text)
+
         # 2) Submission保存（認証されている場合はuser_idを設定）
         sub = Submission(
             user_id=current_user.id if current_user else None,
             problem_id=problem_id,  # 既存構造用（後方互換性）
             subject=subject_id,  # 科目ID（1-18）
             question_text=question_text,
-            answer_text=req.answer_text,
+            answer_text=marked_answer,
         )
         db.add(sub)
         db.commit()
@@ -1408,7 +1411,7 @@ async def create_review(
             review_markdown, review_json, model_name, in_tok, out_tok, request_id, latency_ms = generate_review(
                 subject=subject_name,  # LLMには科目名を渡す
                 question_text=question_text,
-                answer_text=req.answer_text,
+                answer_text=marked_answer,  # 段落番号付き答案をLLMに渡す
                 purpose_text=purpose_text,  # 出題趣旨を渡す
                 grading_impression_text=grading_impression_text,  # 司法試験のみ
             )
@@ -1470,7 +1473,7 @@ async def create_review(
             source_type=source_type,
             official_question_id=official_question_id,
             custom_question_text=question_text if source_type == "custom" else None,
-            answer_text=req.answer_text,
+            answer_text=marked_answer,
             kouhyo_kekka=json.dumps(review_json, ensure_ascii=False),
         )
         db.add(rev)

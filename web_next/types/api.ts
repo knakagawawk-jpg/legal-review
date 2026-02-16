@@ -44,6 +44,7 @@ export interface ReviewResponse {
       future_considerations?: Array<{
         block_number?: number
         content: string
+        paragraph_numbers?: number[]
       }> | string[] // 後方互換性のためstring[]も許可
     }
     // 後方互換性のため、直接プロパティにもアクセス可能にする
@@ -74,6 +75,7 @@ export interface ReviewResponse {
     future_considerations?: Array<{
       block_number?: number
       content: string
+      paragraph_numbers?: number[]
     }> | string[] // 後方互換性のためstring[]も許可
     subject?: string
   }

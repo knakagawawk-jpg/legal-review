@@ -2,10 +2,7 @@
 
 import type React from "react"
 import type { RefObject } from "react"
-import { Bot, User, Copy, Check, Lightbulb, Sparkles } from "lucide-react"
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
+import { Bot, Sparkles } from "lucide-react"
 import type { Message } from "@/types/api"
 import { ChatMessageList } from "@/components/chat/chat-message-list"
 import { ChatMarkdown } from "@/components/chat/chat-markdown"
@@ -13,6 +10,7 @@ import { ChatMessageShell } from "@/components/chat/chat-message-shell"
 import { ChatLoadingIndicator } from "@/components/chat/chat-loading-indicator"
 import { ChatEmptyState } from "@/components/chat/chat-empty-state"
 import { getChatMessageTheme } from "@/components/chat/chat-message-theme"
+import { cn } from "@/lib/utils"
 
 interface ChatMessagesProps {
   messages: Message[]
@@ -21,62 +19,22 @@ interface ChatMessagesProps {
   messagesEndRef: RefObject<HTMLDivElement>
 }
 
-function formatTime(dateString: string) {
-  return new Date(dateString).toLocaleTimeString("ja-JP", {
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-}
-
 function MessageBubble({ message }: { message: Message }) {
-  const [copied, setCopied] = useState(false)
   const isUser = message.role === "user"
   const theme = getChatMessageTheme("free")
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(message.content)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  const avatar = (
-    <div
-      className={cn(
-        theme.avatarBaseClassName,
-        isUser ? theme.avatarUserClassName : theme.avatarAssistantClassName,
-      )}
-    >
-      {isUser ? (
-        <User className="h-4 w-4 text-white" />
-      ) : (
-        <Bot className="h-4 w-4 text-white" />
-      )}
-    </div>
-  )
-
-  const footer = (
-    <>
-      <span className="text-[10px] text-muted-foreground">{formatTime(message.created_at)}</span>
-      {!isUser && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 text-muted-foreground hover:text-foreground"
-          onClick={handleCopy}
-        >
-          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-        </Button>
-      )}
-    </>
-  )
+  const contentWrapperClassName = isUser
+    ? (theme.contentWrapperUserClassName ?? theme.contentWrapperClassName)
+    : (theme.contentWrapperAssistantClassName ?? theme.contentWrapperClassName)
+  const markdownClassName = isUser
+    ? (theme.markdownUserClassName ?? theme.markdownClassName)
+    : (theme.markdownAssistantClassName ?? theme.markdownClassName)
 
   return (
     <ChatMessageShell
       isUser={isUser}
       layout={theme.layout}
       className={theme.rowClassName}
-      avatar={avatar}
-      contentWrapperClassName={theme.contentWrapperClassName}
+      contentWrapperClassName={contentWrapperClassName}
       bubbleClassName={[
         theme.bubbleBaseClassName,
         isUser ? theme.bubbleUserClassName : theme.bubbleAssistantClassName,
@@ -84,10 +42,9 @@ function MessageBubble({ message }: { message: Message }) {
       content={(
         <ChatMarkdown
           content={message.content}
-          className={theme.markdownClassName}
+          className={markdownClassName}
         />
       )}
-      footer={footer}
     />
   )
 }

@@ -1,12 +1,17 @@
 "use client"
 
 import type React from "react"
-import { useState, useRef, useEffect, memo } from "react"
+import { useState, useRef, useEffect, memo, useImperativeHandle, forwardRef } from "react"
 import { Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { ChatInputBar } from "@/components/chat/chat-input-bar"
+
+export interface ChatInputHandle {
+  /** テキストを挿入する。入力欄にフォーカスがあればカーソル位置に、なければ末尾に挿入 */
+  insertText: (text: string) => void
+}
 
 interface ChatInputProps {
   onSend: (message: string) => void
@@ -19,7 +24,7 @@ interface ChatInputProps {
   onChange?: (value: string) => void
 }
 
-export const ChatInput = memo(function ChatInput({ onSend, isLoading, onStop, fullWidth, value: controlledValue, onChange: controlledOnChange }: ChatInputProps) {
+export const ChatInput = memo(forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput({ onSend, isLoading, onStop, fullWidth, value: controlledValue, onChange: controlledOnChange }, ref) {
   const [internalInput, setInternalInput] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const isControlled = controlledValue !== undefined && controlledOnChange !== undefined
@@ -27,6 +32,26 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, onStop, fu
   const setInput = isControlled ? controlledOnChange : setInternalInput
   const onSendRef = useRef(onSend)
   const onStopRef = useRef(onStop)
+
+  useImperativeHandle(ref, () => ({
+    insertText(text: string) {
+      const textarea = textareaRef.current
+      if (!textarea) return
+      const isFocused = document.activeElement === textarea
+      const start = isFocused ? textarea.selectionStart : input.length
+      const end = isFocused ? textarea.selectionEnd : input.length
+      const before = input.slice(0, start)
+      const after = input.slice(end)
+      const next = before + text + after
+      setInput(next)
+      // カーソルを挿入直後に移動
+      requestAnimationFrame(() => {
+        const pos = start + text.length
+        textarea.setSelectionRange(pos, pos)
+        textarea.focus()
+      })
+    },
+  }), [input, setInput, isControlled])
 
   // onSendとonStopの参照を最新に保つ
   useEffect(() => {
@@ -65,7 +90,7 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, onStop, fu
       helperText={<p className="text-[10px] text-muted-foreground/70">Shift + Enter で改行</p>}
       contentClassName={fullWidth ? "w-full max-w-none" : undefined}
     >
-      <div className="relative flex items-end gap-2 rounded-2xl border border-indigo-200/60 bg-white/90 backdrop-blur-sm p-2 shadow-sm focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-400/20">
+      <div className="relative flex items-end gap-2 rounded-2xl border border-indigo-200/60 bg-white p-2 shadow-sm focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-400/20">
         {/* Text Input */}
         <Textarea
           ref={textareaRef}
@@ -112,7 +137,7 @@ export const ChatInput = memo(function ChatInput({ onSend, isLoading, onStop, fu
       </div>
     </ChatInputBar>
   )
-}, (prevProps, nextProps) => {
+}), (prevProps, nextProps) => {
   if (prevProps.isLoading !== nextProps.isLoading || prevProps.onStop !== nextProps.onStop || prevProps.fullWidth !== nextProps.fullWidth) return false
   if (prevProps.value !== nextProps.value) return false
   return true
