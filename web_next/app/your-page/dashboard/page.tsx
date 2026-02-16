@@ -53,7 +53,7 @@ interface DashboardItem {
   id: number
   user_id: number
   dashboard_date: string
-  entry_type: number  // 1=Point, 2=Task
+  entry_type: number  // 1=Point, 2=Task, 3=Target
   subject: number | null
   item: string
   due_date: string | null

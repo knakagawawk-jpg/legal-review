@@ -305,6 +305,15 @@ def _startup_migrate_reviews():
     except Exception as e:
         logger.warning(f"Startup dashboard_items favorite migration skipped/failed: {str(e)}")
 
+    # dashboard_items の entry_type に 3=Target を許可
+    try:
+        from .migrate_dashboard_items_entry_type_target import migrate_dashboard_items_entry_type_target
+
+        migrate_dashboard_items_entry_type_target()
+        logger.info("✓ Startup dashboard_items entry_type=3 migration completed")
+    except Exception as e:
+        logger.warning(f"Startup dashboard_items entry_type=3 migration skipped/failed: {str(e)}")
+
     # threads に favorite カラムを追加、is_archived を削除
     try:
         from .migrate_threads_favorite import migrate_threads_favorite
@@ -420,30 +429,63 @@ def _load_prompt_text(prompt_name: str) -> str:
 
 def _build_review_chat_context_text(
     *,
+    user_input: str,
     question_text: str,
     purpose_text: str,
     grading_impression_text: str,
     review_json_obj: dict,
+    answer_text: str,
+    paragraph_numbers_override: list | None = None,
 ) -> str:
-    template = _load_prompt_text("review_chat_context")
-    if not template:
-        template = (
-            "【問題文】\n{QUESTION_TEXT}\n\n"
-            "【出題趣旨／参考文章】\n{PURPOSE_TEXT}\n\n"
-            "【採点実感】\n{GRADING_IMPRESSION_TEXT}\n\n"
-            "【講評JSON】\n{REVIEW_JSON}\n"
-        )
-    review_json_str = ""
-    try:
-        review_json_str = json.dumps(review_json_obj or {}, ensure_ascii=False, indent=2)
-    except Exception:
-        review_json_str = "{}"
-
-    return template.replace("{QUESTION_TEXT}", _truncate_text(question_text or "（問題文なし）")).replace(
-        "{PURPOSE_TEXT}", _truncate_text(purpose_text or "（出題趣旨／参考文章なし）")
-    ).replace("{GRADING_IMPRESSION_TEXT}", _truncate_text(grading_impression_text or "（採点実感なし）")).replace(
-        "{REVIEW_JSON}", _truncate_text(review_json_str or "{}", limit=14000)
+    """
+    講評チャット用コンテキストを組み立てる。
+    - 常時: 問題文、講評JSONの overall_review。
+    - ユーザー入力に「出題趣旨」が含まれる場合: PURPOSE_TEXT を追加。
+    - ユーザー入力に「採点実感」が含まれる場合: GRADING_IMPRESSION_TEXT を追加。
+    - paragraph_numbers_override が渡された場合、またはユーザー入力に「§N」「第N段落」が含まれる場合: Specified と Related を追加。
+    （§N を含んだ発話の次回・次々回は呼び出し側で paragraph_numbers_override を渡す想定）
+    """
+    from .llm_service import (
+        extract_paragraph_numbers_from_user_input,
+        extract_specified_text_from_answer,
+        get_related_review_json_items,
     )
+    sections = []
+
+    # 常時: 問題文
+    sections.append("【問題文】\n" + _truncate_text(question_text or "（問題文なし）"))
+
+    # 条件付き: 出題趣旨／参考文章
+    if user_input and "出題趣旨" in user_input:
+        sections.append("【出題趣旨／参考文章】\n" + _truncate_text(purpose_text or "（出題趣旨／参考文章なし）"))
+
+    # 条件付き: 採点実感
+    if user_input and "採点実感" in user_input:
+        sections.append("【採点実感】\n" + _truncate_text(grading_impression_text or "（採点実感なし）"))
+
+    # 常時: 講評（全体）＝ overall_review のみ
+    overall = (review_json_obj or {}).get("overall_review") or {}
+    try:
+        overall_str = json.dumps(overall, ensure_ascii=False, indent=2)
+    except Exception:
+        overall_str = "{}"
+    sections.append("【講評（全体）】\n" + _truncate_text(overall_str, limit=8000))
+
+    # 条件付き: §N / 第N段落（今回の入力 or 次回・次々回用の override）→ Specified と Related
+    para_nums = paragraph_numbers_override if paragraph_numbers_override is not None else extract_paragraph_numbers_from_user_input(user_input or "")
+    if para_nums and answer_text:
+        specified = extract_specified_text_from_answer(answer_text, para_nums)
+        if specified:
+            sections.append("【指定段落付き答案（Specified）】\n" + _truncate_text(specified, limit=12000))
+        related = get_related_review_json_items(review_json_obj or {}, para_nums)
+        if related:
+            try:
+                related_str = json.dumps(related, ensure_ascii=False, indent=2)
+            except Exception:
+                related_str = "[]"
+            sections.append("【指定段落に関連する講評（Related）】\n" + _truncate_text(related_str, limit=10000))
+
+    return "\n\n".join(sections)
 
 
 def _build_review_chat_user_prompt_text(question: str) -> str:
@@ -458,10 +500,11 @@ def _get_review_chat_context_by_review_id(
     review_id: int,
     current_user: User,
     db: Session,
-) -> tuple[str, str, str, dict]:
+) -> tuple[str, str, str, dict, str]:
     """
-    review_id から講評チャット用のコンテキスト（問題文/趣旨/採点実感/講評JSON）を復元する。
+    review_id から講評チャット用のコンテキスト（問題文/趣旨/採点実感/講評JSON/答案文）を復元する。
     ここで作るコンテキストはDB（messages）には保存しない前提。
+    戻り: (question_text, purpose_text, grading_impression_text, review_json_obj, answer_text)
     """
     review = db.query(Review).filter(Review.id == review_id).first()
     if not review:
@@ -478,6 +521,7 @@ def _get_review_chat_context_by_review_id(
     question_text = review.custom_question_text or ""
     purpose_text = ""
     grading_impression_text = ""
+    answer_text = review.answer_text or ""
 
     if review.official_question_id:
         official_q = db.query(OfficialQuestion).filter(OfficialQuestion.id == review.official_question_id).first()
@@ -492,7 +536,7 @@ def _get_review_chat_context_by_review_id(
         if history and history.reference_text:
             purpose_text = history.reference_text
 
-    return question_text, purpose_text, grading_impression_text, review_json_obj
+    return question_text, purpose_text, grading_impression_text, review_json_obj, answer_text
 
 @app.get("/health")
 def health():
@@ -714,13 +758,38 @@ class MonthlyGoalUpdate(BaseModel):
     target_review_count: Optional[int] = None
 
 
+def _count_reviews_in_month(db: Session, user_id: int, yyyymm: int) -> int:
+    """指定月（yyyymm）にユーザーが行った講評数。月は Asia/Tokyo で解釈。"""
+    year = yyyymm // 100
+    month = yyyymm % 100
+    if not (1 <= month <= 12 and year >= 2000):
+        return 0
+    tz = ZoneInfo("Asia/Tokyo")
+    first_local = datetime(year, month, 1, tzinfo=tz)
+    if month == 12:
+        next_local = datetime(year + 1, 1, 1, tzinfo=tz)
+    else:
+        next_local = datetime(year, month + 1, 1, tzinfo=tz)
+    first_utc = first_local.astimezone(timezone.utc)
+    next_utc = next_local.astimezone(timezone.utc)
+    return (
+        db.query(Review)
+        .filter(
+            Review.user_id == user_id,
+            Review.created_at >= first_utc,
+            Review.created_at < next_utc,
+        )
+        .count()
+    )
+
+
 @app.get("/v1/users/me/monthly-goal")
 async def get_my_monthly_goal(
     yyyymm: int = Query(..., description="対象月（例: 202502）"),
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),
 ):
-    """指定月の目標（目標勉強時間・目標短答実施数・目標講評実施数）を1件返す。無ければ null。"""
+    """指定月の目標（目標勉強時間・目標短答実施数・目標講評実施数）を1件返す。無ければ null。review_count はその月にユーザーが行った講評数。"""
     row = (
         db.query(UserMonthlyGoal)
         .filter(
@@ -729,18 +798,21 @@ async def get_my_monthly_goal(
         )
         .first()
     )
+    review_count = _count_reviews_in_month(db, current_user.id, yyyymm)
     if not row:
         return {
             "yyyymm": yyyymm,
             "target_study_minutes": None,
             "target_short_answer_count": None,
             "target_review_count": None,
+            "review_count": review_count,
         }
     return {
         "yyyymm": row.yyyymm,
         "target_study_minutes": row.target_study_minutes,
         "target_short_answer_count": row.target_short_answer_count,
         "target_review_count": row.target_review_count,
+        "review_count": review_count,
     }
 
 
@@ -3201,6 +3273,7 @@ async def create_message(
         output_tokens = None
         request_id = None
         latency_ms = None
+        current_turn = None  # 講評チャット時のみセット（要約タイミングの判定に使用）
 
         if thread.type == "review_chat":
             # review は thread.review_id 優先、なければ Review.thread_id で逆引き
@@ -3210,29 +3283,62 @@ async def create_message(
             if review.user_id != current_user.id:
                 raise HTTPException(status_code=403, detail="Access denied")
 
-            # 初回のみコンテキストをLLMへ渡す（messagesには保存しない）
-            is_first_turn = len(chat_history) == 0
-            context_text = None
-            if is_first_turn:
-                question_text, purpose_text, grading_text, review_json_obj = _get_review_chat_context_by_review_id(
-                    review_id=review.id,
-                    current_user=current_user,
-                    db=db,
-                )
-                context_text = _build_review_chat_context_text(
-                    question_text=question_text,
-                    purpose_text=purpose_text,
-                    grading_impression_text=grading_text,
-                    review_json_obj=review_json_obj,
-                )
+            # 現在ターン数（1-indexed）。chat_history は「今回の user 以外」なので、ターン数 = (件数/2) + 1
+            current_turn = (len(chat_history) // 2) + 1
+
+            # §N/第N段落: 今回の入力にあればその番号を使い、なければ「§N を含んだ発話」の次回・次々回なら保持値を利用
+            from .llm_service import extract_paragraph_numbers_from_user_input as _extract_para
+            para_nums_from_input = _extract_para(message_data.content or "")
+            if para_nums_from_input:
+                para_nums_for_context = sorted(para_nums_from_input)
+            elif getattr(thread, "last_section_mention_turn", None) is not None and current_turn <= (thread.last_section_mention_turn or 0) + 2:
+                try:
+                    stored = json.loads(thread.last_section_paragraph_numbers or "[]")
+                    para_nums_for_context = [int(x) for x in stored] if isinstance(stored, list) else []
+                except Exception:
+                    para_nums_for_context = []
+            else:
+                para_nums_for_context = None  # 渡さない（従来どおり _build 内で user_input からだけ判定）
+
+            # 毎回コンテキストを組み立て（ユーザー入力に応じて出題趣旨・採点実感・§N を条件付きで含める）
+            question_text, purpose_text, grading_text, review_json_obj, answer_text = _get_review_chat_context_by_review_id(
+                review_id=review.id,
+                current_user=current_user,
+                db=db,
+            )
+            context_text = _build_review_chat_context_text(
+                user_input=message_data.content or "",
+                question_text=question_text,
+                purpose_text=purpose_text,
+                grading_impression_text=grading_text,
+                review_json_obj=review_json_obj,
+                answer_text=answer_text,
+                paragraph_numbers_override=para_nums_for_context if para_nums_for_context else None,
+            )
+
+            # 今回のユーザー入力に §N/第N段落 が含まれていたら、次回・次々回用に保持
+            if para_nums_from_input:
+                thread.last_section_mention_turn = current_turn
+                thread.last_section_paragraph_numbers = json.dumps(sorted(para_nums_from_input))
+            summary_up_to = getattr(thread, "summary_up_to_turn", None) or 0
+            conversation_summary = getattr(thread, "conversation_summary", None) or ""
 
             system_prompt = _load_prompt_text("review_chat_system")
             user_prompt = _build_review_chat_user_prompt_text(message_data.content)
-            messages_for_llm = []
-            if context_text:
-                messages_for_llm.append({"role": "user", "content": context_text})
-            if chat_history:
-                messages_for_llm.extend(chat_history)
+            messages_for_llm = [{"role": "user", "content": context_text}]
+
+            if conversation_summary.strip():
+                # 要約＋直前ラリー（要約した最後の1ラリー）＋それ以降を渡す
+                messages_for_llm.append({"role": "user", "content": "【これまでの会話の要約】\n" + conversation_summary.strip()})
+                last_exchange_start = 2 * (summary_up_to - 1)  # 0-indexed
+                last_exchange_end = 2 * summary_up_to
+                if last_exchange_start >= 0 and last_exchange_end <= len(chat_history):
+                    messages_for_llm.extend(chat_history[last_exchange_start:last_exchange_end])
+                if last_exchange_end < len(chat_history):
+                    messages_for_llm.extend(chat_history[last_exchange_end:])
+            else:
+                if chat_history:
+                    messages_for_llm.extend(chat_history)
             messages_for_llm.append({"role": "user", "content": user_prompt})
 
             from .llm_service import review_chat as llm_review_chat
@@ -3329,6 +3435,43 @@ async def create_message(
                 )
             )
             db.add(llm_row)
+
+        # 7. 講評チャットで 5 の倍数ターン完了時は会話セグメントを要約して保存
+        if thread.type == "review_chat" and current_turn is not None and current_turn % 5 == 0:
+            summary_up_to = getattr(thread, "summary_up_to_turn", None) or 0
+            seg_start = 2 * summary_up_to
+            seg_end = 2 * (current_turn - 1)
+            segment_list = []
+            if seg_end <= len(chat_history):
+                segment_list = [{"role": m["role"], "content": m["content"]} for m in chat_history[seg_start:seg_end]]
+            segment_list.append({"role": "user", "content": message_data.content or ""})
+            segment_list.append({"role": "assistant", "content": assistant_content or ""})
+            try:
+                from .llm_service import summarize_conversation_segment
+                seg_summary, sum_model, sum_in, sum_out, sum_req_id, sum_latency = summarize_conversation_segment(segment_list)
+                if seg_summary:
+                    if thread.conversation_summary and thread.conversation_summary.strip():
+                        thread.conversation_summary = (thread.conversation_summary or "").rstrip() + "\n\n【" + str(summary_up_to + 1) + "～" + str(current_turn) + "ターンの要約】\n" + seg_summary
+                    else:
+                        thread.conversation_summary = "【1～" + str(current_turn) + "ターンの要約】\n" + seg_summary
+                    thread.summary_up_to_turn = current_turn
+                    if sum_in is not None or sum_out is not None or sum_req_id:
+                        sum_llm_row = LlmRequest(
+                            **build_llm_request_row(
+                                user_id=current_user.id,
+                                feature_type="review_chat",
+                                thread_id=thread_id,
+                                model=sum_model,
+                                prompt_version="review_chat_summarize_v1",
+                                input_tokens=sum_in,
+                                output_tokens=sum_out,
+                                request_id=sum_req_id,
+                                latency_ms=sum_latency,
+                            )
+                        )
+                        db.add(sum_llm_row)
+            except Exception as sum_err:
+                logger.warning(f"講評チャット要約に失敗: {sum_err}")
 
         db.commit()
         db.refresh(assistant_message)
@@ -3889,8 +4032,8 @@ async def create_dashboard_item(
     if not current_user:
         raise HTTPException(status_code=401, detail="認証が必要です")
     
-    # Pointの場合はdue_dateをNULLに強制
-    if item.entry_type == 1:
+    # Point / Target の場合は due_date を NULL に強制
+    if item.entry_type in (1, 3):
         item.due_date = None
     
     # positionが指定されていない場合は自動採番
@@ -3937,9 +4080,9 @@ async def update_dashboard_item(
     if not db_item:
         raise HTTPException(status_code=404, detail="項目が見つかりません")
     
-    # Pointの場合はdue_dateをNULLに強制
+    # Point / Target の場合は due_date を NULL に強制
     entry_type = item_update.entry_type if item_update.entry_type is not None else db_item.entry_type
-    if entry_type == 1:
+    if entry_type in (1, 3):
         item_update.due_date = None
     
     # 更新

@@ -1,4 +1,4 @@
-{
+﻿{
   "year": "H28",
   "exam_type": "予備",
   "subject_name": "行政法",
@@ -7,7 +7,7 @@
   "subject": 2,
   "purpose": "",
   "purpose_forllm": {
-    "segments": [
+    "segments_1": [
       {
         "type": "common",
         "text": ""

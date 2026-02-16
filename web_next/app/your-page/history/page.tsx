@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useSidebar, SidebarToggle } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
-import { FIXED_SUBJECTS, getSubjectName, getSubjectId } from "@/lib/subjects"
+import { FIXED_SUBJECTS, getSubjectName, getSubjectId, getSubjectShortName } from "@/lib/subjects"
 import { withAuth } from "@/components/auth/with-auth"
 import { apiClient } from "@/lib/api-client"
 import { hasFunctionalConsent } from "@/lib/cookie-consent"
@@ -69,7 +69,7 @@ interface DashboardItem {
   id: number
   user_id: number
   dashboard_date: string
-  entry_type: number  // 1=Point, 2=Task
+  entry_type: number  // 1=Point, 2=Task, 3=Target
   subject: number | null
   item: string
   due_date: string | null
@@ -430,6 +430,16 @@ function StudyManagementPage() {
       await loadData()
     } catch (error) {
       console.error("Failed to delete item:", error)
+    }
+  }, [loadData])
+
+  // entry_type変換（MEMO ↔ Topic）
+  const convertEntryType = useCallback(async (itemId: number, newEntryType: 1 | 2) => {
+    try {
+      await apiClient.put(`/api/dashboard/items/${itemId}`, { entry_type: newEntryType })
+      await loadData()
+    } catch (error) {
+      console.error("Failed to convert entry type:", error)
     }
   }, [loadData])
 
@@ -938,6 +948,7 @@ function StudyManagementPage() {
                         <th className="py-1 px-0.5 w-14 text-left font-medium">科目</th>
                         <th className="py-1 px-1 w-[120px] text-left font-medium">項目</th>
                         <th className="py-1 px-0 w-14 text-left font-medium">種類</th>
+                        <th className="py-1 px-1 w-12 text-center font-medium">作成</th>
                         <th className="py-1 px-1 text-left font-medium">メモ</th>
                         <th className="py-1 px-1 w-8 text-center font-medium">♡</th>
                       </tr>
@@ -946,13 +957,13 @@ function StudyManagementPage() {
                       <tbody>
                         {loading ? (
                           <tr>
-                            <TableCell colSpan={6} className="text-center text-muted-foreground py-6 text-sm">
+                            <TableCell colSpan={7} className="text-center text-muted-foreground py-6 text-sm">
                               読み込み中...
                             </TableCell>
                           </tr>
                         ) : filteredMemoItems.length === 0 ? (
                           <tr>
-                            <TableCell colSpan={6} className="text-center text-muted-foreground py-6 text-sm">
+                            <TableCell colSpan={7} className="text-center text-muted-foreground py-6 text-sm">
                               データがありません
                             </TableCell>
                           </tr>
@@ -960,8 +971,18 @@ function StudyManagementPage() {
                           filteredMemoItems.map((item) => {
                             const statusOption = POINT_STATUS_OPTIONS.find((s) => s.value === item.status)
                             const selectedSubject = subjects.find(s => s.id === item.subject)
+                            const memoCreatedDate = item.created_at ? formatDate(item.created_at) : ""
                             return (
-                              <SortableRow key={item.id} item={item} onDelete={deleteItem}>
+                              <SortableRow
+                                key={item.id}
+                                item={item}
+                                onDelete={deleteItem}
+                                onEditCreatedDate={(id) => setMemoCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))}
+                                showCreatedDateButton={true}
+                                entryType={1}
+                                onConvertToTopic={(id) => convertEntryType(id, 2)}
+                                itemText={item.item}
+                              >
                                 <TableCell className="py-1.5 px-0.5 w-14 align-top">
                                   <Select
                                     value={item.subject?.toString() || undefined}
@@ -1016,6 +1037,30 @@ function StudyManagementPage() {
                                       ))}
                                     </SelectContent>
                                   </Select>
+                                </TableCell>
+                                <TableCell className="py-1.5 px-1 w-12 text-xs text-muted-foreground text-center relative align-top">
+                                  <Popover
+                                    open={memoCreatedDatePickerOpen[item.id] || false}
+                                    onOpenChange={(open) => setMemoCreatedDatePickerOpen(prev => ({ ...prev, [item.id]: open }))}
+                                  >
+                                    <PopoverTrigger asChild>
+                                      <button className="w-full h-full hover:bg-muted/50 rounded px-1">
+                                        {memoCreatedDate}
+                                      </button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-auto p-3" align="start">
+                                      <DatePickerCalendar
+                                        selectedDate={item.created_at ? new Date(item.created_at) : null}
+                                        onSelect={(date) => {
+                                          if (date) {
+                                            const dateStr = date.toISOString().split("T")[0]
+                                            updateItemField(item.id, "created_at", dateStr, 1)
+                                          }
+                                          setMemoCreatedDatePickerOpen(prev => ({ ...prev, [item.id]: false }))
+                                        }}
+                                      />
+                                    </PopoverContent>
+                                  </Popover>
                                 </TableCell>
                                 <TableCell className="py-1.5 px-1 align-top">
                                   <MemoField
@@ -1261,6 +1306,9 @@ function StudyManagementPage() {
                                   setTopicCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
                                 }}
                                 showCreatedDateButton={true}
+                                entryType={2}
+                                onConvertToMemo={(id) => convertEntryType(id, 1)}
+                                itemText={item.item}
                               >
                                 <TableCell className="py-1.5 px-0.5 w-14 align-top">
                                   <Select
@@ -1586,10 +1634,21 @@ function StudyTimeSection() {
   )
 }
 
-// 過去のチャット履歴セクションコンポーネント
+// 過去のチャット履歴セクションコンポーネント（講評履歴タブを内包）
 function ChatHistorySection() {
+  const [historySubTab, setHistorySubTab] = useState<"chat" | "review">("review")
   const [threads, setThreads] = useState<Thread[]>([])
   const [loading, setLoading] = useState(true)
+
+  // 講評履歴用
+  const [reviewHistory, setReviewHistory] = useState<ReviewHistoryItem[]>([])
+  const [reviewLoading, setReviewLoading] = useState(false)
+  const [selectedSubject, setSelectedSubject] = useState<string | null>(null)
+  const [selectedYear, setSelectedYear] = useState<number | null>(null)
+  const [displayLimitShihou, setDisplayLimitShihou] = useState(5)
+  const [displayLimitYobi, setDisplayLimitYobi] = useState(5)
+  const [displayLimitOther, setDisplayLimitOther] = useState(3)
+  const [displayLimitCombined, setDisplayLimitCombined] = useState(20)
 
   // フィルター
   const [typeFilter, setTypeFilter] = useState<string | null>(null)  // null = 全タイプ
@@ -1604,7 +1663,7 @@ function ChatHistorySection() {
   // favorite更新用のタイマー
   const favoriteUpdateTimers = useRef<Record<number, NodeJS.Timeout>>({})
 
-  // データ取得
+  // チャット履歴取得
   useEffect(() => {
     const loadThreads = async () => {
       try {
@@ -1621,6 +1680,38 @@ function ChatHistorySection() {
     }
     loadThreads()
   }, [])
+
+  // 講評履歴取得（講評履歴タブ表示時）
+  useEffect(() => {
+    if (historySubTab !== "review") return
+    const loadReviewHistory = async () => {
+      try {
+        setReviewLoading(true)
+        const data = await apiClient.get<ReviewHistoryItem[]>("/api/review-history")
+        setReviewHistory(Array.isArray(data) ? data : [])
+      } catch (error) {
+        console.error("Failed to load review history:", error)
+        setReviewHistory([])
+      } finally {
+        setReviewLoading(false)
+      }
+    }
+    loadReviewHistory()
+  }, [historySubTab])
+
+  const isFilterActive = selectedSubject !== null || selectedYear !== null
+  // フィルター変更時に表示件数をデフォルトに戻す
+  useEffect(() => {
+    if (historySubTab === "review") {
+      if (isFilterActive) {
+        setDisplayLimitCombined(20)
+      } else {
+        setDisplayLimitShihou(5)
+        setDisplayLimitYobi(5)
+        setDisplayLimitOther(3)
+      }
+    }
+  }, [selectedSubject, selectedYear, historySubTab, isFilterActive])
 
   // タイトル更新
   const updateTitle = useCallback(async (threadId: number, newTitle: string) => {
@@ -1657,6 +1748,99 @@ function ChatHistorySection() {
       }
     }, 5000)
   }, [])
+
+  // 講評履歴用：利用可能年度・フィルター済みデータ・表示用データ
+  const availableYears = useMemo(() => {
+    const years = new Set<number>()
+    reviewHistory.forEach((item) => { if (item.year !== null) years.add(item.year) })
+    return Array.from(years).sort((a, b) => b - a)
+  }, [reviewHistory])
+  const resolveSubjectName = (item: ReviewHistoryItem) => {
+    if (item.subject_name && item.subject_name !== "不明") return item.subject_name
+    const subjectId = typeof item.subject === "string" ? Number(item.subject) : item.subject
+    if (typeof subjectId === "number" && !Number.isNaN(subjectId)) return getSubjectName(subjectId)
+    return "不明"
+  }
+  const formatItemName = (item: ReviewHistoryItem) => {
+    const subjectName = resolveSubjectName(item)
+    if (item.year) {
+      let eraYear = item.year
+      let eraPrefix = ""
+      if (item.year >= 2019) { eraYear = item.year - 2018; eraPrefix = "R" }
+      else if (item.year >= 1989) { eraYear = item.year - 1988; eraPrefix = "H" }
+      else { eraYear = item.year - 1925; eraPrefix = "S" }
+      return `${eraPrefix}${eraYear}${subjectName}`
+    }
+    return subjectName
+  }
+  const formatReviewDate = (dateString: string) => {
+    const d = new Date(dateString)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+  }
+  const filteredReviewData = useMemo(() => {
+    let filtered = reviewHistory
+    if (selectedSubject !== null) {
+      const subjectId = getSubjectId(selectedSubject)
+      filtered = filtered.filter((item) =>
+        subjectId !== null ? item.subject === subjectId : item.subject_name === selectedSubject
+      )
+    }
+    if (selectedYear !== null) filtered = filtered.filter((item) => item.year === selectedYear)
+    return filtered
+  }, [reviewHistory, selectedSubject, selectedYear])
+  const currentReviewData = {
+    shihou: filteredReviewData.filter((item) => item.exam_type === "司法試験").map((item) => ({
+      id: item.id,
+      itemName: formatItemName(item),
+      solvedDate: formatReviewDate(item.created_at),
+      score: item.score,
+      attemptCount: item.attempt_count,
+      reviewLink: `/your-page/review/${item.review_id}`,
+      subject: resolveSubjectName(item),
+      year: item.year,
+      examType: item.exam_type,
+    })),
+    yobi: filteredReviewData.filter((item) => item.exam_type === "予備試験").map((item) => ({
+      id: item.id,
+      itemName: formatItemName(item),
+      solvedDate: formatReviewDate(item.created_at),
+      score: item.score,
+      attemptCount: item.attempt_count,
+      reviewLink: `/your-page/review/${item.review_id}`,
+      subject: resolveSubjectName(item),
+      year: item.year,
+      examType: item.exam_type,
+    })),
+  }
+  const otherReviewData = useMemo(() => {
+    return reviewHistory
+      .filter((item) => !item.exam_type || (item.exam_type !== "司法試験" && item.exam_type !== "予備試験"))
+      .map((item) => ({
+        id: item.id,
+        itemName: formatItemName(item),
+        solvedDate: formatReviewDate(item.created_at),
+        score: item.score,
+        attemptCount: item.attempt_count,
+        reviewLink: `/your-page/review/${item.review_id}`,
+        subject: resolveSubjectName(item),
+        year: item.year,
+        examType: item.exam_type,
+      }))
+  }, [reviewHistory])
+
+  // フィルター時：合計で日付順に並べたリスト（先頭 displayLimitCombined 件を各テーブルに振り分け）
+  const combinedReviewList = useMemo(() => {
+    const combined: ExamRecord[] = [
+      ...currentReviewData.shihou,
+      ...currentReviewData.yobi,
+      ...otherReviewData,
+    ]
+    return combined.sort((a, b) => b.solvedDate.localeCompare(a.solvedDate))
+  }, [currentReviewData.shihou, currentReviewData.yobi, otherReviewData])
+  const displayedCombined = combinedReviewList.slice(0, displayLimitCombined)
+  const displayedShihouFiltered = displayedCombined.filter((r) => r.examType === "司法試験")
+  const displayedYobiFiltered = displayedCombined.filter((r) => r.examType === "予備試験")
+  const displayedOtherFiltered = displayedCombined.filter((r) => r.examType !== "司法試験" && r.examType !== "予備試験")
 
   // フィルター適用後のスレッド
   const filteredThreads = useMemo(() => {
@@ -1737,12 +1921,118 @@ function ChatHistorySection() {
 
   return (
     <Card className="shadow-sm border-amber-200/60">
-      <CardHeader className="py-1.5 px-3">
-        <CardTitle className="text-xs font-medium flex items-center gap-1.5 text-amber-900/80">
-          過去のチャット履歴
+      <CardHeader className="py-3 px-4">
+        <CardTitle className="text-lg font-semibold tracking-tight flex items-center gap-2 text-amber-900/90">
+          <button
+            type="button"
+            onClick={() => setHistorySubTab("review")}
+            className={cn(
+              "transition-opacity hover:opacity-100",
+              historySubTab === "review" ? "opacity-100" : "opacity-60"
+            )}
+          >
+            講評履歴
+          </button>
+          <span className="text-amber-700/60 font-normal">/</span>
+          <button
+            type="button"
+            onClick={() => setHistorySubTab("chat")}
+            className={cn(
+              "transition-opacity hover:opacity-100",
+              historySubTab === "chat" ? "opacity-100" : "opacity-60"
+            )}
+          >
+            過去のチャット履歴
+          </button>
         </CardTitle>
       </CardHeader>
       <CardContent className="px-3 pb-2">
+        {historySubTab === "review" ? (
+          <>
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">科目</span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className={cn(
+                      "flex items-center gap-1.5 text-xs transition-colors px-2 py-1 rounded-md hover:opacity-80",
+                      selectedSubject ? (SUBJECT_COLORS[selectedSubject] || "bg-amber-100 text-amber-900") : "bg-gray-100 text-gray-700"
+                    )}>
+                      <span>{selectedSubject ? getSubjectShortName(selectedSubject) : "全科目"}</span>
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" side="bottom" className="w-32">
+                    <DropdownMenuItem onClick={() => setSelectedSubject(null)} className={cn("text-xs cursor-pointer rounded-sm", "bg-gray-100 text-gray-700", selectedSubject === null && "ring-2 ring-offset-1 ring-amber-500 font-medium")}>全科目</DropdownMenuItem>
+                    {FIXED_SUBJECTS.map((subject) => (
+                      <DropdownMenuItem key={subject} onClick={() => setSelectedSubject(subject)} className={cn("text-xs cursor-pointer rounded-sm", SUBJECT_COLORS[subject] || "bg-gray-100 text-gray-700", selectedSubject === subject && "ring-2 ring-offset-1 ring-amber-500 font-medium")}>{getSubjectShortName(subject)}</DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">年度</span>
+                <Select value={selectedYear?.toString() || "all"} onValueChange={(v) => setSelectedYear(v === "all" ? null : parseInt(v))}>
+                  <SelectTrigger className="h-7 text-xs w-24"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all" className="text-xs">全年度</SelectItem>
+                    {availableYears.map((year) => {
+                      let eraYear = year >= 2019 ? year - 2018 : year >= 1989 ? year - 1988 : year - 1925
+                      let eraPrefix = year >= 2019 ? "R" : year >= 1989 ? "H" : "S"
+                      return <SelectItem key={year} value={year.toString()} className="text-xs">{eraPrefix}{eraYear}</SelectItem>
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {reviewLoading ? (
+              <div className="text-center text-muted-foreground py-8">読み込み中...</div>
+            ) : isFilterActive ? (
+              <div className="space-y-4">
+                {displayedShihouFiltered.length > 0 && <ExamTable data={displayedShihouFiltered} title="司法試験" />}
+                {displayedYobiFiltered.length > 0 && <ExamTable data={displayedYobiFiltered} title="予備試験" />}
+                {displayedOtherFiltered.length > 0 && <ExamTable data={displayedOtherFiltered} title="その他の試験" />}
+                {combinedReviewList.length === 0 && (
+                  <div className="text-center text-muted-foreground py-6 text-sm">該当する講評履歴がありません</div>
+                )}
+                {combinedReviewList.length > displayLimitCombined && (
+                  <Button variant="ghost" size="sm" className="text-xs text-amber-700 hover:text-amber-900" onClick={() => setDisplayLimitCombined((n) => n + 20)}>
+                    さらに20件表示する
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <ExamTable data={currentReviewData.shihou.slice(0, displayLimitShihou)} title="司法試験" />
+                  {currentReviewData.shihou.length > displayLimitShihou && (
+                    <Button variant="ghost" size="sm" className="mt-1 text-xs text-amber-700 hover:text-amber-900" onClick={() => setDisplayLimitShihou((n) => n + 20)}>
+                      さらに20件表示する
+                    </Button>
+                  )}
+                </div>
+                <div>
+                  <ExamTable data={currentReviewData.yobi.slice(0, displayLimitYobi)} title="予備試験" />
+                  {currentReviewData.yobi.length > displayLimitYobi && (
+                    <Button variant="ghost" size="sm" className="mt-1 text-xs text-amber-700 hover:text-amber-900" onClick={() => setDisplayLimitYobi((n) => n + 20)}>
+                      さらに20件表示する
+                    </Button>
+                  )}
+                </div>
+                <div>
+                  <ExamTable data={otherReviewData.slice(0, displayLimitOther)} title="その他の試験" />
+                  {otherReviewData.length > displayLimitOther && (
+                    <Button variant="ghost" size="sm" className="mt-1 text-xs text-amber-700 hover:text-amber-900" onClick={() => setDisplayLimitOther((n) => n + 20)}>
+                      さらに20件表示する
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
         {/* フィルター */}
         <div className="mb-2 flex items-center gap-2 flex-wrap">
           {/* タイプ */}
@@ -1941,6 +2231,8 @@ function ChatHistorySection() {
             </tbody>
           </table>
         </div>
+          </>
+        )}
       </CardContent>
     </Card>
   )
@@ -1948,162 +2240,6 @@ function ChatHistorySection() {
 
 function HistoryPage() {
   const { isOpen, setIsOpen, mainContentStyle } = useSidebar()
-  const [mainTab, setMainTab] = useState<"study" | "past-questions">("study")
-  const [reviewHistory, setReviewHistory] = useState<ReviewHistoryItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [selectedSubject, setSelectedSubject] = useState<string | null>(null)  // null = 全科目
-  const [selectedYear, setSelectedYear] = useState<number | null>(null)  // null = 全年度
-
-  useEffect(() => {
-    const loadReviewHistory = async () => {
-      try {
-        setLoading(true)
-        // 全科目を取得（フィルターはクライアント側で行う）
-        const data = await apiClient.get<ReviewHistoryItem[]>(
-          `/api/review-history`
-        )
-        setReviewHistory(data)
-      } catch (error) {
-        console.error("Failed to load review history:", error)
-        setReviewHistory([])
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    if (mainTab === "past-questions") {
-      loadReviewHistory()
-    }
-  }, [mainTab])
-
-  // 利用可能な年度のリストを取得
-  const availableYears = useMemo(() => {
-    const years = new Set<number>()
-    reviewHistory.forEach((item) => {
-      if (item.year !== null) {
-        years.add(item.year)
-      }
-    })
-    return Array.from(years).sort((a, b) => b - a)  // 降順
-  }, [reviewHistory])
-
-  // フィルター適用後のデータ
-  const filteredData = useMemo(() => {
-    let filtered = reviewHistory
-
-    // 科目フィルター
-    if (selectedSubject !== null) {
-      const subjectId = getSubjectId(selectedSubject)
-      filtered = filtered.filter((item) => {
-        if (subjectId !== null) {
-          return item.subject === subjectId
-        }
-        return item.subject_name === selectedSubject
-      })
-    }
-
-    // 年度フィルター
-    if (selectedYear !== null) {
-      filtered = filtered.filter((item) => item.year === selectedYear)
-    }
-
-    return filtered
-  }, [reviewHistory, selectedSubject, selectedYear])
-
-  // データを試験種別ごとに分類
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
-  }
-
-  const resolveSubjectName = (item: ReviewHistoryItem) => {
-    if (item.subject_name && item.subject_name !== "不明") {
-      return item.subject_name
-    }
-    const subjectId = typeof item.subject === "string" ? Number(item.subject) : item.subject
-    if (typeof subjectId === "number" && !Number.isNaN(subjectId)) {
-      return getSubjectName(subjectId)
-    }
-    return "不明"
-  }
-
-  const formatItemName = (item: ReviewHistoryItem) => {
-    // 科目名を取得
-    let subjectName: string
-    if (item.exam_type === "司法試験" || item.exam_type === "予備試験") {
-      // 司法試験・予備試験の場合は、subject_idから積極的に科目名を取得
-      // subject_nameが「不明」の場合はsubject_idから再計算
-      subjectName = resolveSubjectName(item)
-    } else {
-      // その他の試験の場合は従来通り
-      subjectName = resolveSubjectName(item)
-    }
-
-    if (item.year) {
-      // 年度から元号記号を計算（2019年以降はR、1989年以降はH）
-      let eraYear = item.year
-      let eraPrefix = ""
-      if (item.year >= 2019) {
-        eraYear = item.year - 2018
-        eraPrefix = "R"
-      } else if (item.year >= 1989) {
-        eraYear = item.year - 1988
-        eraPrefix = "H"
-      } else {
-        eraYear = item.year - 1925
-        eraPrefix = "S"
-      }
-      return `${eraPrefix}${eraYear}${subjectName}`
-    }
-    return subjectName
-  }
-
-  // フィルター適用後のデータ（司法試験・予備試験）
-  const currentData = {
-    shihou: filteredData
-      .filter((item) => item.exam_type === "司法試験")
-      .map((item) => ({
-        id: item.id,
-        itemName: formatItemName(item),
-        solvedDate: formatDate(item.created_at),
-        score: item.score,
-        attemptCount: item.attempt_count,
-        reviewLink: `/your-page/review/${item.review_id}`,
-        subject: resolveSubjectName(item),
-        year: item.year,
-        examType: item.exam_type,
-      })),
-    yobi: filteredData
-      .filter((item) => item.exam_type === "予備試験")
-      .map((item) => ({
-        id: item.id,
-        itemName: formatItemName(item),
-        solvedDate: formatDate(item.created_at),
-        score: item.score,
-        attemptCount: item.attempt_count,
-        reviewLink: `/your-page/review/${item.review_id}`,
-        subject: resolveSubjectName(item),
-        year: item.year,
-        examType: item.exam_type,
-      })),
-  }
-
-  // 「その他」はフィルターに関わらず常に全データから抽出
-  const otherData = useMemo(() => {
-    return reviewHistory
-      .filter((item) => !item.exam_type || (item.exam_type !== "司法試験" && item.exam_type !== "予備試験"))
-      .map((item) => ({
-        id: item.id,
-        itemName: formatItemName(item),
-        solvedDate: formatDate(item.created_at),
-        score: item.score,
-        attemptCount: item.attempt_count,
-        reviewLink: `/your-page/review/${item.review_id}`,
-        subject: resolveSubjectName(item),
-        year: item.year,
-        examType: item.exam_type,
-      }))
-  }, [reviewHistory])
 
   return (
     <div
@@ -2119,146 +2255,13 @@ function HistoryPage() {
               <History className="h-4 w-4 text-amber-600" />
               <h1 className="text-base font-semibold text-amber-900">Your Data</h1>
             </div>
-            <div className="flex items-center gap-2">
-              <Tabs value={mainTab} onValueChange={(v) => {
-                if (v === "study" || v === "past-questions") {
-                  setMainTab(v)
-                }
-              }}>
-                <TabsList className="inline-flex w-max h-8 bg-amber-100/60 p-0.5">
-                  <TabsTrigger
-                    value="study"
-                    className="text-xs px-2.5 py-1 data-[state=active]:bg-white data-[state=active]:text-amber-800 data-[state=active]:shadow-sm flex items-center gap-1.5"
-                  >
-                    <BookOpen className="h-3 w-3" />
-                    勉強管理
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="past-questions"
-                    className="text-xs px-2.5 py-1 data-[state=active]:bg-white data-[state=active]:text-amber-800 data-[state=active]:shadow-sm flex items-center gap-1.5"
-                  >
-                    <BookOpen className="h-3 w-3" />
-                    過去問管理
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-            </div>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
       <main className="container mx-auto px-4 sm:px-8 lg:px-12 py-4 max-w-7xl">
-        {mainTab === "study" && (
-          <StudyManagementPage />
-        )}
-
-        {mainTab === "past-questions" && (
-          <>
-            {/* フィルター（ヘッダーの下） */}
-            <div className="mb-4 flex items-center gap-3">
-              {/* 科目フィルター */}
-              <div className="flex items-center gap-2">
-                <Filter className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">科目</span>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className={cn(
-                      "flex items-center gap-1.5 text-xs transition-colors px-2 py-1 rounded-md hover:opacity-80",
-                      selectedSubject
-                        ? (SUBJECT_COLORS[selectedSubject] || "bg-amber-100 text-amber-900")
-                        : "bg-gray-100 text-gray-700"
-                    )}>
-                      <span>{selectedSubject || "全科目"}</span>
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" side="bottom" className="w-32">
-                    <DropdownMenuItem
-                      onClick={() => setSelectedSubject(null)}
-                      className={cn(
-                        "text-xs cursor-pointer rounded-sm",
-                        "bg-gray-100 text-gray-700",
-                        selectedSubject === null && "ring-2 ring-offset-1 ring-amber-500 font-medium"
-                      )}
-                    >
-                      全科目
-                    </DropdownMenuItem>
-                    {FIXED_SUBJECTS.map((subject) => (
-                      <DropdownMenuItem
-                        key={subject}
-                        onClick={() => setSelectedSubject(subject)}
-                        className={cn(
-                          "text-xs cursor-pointer rounded-sm",
-                          SUBJECT_COLORS[subject] || "bg-gray-100 text-gray-700",
-                          selectedSubject === subject && "ring-2 ring-offset-1 ring-amber-500 font-medium"
-                        )}
-                      >
-                        {subject}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-
-              {/* 年度フィルター */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">年度</span>
-                <Select
-                  value={selectedYear?.toString() || "all"}
-                  onValueChange={(value) => {
-                    if (value === "all") {
-                      setSelectedYear(null)
-                    } else {
-                      setSelectedYear(parseInt(value))
-                    }
-                  }}
-                >
-                  <SelectTrigger className="h-7 text-xs w-24">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all" className="text-xs">全年度</SelectItem>
-                    {availableYears.map((year) => {
-                      // 年度を元号表記に変換
-                      let eraYear = year
-                      let eraPrefix = ""
-                      if (year >= 2019) {
-                        eraYear = year - 2018
-                        eraPrefix = "R"
-                      } else if (year >= 1989) {
-                        eraYear = year - 1988
-                        eraPrefix = "H"
-                      } else {
-                        eraYear = year - 1925
-                        eraPrefix = "S"
-                      }
-                      return (
-                        <SelectItem key={year} value={year.toString()} className="text-xs">
-                          {eraPrefix}{eraYear}
-                        </SelectItem>
-                      )
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <Card className="shadow-sm border-amber-200/60">
-              <CardContent className="p-4 space-y-4">
-                {loading ? (
-                  <div className="text-center text-muted-foreground py-8">読み込み中...</div>
-                ) : (
-                  <>
-                    <ExamTable data={currentData.shihou} title="司法試験" />
-                    <ExamTable data={currentData.yobi} title="予備試験" />
-                    <ExamTable data={otherData} title="その他の試験" />
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </>
-        )}
+        <StudyManagementPage />
       </main>
     </div>
   )

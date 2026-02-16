@@ -8,6 +8,16 @@ import { GripVertical, Trash2, CalendarDays } from "lucide-react"
 import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { cn } from "@/lib/utils"
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog"
 
 interface SortableRowProps<T extends { id: number }> {
   item: T
@@ -15,6 +25,12 @@ interface SortableRowProps<T extends { id: number }> {
   onDelete: (id: number) => void
   onEditCreatedDate?: (id: number) => void
   showCreatedDateButton?: boolean
+  /** entry_type: 1=MEMO, 2=Topic。転換ボタン表示用 */
+  entryType?: 1 | 2
+  onConvertToTopic?: (id: number) => void
+  onConvertToMemo?: (id: number) => void
+  /** 転換確認ダイアログ用。当該行の「項目」のテキスト */
+  itemText?: string
   className?: string
   usePortal?: boolean
 }
@@ -25,9 +41,15 @@ export function SortableRow<T extends { id: number }>({
   onDelete,
   onEditCreatedDate,
   showCreatedDateButton = false,
+  entryType,
+  onConvertToTopic,
+  onConvertToMemo,
+  itemText = "",
   className = "",
   usePortal = false,
 }: SortableRowProps<T>) {
+  const [convertDialogOpen, setConvertDialogOpen] = useState(false)
+  const pendingConvertTarget = useRef<"topic" | "memo" | null>(null)
   const {
     attributes,
     listeners,
@@ -129,10 +151,77 @@ export function SortableRow<T extends { id: number }>({
           <CalendarDays className="h-3 w-3" />
         </Button>
       )}
+      {entryType === 1 && onConvertToTopic && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 px-1.5 text-[10px] bg-muted hover:bg-muted/80 whitespace-nowrap"
+          onClick={(e) => {
+            e.stopPropagation()
+            e.preventDefault()
+            pendingConvertTarget.current = "topic"
+            setConvertDialogOpen(true)
+            setShowMenu(false)
+          }}
+        >
+          Topicに転換
+        </Button>
+      )}
+      {entryType === 2 && onConvertToMemo && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 px-1.5 text-[10px] bg-muted hover:bg-muted/80 whitespace-nowrap"
+          onClick={(e) => {
+            e.stopPropagation()
+            e.preventDefault()
+            pendingConvertTarget.current = "memo"
+            setConvertDialogOpen(true)
+            setShowMenu(false)
+          }}
+        >
+          MEMOに転換
+        </Button>
+      )}
     </div>
   )
 
+  const handleConvertConfirm = () => {
+    if (pendingConvertTarget.current === "topic" && onConvertToTopic) {
+      onConvertToTopic(item.id)
+    } else if (pendingConvertTarget.current === "memo" && onConvertToMemo) {
+      onConvertToMemo(item.id)
+    }
+    pendingConvertTarget.current = null
+    setConvertDialogOpen(false)
+  }
+
+  const convertDialogContent = (
+    <AlertDialog open={convertDialogOpen} onOpenChange={(open) => {
+      setConvertDialogOpen(open)
+      if (!open) pendingConvertTarget.current = null
+    }}>
+      <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {pendingConvertTarget.current === "topic" ? "Topicに転換" : "MEMOに転換"}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {pendingConvertTarget.current === "topic"
+              ? `「${itemText}」のMEMOをTopicに転換してよろしいですか。「状態カラム」は手動で修正してください。`
+              : `「${itemText}」のTopicをMEMOに転換してよろしいですか。「種類カラム」は手動で修正してください。`}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogAction onClick={handleConvertConfirm}>Yes</AlertDialogAction>
+          <AlertDialogCancel onClick={() => { pendingConvertTarget.current = null }}>No</AlertDialogCancel>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+
   return (
+    <>
     <TableRow
       ref={setNodeRef}
       style={style}
@@ -163,5 +252,7 @@ export function SortableRow<T extends { id: number }>({
       </TableCell>
       {children}
     </TableRow>
+    {(onConvertToTopic || onConvertToMemo) && typeof document !== "undefined" && createPortal(convertDialogContent, document.body)}
+    </>
   )
 }

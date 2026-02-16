@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { MessageSquare, MoreHorizontal, Pencil, Trash2, RotateCcw } from "lucide-react"
+import { MessageSquare, MoreHorizontal, Pencil, Trash2, RotateCcw, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -37,9 +37,11 @@ interface ChatHeaderProps {
   onEditTitle?: (newTitle: string) => void
   onClearHistory?: () => void
   onDeleteChat?: () => void
+  /** フリーチャット用: 新規タブボタンのコールバック。指定時は新規タブボタン＋推奨文を表示 */
+  onNewTab?: () => void
 }
 
-export function ChatHeader({ title, onEditTitle, onClearHistory, onDeleteChat }: ChatHeaderProps) {
+export function ChatHeader({ title, onEditTitle, onClearHistory, onDeleteChat, onNewTab }: ChatHeaderProps) {
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [clearDialogOpen, setClearDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -84,7 +86,27 @@ export function ChatHeader({ title, onEditTitle, onClearHistory, onDeleteChat }:
           </>
         )}
         trailing={(
-          <DropdownMenu>
+          <div className="flex items-center gap-1">
+            {onNewTab && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onNewTab}
+                  title="新しいチャットを開始"
+                  className="h-7 text-muted-foreground hover:text-foreground rounded-full"
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1.5" />
+                  新規タブ
+                </Button>
+                <span className="text-[10px] text-muted-foreground leading-tight hidden sm:inline">
+                  話題が変わる場合には
+                  <br />
+                  新しいタブで行うことを推奨しています
+                </span>
+              </>
+            )}
+            <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
                 <MoreHorizontal className="h-5 w-5" />
@@ -119,6 +141,7 @@ export function ChatHeader({ title, onEditTitle, onClearHistory, onDeleteChat }:
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
         )}
       />
 

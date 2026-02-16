@@ -138,6 +138,20 @@ export default function FreeChatThreadPage() {
     }
   }
 
+  // 新規タブ（新しいフリーチャットスレッドを作成して移動）
+  const handleNewTab = async () => {
+    try {
+      const data = await apiClient.post<{ id: number }>("/api/threads", {
+        type: "free_chat",
+        title: null,
+      })
+      router.push(`/free-chat/${data.id}`)
+    } catch (err: any) {
+      console.error("新規タブ作成エラー:", err)
+      setError(err.error || err.message || "新しいチャットの作成に失敗しました")
+    }
+  }
+
   // チャット削除
   const handleDeleteChat = async () => {
     if (!threadId) return
@@ -181,6 +195,7 @@ export default function FreeChatThreadPage() {
         onEditTitle={handleEditTitle}
         onClearHistory={handleClearHistory}
         onDeleteChat={handleDeleteChat}
+        onNewTab={handleNewTab}
       />
 
       <ChatMessages messages={messages} isLoading={loading} error={error} messagesEndRef={messagesEndRef} />

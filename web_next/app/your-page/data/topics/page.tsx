@@ -41,7 +41,7 @@ interface DashboardItem {
   id: number
   user_id: number
   dashboard_date: string
-  entry_type: number  // 1=Point, 2=Task
+  entry_type: number  // 1=Point, 2=Task, 3=Target
   subject: number | null
   item: string
   due_date: string | null
@@ -489,6 +489,16 @@ function TopicsPage() {
       console.error("Failed to delete item:", error)
     }
   }
+
+  // entry_type変換（Topic → MEMO）
+  const convertToMemo = async (itemId: number) => {
+    try {
+      await apiClient.put(`/api/dashboard/items/${itemId}`, { entry_type: 1 })
+      loadData()
+    } catch (error) {
+      console.error("Failed to convert to memo:", error)
+    }
+  }
   
   // ドラッグ終了処理
   const handleDragEnd = async (event: DragEndEvent) => {
@@ -747,6 +757,9 @@ function TopicsPage() {
                               setCreatedDatePickerOpen(prev => ({ ...prev, [id]: true }))
                             }}
                             showCreatedDateButton={true}
+                            entryType={2}
+                            onConvertToMemo={convertToMemo}
+                            itemText={item.item}
                           >
                             <TableCell className="py-2 px-2 w-20 align-top">
                               <Select

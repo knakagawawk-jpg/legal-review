@@ -617,6 +617,11 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
                 <Plus className="h-3.5 w-3.5 mr-1.5" />
                 新規タブ
               </Button>
+              <span className="text-[10px] text-muted-foreground leading-tight hidden sm:inline">
+                話題が変わる場合には
+                <br />
+                新しいタブで行うことを推奨しています
+              </span>
               {(threads?.length ?? 0) > 0 && (
                 <div className="relative border-l border-border pl-1.5">
                   <Button

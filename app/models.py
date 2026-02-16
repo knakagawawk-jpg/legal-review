@@ -218,6 +218,14 @@ class Thread(Base):
     title = Column(String(200), nullable=True)  # タイトル（空でもOK、後から自動生成・手動編集可能）
     favorite = Column(Integer, nullable=False, default=0)  # お気に入りフラグ（0=OFF, 1=ON）
     pinned = Column(Boolean, nullable=False, default=False)  # 固定表示フラグ（任意）
+
+    # 講評チャット用: 会話要約（5の倍数ターンで更新、要約＋直前ラリー＋以降を渡す）
+    conversation_summary = Column(Text, nullable=True)  # セグメント要約の連結（【1～5ターンの要約】... 等）
+    summary_up_to_turn = Column(Integer, nullable=True)  # 要約が何ターン目までをカバーしているか（5, 10, 15...）
+
+    # 講評チャット用: §N 言及時、次回・次々回まで Specified/Related を渡すための保持
+    last_section_mention_turn = Column(Integer, nullable=True)  # 最後に §N/第N段落 が含まれたユーザー発話のターン
+    last_section_paragraph_numbers = Column(Text, nullable=True)  # そのときの段落番号リスト（JSON配列文字列 "[1,2,3]"）
     
     # リレーションシップ
     user = relationship("User", back_populates="threads")
@@ -856,7 +864,7 @@ class DashboardItem(Base):
     設計のポイント:
     - Point（Today'sメモ）とTask（Today's Goals & Topics）を1テーブルで管理
     - Left（Topics to Revisit）は表示条件で生成（DB上の種別ではない）
-    - entry_type: 1=Point, 2=Task
+    - entry_type: 1=Point, 2=Task, 3=Target
     - status: 1=未了, 2=作業中, 3=完了, 4=後で
     - positionは間隔方式（10,20,30...）で管理
     - ソフト削除対応（deleted_at）
@@ -867,7 +875,7 @@ class DashboardItem(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     dashboard_date = Column(String(10), nullable=False)  # 'YYYY-MM-DD'
     
-    entry_type = Column(Integer, nullable=False)  # 1=Point, 2=Task
+    entry_type = Column(Integer, nullable=False)  # 1=Point, 2=Task, 3=Target
     subject = Column(Integer, nullable=True)  # 1〜18、NULL可
     item = Column(Text, nullable=False)  # 項目本文
     
@@ -885,10 +893,10 @@ class DashboardItem(Base):
     user = relationship("User", back_populates="dashboard_items")
     
     __table_args__ = (
-        CheckConstraint("entry_type IN (1, 2)", name="ck_entry_type"),
+        CheckConstraint("entry_type IN (1, 2, 3)", name="ck_entry_type"),
         CheckConstraint("subject IS NULL OR (subject BETWEEN 1 AND 18)", name="ck_subject"),
         CheckConstraint("status BETWEEN 1 AND 4", name="ck_status"),
-        CheckConstraint("entry_type != 1 OR due_date IS NULL", name="ck_point_no_due_date"),
+        CheckConstraint("(entry_type != 1 AND entry_type != 3) OR due_date IS NULL", name="ck_point_target_no_due_date"),
         
         # インデックス
         Index('idx_dashboard_items_user_date_type', 'user_id', 'dashboard_date', 'entry_type'),

@@ -1126,6 +1126,171 @@ def generate_chat_title(
         return title, model_name, None, None, None, None
 
 
+# ---------------------------------------------------------------------------
+# 講評チャット用: ユーザー入力からの段落番号検出・Specified/Related 抽出
+# ---------------------------------------------------------------------------
+
+def extract_paragraph_numbers_from_user_input(user_input: str) -> List[int]:
+    """
+    ユーザー入力から「§N」「第N段落」を検出し、段落番号のリストを返す（重複除く・昇順）。
+    """
+    if not (user_input or user_input.strip()):
+        return []
+    numbers = set()
+    # §N（§の直後に数字）
+    for m in re.finditer(r"§(\d+)", user_input):
+        numbers.add(int(m.group(1)))
+    # 第N段落
+    for m in re.finditer(r"第(\d+)段落", user_input):
+        numbers.add(int(m.group(1)))
+    return sorted(numbers)
+
+
+def _parse_marked_answer_paragraphs(answer_text: str) -> List[tuple[int, str]]:
+    """
+    $$[N] 付き答案から (段落番号, その行の内容) のリストを返す。空行はスキップしないが番号は付かない。
+    形式: $$[N] 内容 の行のみパース。同じ行にマークがある場合のみ対応。
+    """
+    if not answer_text:
+        return []
+    result = []
+    for line in answer_text.split("\n"):
+        m = re.match(r"^\$\$\[(\d+)\]\s*(.*)$", line)
+        if m:
+            result.append((int(m.group(1)), m.group(2)))
+    return result
+
+
+def extract_specified_text_from_answer(
+    answer_text: str,
+    paragraph_numbers: List[int],
+    window: int = 5,
+    gap_marker: str = "……",
+) -> str:
+    """
+    指定された段落番号を基準に §(N-window)～§(N+window) の範囲を clamp して抽出し、
+    複数 N がある場合は重複を繋げ、隙間は gap_marker でつないでワンブロックで返す。
+    答案は $$[N] 形式を想定。
+    """
+    if not paragraph_numbers or not answer_text:
+        return ""
+    paras = _parse_marked_answer_paragraphs(answer_text)
+    if not paras:
+        return ""
+    min_para = min(p[0] for p in paras)
+    max_para = max(p[0] for p in paras)
+    para_map = {p[0]: p[1] for p in paras}
+
+    # 各 N について [N-window, N+window] の範囲を集める（clamp 済み）
+    need = set()
+    for n in paragraph_numbers:
+        low = max(1, n - window)
+        high = min(max_para, n + window)
+        for i in range(low, high + 1):
+            need.add(i)
+
+    if not need:
+        return ""
+    ordered = sorted(need)
+    parts = []
+    for i, num in enumerate(ordered):
+        if i > 0 and ordered[i - 1] != num - 1:
+            parts.append(gap_marker)
+        if num in para_map:
+            parts.append(f"§{num}\n{para_map[num]}")
+    return "\n\n".join(parts)
+
+
+def get_related_review_json_items(
+    review_json_obj: Dict[str, Any],
+    paragraph_numbers: List[int],
+) -> List[Dict[str, Any]]:
+    """
+    講評JSONのうち、paragraph_numbers / paragraph_number に指定番号を含む項目を
+    重複なくひとまとまりで返す。strengths, weaknesses, important_points, future_considerations を対象。
+    """
+    if not paragraph_numbers:
+        return []
+    pset = set(paragraph_numbers)
+    seen = set()  # (kind, index) で重複防止（同一オブジェクト参照は id で）
+    out = []
+
+    def has_para(item: Dict[str, Any]) -> bool:
+        if not isinstance(item, dict):
+            return False
+        nums = item.get("paragraph_numbers") or item.get("paragraphNumbers") or []
+        if isinstance(nums, list):
+            for x in nums:
+                if x in pset:
+                    return True
+        p = item.get("paragraph_number")
+        if p is not None and p in pset:
+            return True
+        return False
+
+    for key in ("strengths", "weaknesses", "important_points", "future_considerations"):
+        arr = review_json_obj.get(key) or review_json_obj.get(key.replace("_", "")) or []
+        if not isinstance(arr, list):
+            continue
+        for i, item in enumerate(arr):
+            if not has_para(item):
+                continue
+            key_id = (key, id(item))
+            if key_id in seen:
+                continue
+            seen.add(key_id)
+            out.append(item)
+
+    return out
+
+
+def summarize_conversation_segment(
+    messages: List[Dict[str, str]],
+    max_tokens: int = 2048,
+) -> tuple[str, str, Optional[int], Optional[int], Optional[str], Optional[int]]:
+    """
+    講評チャットの会話セグメント（user/assistant のリスト）を要約する。
+    Returns:
+        (summary_text, model_name, input_tokens, output_tokens, request_id, latency_ms)
+    """
+    if not messages:
+        return "", "dummy", None, None, None, None
+    llm_config = get_llm_config()
+    if not llm_config.is_available():
+        return "", "dummy", None, None, None, None
+    lines = []
+    for m in messages:
+        role = (m.get("role") or "user").strip()
+        content = (m.get("content") or "").strip()
+        label = "ユーザー" if role == "user" else "アシスタント"
+        lines.append(f"{label}:\n{content}")
+    conversation_text = "\n\n".join(lines)
+    try:
+        template = _load_prompt_template("review_chat_summarize")
+    except FileNotFoundError:
+        template = (
+            "以下は講評チャットの会話の一部です。ユーザーの疑問・観点、行った回答の要点、残っている論点を整理して要約してください。\n\n"
+            "【会話】\n{CONVERSATION}"
+        )
+    prompt = template.replace("{CONVERSATION}", conversation_text)
+    client = llm_config.get_client()
+    model_name = llm_config.get_model(USE_CASE_REVIEW_CHAT)
+    import time
+    start = time.time()
+    message = client.messages.create(
+        model=model_name,
+        max_tokens=max_tokens,
+        temperature=0.3,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    latency_ms = int((time.time() - start) * 1000)
+    summary = (message.content[0].text if message.content else "").strip()
+    input_tokens = getattr(message.usage, "input_tokens", None) if hasattr(message, "usage") and message.usage else None
+    output_tokens = getattr(message.usage, "output_tokens", None) if hasattr(message, "usage") and message.usage else None
+    request_id = getattr(message, "id", None)
+    return summary, model_name, input_tokens, output_tokens, request_id, latency_ms
+
+
 def review_chat(
     system_prompt: str,
     messages: List[Dict[str, str]],

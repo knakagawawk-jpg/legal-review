@@ -447,7 +447,7 @@ class UserResponse(BaseModel):
 class DashboardItemCreate(BaseModel):
     """ダッシュボード項目作成用スキーマ"""
     dashboard_date: str  # 'YYYY-MM-DD'
-    entry_type: int  # 1=Point, 2=Task
+    entry_type: int  # 1=Point, 2=Task, 3=Target
     subject: Optional[int] = None  # 1〜18、NULL可
     item: str  # 項目本文
     due_date: Optional[str] = None  # 'YYYY-MM-DD'、PointはNULL強制
@@ -467,6 +467,7 @@ class DashboardItemUpdate(BaseModel):
     memo: Optional[str] = None
     position: Optional[int] = None
     favorite: Optional[int] = None  # お気に入りフラグ（0=OFF, 1=ON）
+    created_at: Optional[str] = None  # 作成日（YYYY-MM-DD）の手動変更用
 
 class DashboardItemResponse(BaseModel):
     """ダッシュボード項目レスポンス"""
