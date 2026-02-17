@@ -129,7 +129,7 @@ export default function HomePage() {
       <div className="mt-20 flex flex-col items-center gap-2">
         <div className="flex items-center gap-2 text-slate-300">
           <div className="h-px w-12 bg-gradient-to-r from-transparent to-slate-200" />
-          <span className="text-xs text-slate-400 font-medium">v0.1.0 Beta</span>
+          <span className="text-xs text-slate-400 font-medium">Welcome to Juristutor-AI</span>
           <div className="h-px w-12 bg-gradient-to-l from-transparent to-slate-200" />
         </div>
         <p className="text-xs text-slate-400 text-center max-w-md mt-2">

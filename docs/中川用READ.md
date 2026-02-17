@@ -13,13 +13,13 @@ cd /opt/law-review
 
 ## 2. 環境一覧・接続先
 
-| 環境 | プロファイル | envファイル | DB | ドメイン/アクセス先 |
-|------|-------------|-------------|-----|---------------------|
-| 本番 | production | .env | prod.db | https://juristutor-ai.com |
-| β | beta | .env.beta | beta.db | https://beta.juristutor-ai.com |
-| dev（サーバー） | dev | .env.dev2 | dev.db | https://dev.juristutor-ai.com |
-| dev（ローカル） | dev | .env.dev1 | dev.db | http://localhost:8081 |
-| local（フロントのみ） | local | .env | dev.db | http://localhost:8080 |
+| 環境                  | プロファイル | envファイル | DB      | ドメイン/アクセス先            |
+| --------------------- | ------------ | ----------- | ------- | ------------------------------ |
+| 本番                  | production   | .env        | prod.db | https://juristutor-ai.com      |
+| β                     | beta         | .env.beta   | beta.db | https://beta.juristutor-ai.com |
+| dev（サーバー）       | dev          | .env.dev2   | dev.db  | https://dev.juristutor-ai.com  |
+| dev（ローカル）       | dev          | .env.dev1   | dev.db  | http://localhost:8081          |
+| local（フロントのみ） | local        | .env        | dev.db  | http://localhost:8080          |
 
 - **本番**: `.env` の `DATABASE_URL=sqlite:////data/prod.db` にすること。
 - **Next.js単体（npm run dev）**: `web_next/.env.local` で `BACKEND_INTERNAL_URL=http://127.0.0.1:8000` を設定。
@@ -64,7 +64,7 @@ docker compose --profile production logs --tail=80 web backend
 
 ## 4. βテスト環境（beta）
 
-- **ドメイン**: https://beta.juristutor-ai.com  
+- **ドメイン**: https://beta.juristutor-ai.com
 - **初回**: `cp .env.beta.example .env.beta` して編集。
 
 ### 停止 → 再起動
@@ -101,10 +101,10 @@ docker compose --profile beta logs --tail=80 web-beta backend-beta
 
 ### 起動（推奨: スクリプト）
 
-| 環境 | コマンド | アクセス先 |
-|------|----------|------------|
+| 環境             | コマンド                | アクセス先                                              |
+| ---------------- | ----------------------- | ------------------------------------------------------- |
 | dev1（ローカル） | `.\scripts\dev1-up.ps1` | http://localhost:8081（拒否時は http://localhost:3000） |
-| dev2（サーバー） | `.\scripts\dev2-up.ps1` | https://dev.juristutor-ai.com |
+| dev2（サーバー） | `.\scripts\dev2-up.ps1` | https://dev.juristutor-ai.com                           |
 
 ### 手動起動（PowerShell）
 
@@ -213,9 +213,11 @@ git pull origin main
 ```
 
 - **本番（prod.db）**:
+
 ```bash
 docker compose --profile production run --rm -v /opt/law-review/scripts:/app/scripts:ro -v /opt/law-review/data:/app/data -v /opt/law-review/config:/app/config:ro backend python /app/scripts/import_all_json_to_db.py
 ```
+
 - **β（beta.db）**: 上記の `backend` → `backend-beta`
 - **開発（dev.db）**: 上記の `backend` → `backend-dev`
 
