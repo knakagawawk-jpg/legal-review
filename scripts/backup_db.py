@@ -34,13 +34,37 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-try:
-    from dotenv import load_dotenv
-    _env_path = _PROJECT_ROOT / ".env"
-    if _env_path.exists():
-        load_dotenv(_env_path, override=False)
-except ImportError:
-    pass
+_env_path = _PROJECT_ROOT / ".env"
+
+
+def _load_backup_env() -> None:
+    """プロジェクトルートの .env を読み、BACKUP_ONEDRIVE_ROOT 等を環境変数に設定する。"""
+    try:
+        from dotenv import load_dotenv
+        if _env_path.exists():
+            load_dotenv(str(_env_path), override=True)
+    except ImportError:
+        pass
+    # dotenv で読めなかった場合のフォールバック: .env を直接パース（BOM/クォート対策）
+    if not os.getenv("BACKUP_ONEDRIVE_ROOT", "").strip() and _env_path.exists():
+        try:
+            raw = _env_path.read_text(encoding="utf-8-sig").strip()
+            for line in raw.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("BACKUP_ONEDRIVE_ROOT="):
+                    val = line.split("=", 1)[1].strip().split("#")[0].strip()
+                    if val.startswith('"') and val.endswith('"') and len(val) >= 2:
+                        val = val[1:-1].replace("\\", os.sep)
+                    if val:
+                        os.environ["BACKUP_ONEDRIVE_ROOT"] = val
+                    break
+        except Exception:
+            pass
+
+
+_load_backup_env()
 
 # ログは標準出力に出す（タスクスケジューラでログファイルにリダイレクトしやすい）
 logging.basicConfig(
