@@ -75,7 +75,7 @@ export async function PUT(request: NextRequest) {
       target_short_answer_count?: number | null
       target_review_count?: number | null
     }
-    if (yyyymm == null || yyyymm === "") {
+    if (yyyymm == null || (typeof yyyymm === "number" ? Number.isNaN(yyyymm) : String(yyyymm) === "")) {
       return NextResponse.json(
         { error: "yyyymm（対象月、例: 202502）が必須です" },
         { status: 400 }

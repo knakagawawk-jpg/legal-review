@@ -73,6 +73,11 @@
     background-color: hsl(var(--muted-foreground) / 0.5);
   }
 
+  /* テーブル横スクロールバー非表示（カスタムスクロールバーを別表示するため） */
+  .table-scroll-area-hide-hbar::-webkit-scrollbar {
+    height: 0;
+  }
+
   /* Review result page panel layout */
   @media (min-width: 1024px) {
     .review-left-panel {

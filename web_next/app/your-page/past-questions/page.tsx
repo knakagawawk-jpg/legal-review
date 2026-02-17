@@ -12,6 +12,7 @@ import { withAuth } from "@/components/auth/with-auth"
 import { apiClient } from "@/lib/api-client"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { SUBJECT_COLORS } from "@/lib/dashboard-constants"
 
 type ReviewHistoryItem = {
   id: number
@@ -35,27 +36,6 @@ type ExamRecord = {
   subject: string
   year: number | null
   examType: string | null
-}
-
-// 科目と色の対応表（subjectsページと同じ）
-const SUBJECT_COLORS: Record<string, string> = {
-  "憲法": "bg-red-100 text-red-700",
-  "行政法": "bg-rose-100 text-rose-700",
-  "民法": "bg-blue-100 text-blue-700",
-  "商法": "bg-cyan-100 text-cyan-700",
-  "民事訴訟法": "bg-sky-100 text-sky-700",
-  "刑法": "bg-green-100 text-green-700",
-  "刑事訴訟法": "bg-emerald-100 text-emerald-700",
-  "労働法": "bg-indigo-100 text-indigo-700",
-  "知的財産法": "bg-teal-100 text-teal-700",
-  "倒産法": "bg-violet-100 text-violet-700",
-  "租税法": "bg-purple-100 text-purple-700",
-  "経済法": "bg-fuchsia-100 text-fuchsia-700",
-  "国際関係法（公法系）": "bg-pink-100 text-pink-700",
-  "国際関係法（私法系）": "bg-slate-100 text-slate-700",
-  "環境法": "bg-lime-100 text-lime-700",
-  "国際関係法": "bg-slate-100 text-slate-700",
-  "一般教養科目": "bg-gray-100 text-gray-700",
 }
 
 function ExamTable({ data, title }: { data: ExamRecord[]; title: string }) {

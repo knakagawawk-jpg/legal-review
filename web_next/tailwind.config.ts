@@ -6,7 +6,17 @@ const config = {
     './pages/**/*.{ts,tsx}',
     './components/**/*.{ts,tsx}',
     './app/**/*.{ts,tsx}',
+    './lib/**/*.{ts,tsx}',
     './src/**/*.{ts,tsx}',
+  ],
+  // 科目フィルター等で動的に参照されるクラスを purge から保護
+  safelist: [
+    // 憲法・民訴法・刑訴法で使うクラス（パターンで拾えない場合の明示指定）
+    "bg-red-100", "text-red-700",
+    "bg-sky-100", "text-sky-700",
+    "bg-emerald-100", "text-emerald-700",
+    { pattern: /^bg-(red|rose|blue|cyan|sky|green|emerald|indigo|teal|violet|purple|fuchsia|pink|slate|lime|gray)-(100|50)$/ },
+    { pattern: /^text-(red|rose|blue|cyan|sky|green|emerald|indigo|teal|violet|purple|fuchsia|pink|slate|lime|gray)-700$/ },
   ],
   prefix: "",
   theme: {

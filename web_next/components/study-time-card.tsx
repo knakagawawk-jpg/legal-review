@@ -168,7 +168,7 @@ const CHART_COLORS = {
 // ============================================================================
 
 export function StudyTimeCard() {
-  const [isOpen, setIsOpen] = useState(false)
+  const [isOpen, setIsOpen] = useState(true)  // デフォルト展開：棒グラフ・月別表示を常時表示
   const [loading, setLoading] = useState(true)
   const [weekStats, setWeekStats] = useState<TimerWeekStats | null>(null)
   const [monthStats, setMonthStats] = useState<TimerMonthStats | null>(null)
@@ -249,10 +249,10 @@ export function StudyTimeCard() {
                         (平均{formatTime(weeklyAvg)}/日)
                       </span>
                     </div>
-                    {/* ミニバーチャート - 7日間 */}
+                    {/* 棒グラフ - 過去7日間 */}
                     {last7DaysData.length > 0 && (
-                      <div className="mt-1 sm:w-3/4">
-                        <div className="flex items-end gap-0.5 h-16">
+                      <div className="mt-1.5 sm:w-3/4">
+                        <div className="flex items-end gap-1 h-20">
                           {last7DaysData.map((day) => {
                             const maxSeconds = Math.max(...last7DaysData.map((d) => d.totalSeconds), 1)
                             const heightPercent = maxSeconds > 0 ? (day.totalSeconds / maxSeconds) * 100 : 0
@@ -293,10 +293,10 @@ export function StudyTimeCard() {
                       </span>
                       <span className="text-xs text-amber-600">/ 今月</span>
                     </div>
-                    {/* 週別ミニバーチャート */}
+                    {/* 棒グラフ - 今月週別 */}
                     {monthlyWeekData.length > 0 && (
-                      <div className="mt-1">
-                        <div className="flex items-end gap-1.5 sm:gap-1 h-16 sm:justify-end">
+                      <div className="mt-1.5">
+                        <div className="flex items-end gap-1.5 sm:gap-1 h-20 sm:justify-end">
                           {monthlyWeekData.map((week) => {
                             const heightPercent = maxWeekSeconds > 0 ? (week.totalSeconds / maxWeekSeconds) * 100 : 0
                             return (
@@ -432,14 +432,13 @@ export function StudyTimeCard() {
               </div>
             </div>
 
-            {/* 月別推移グラフ（60%）＋ 右側独立領域（40%） */}
+            {/* 月別棒グラフ（過去12ヶ月） */}
             {yearlyData.length > 0 && (
-              <div className="mt-3 pt-3 border-t border-amber-100 flex gap-3">
-                <div className="w-[60%] shrink-0">
-                  <p className="text-[10px] font-medium text-amber-700 uppercase tracking-wide mb-2">
-                    月別推移
-                  </p>
-                  <div className="h-32">
+              <div className="mt-3 pt-3 border-t border-amber-100">
+                <p className="text-[10px] font-medium text-amber-700 uppercase tracking-wide mb-2">
+                  月別推移（過去12ヶ月）
+                </p>
+                <div className="h-36">
                     <div className="flex items-end gap-1 h-full">
                       {yearlyData.map((month) => {
                         const maxSeconds = Math.max(...yearlyData.map((m) => m.totalSeconds), 1)
@@ -461,16 +460,12 @@ export function StudyTimeCard() {
                     </div>
                     <div className="flex gap-1 mt-1">
                       {yearlyData.map((month) => (
-                        <span key={month.month} className="flex-1 text-[8px] text-amber-600 leading-none text-center">
+                        <span key={month.month} className="flex-1 text-[8px] text-amber-600 leading-none text-center truncate" title={month.month}>
                           {month.label}
                         </span>
                       ))}
                     </div>
                   </div>
-                </div>
-                <div className="flex-1 min-w-0 min-h-32" aria-label="右側独立領域">
-                  {/* 別用途のコンテンツ用 */}
-                </div>
               </div>
             )}
           </CardContent>

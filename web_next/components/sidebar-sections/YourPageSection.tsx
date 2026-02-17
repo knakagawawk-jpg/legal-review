@@ -42,9 +42,9 @@ function YourPageSectionInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const isDashboardActive = pathname === "/your-page/dashboard" || pathname?.startsWith("/your-page/dashboard")
-  const isHistoryActive = pathname === "/your-page/data" || pathname?.startsWith("/your-page/data")
+  const isDataActive = pathname === "/your-page/data" || pathname?.startsWith("/your-page/data") || pathname === "/your-page/history" || pathname?.startsWith("/your-page/history")
   const isSubjectsActive = pathname?.startsWith("/your-page/subjects/")
-  const isYourPageActive = isDashboardActive || isHistoryActive || isSubjectsActive
+  const isYourPageActive = isDashboardActive || isDataActive || isSubjectsActive
 
   // 過去5日分は常にデフォルトで閉じた状態
   const [isDateListOpen, setIsDateListOpen] = useState(false)
@@ -101,7 +101,7 @@ function YourPageSectionInner() {
         {yourPageNav.map((item) => {
           const isActive = (() => {
             if (item.href === "/your-page/dashboard") return isDashboardActive
-            if (item.href === "/your-page/data") return isHistoryActive
+            if (item.href === "/your-page/data") return isDataActive
             // `yourPageNav`上はデフォルトのリンク先が「/your-page/subjects/憲法」だが、
             // アクティブ判定は「各科目ページ配下」全体で行う
             if (item.href.startsWith("/your-page/subjects/")) return isSubjectsActive

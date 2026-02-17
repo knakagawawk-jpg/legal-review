@@ -25,11 +25,12 @@ interface SortableRowProps<T extends { id: number }> {
   onDelete: (id: number) => void
   onEditCreatedDate?: (id: number) => void
   showCreatedDateButton?: boolean
-  /** entry_type: 1=MEMO, 2=Topic。転換ボタン表示用 */
-  entryType?: 1 | 2
+  /** entry_type: 1=MEMO, 2=Topic, 3=Target。他タイプに変換ボタン・ダイアログの表示用 */
+  entryType?: 1 | 2 | 3
   onConvertToTopic?: (id: number) => void
   onConvertToMemo?: (id: number) => void
-  /** 転換確認ダイアログ用。当該行の「項目」のテキスト */
+  onConvertToTarget?: (id: number) => void
+  /** 他タイプに変換確認ダイアログ用。当該行の「項目」のテキスト */
   itemText?: string
   className?: string
   usePortal?: boolean
@@ -44,12 +45,12 @@ export function SortableRow<T extends { id: number }>({
   entryType,
   onConvertToTopic,
   onConvertToMemo,
+  onConvertToTarget,
   itemText = "",
   className = "",
   usePortal = false,
 }: SortableRowProps<T>) {
   const [convertDialogOpen, setConvertDialogOpen] = useState(false)
-  const pendingConvertTarget = useRef<"topic" | "memo" | null>(null)
   const {
     attributes,
     listeners,
@@ -108,6 +109,11 @@ export function SortableRow<T extends { id: number }>({
     }
   }
 
+  // entryType=1なら Topic(2)/Target(3) に転換、entryType=2なら MEMO(1)/Target(3)、entryType=3なら MEMO(1)/Topic(2)
+  const hasAnyConvert = (entryType === 1 && (onConvertToTopic || onConvertToTarget)) ||
+    (entryType === 2 && (onConvertToMemo || onConvertToTarget)) ||
+    (entryType === 3 && (onConvertToMemo || onConvertToTopic))
+
   const menuContent = (
     <div
       ref={menuRef}
@@ -151,7 +157,7 @@ export function SortableRow<T extends { id: number }>({
           <CalendarDays className="h-3 w-3" />
         </Button>
       )}
-      {entryType === 1 && onConvertToTopic && (
+      {hasAnyConvert ? (
         <Button
           variant="ghost"
           size="sm"
@@ -159,62 +165,64 @@ export function SortableRow<T extends { id: number }>({
           onClick={(e) => {
             e.stopPropagation()
             e.preventDefault()
-            pendingConvertTarget.current = "topic"
             setConvertDialogOpen(true)
             setShowMenu(false)
           }}
         >
-          Topicに転換
+          他タイプに転換
         </Button>
-      )}
-      {entryType === 2 && onConvertToMemo && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 px-1.5 text-[10px] bg-muted hover:bg-muted/80 whitespace-nowrap"
-          onClick={(e) => {
-            e.stopPropagation()
-            e.preventDefault()
-            pendingConvertTarget.current = "memo"
-            setConvertDialogOpen(true)
-            setShowMenu(false)
-          }}
-        >
-          MEMOに転換
-        </Button>
-      )}
+      ) : null}
     </div>
   )
 
-  const handleConvertConfirm = () => {
-    if (pendingConvertTarget.current === "topic" && onConvertToTopic) {
-      onConvertToTopic(item.id)
-    } else if (pendingConvertTarget.current === "memo" && onConvertToMemo) {
-      onConvertToMemo(item.id)
-    }
-    pendingConvertTarget.current = null
-    setConvertDialogOpen(false)
-  }
+  const convertMessage =
+    entryType === 1
+      ? `「${itemText}」のMEMOを他タイプに転換してもよろしいですか。`
+      : entryType === 2
+        ? `「${itemText}」のTopicを他タイプに転換してもよろしいですか。`
+        : entryType === 3
+          ? `「${itemText}」のTargetを他タイプに転換してもよろしいですか。`
+          : ""
 
   const convertDialogContent = (
-    <AlertDialog open={convertDialogOpen} onOpenChange={(open) => {
-      setConvertDialogOpen(open)
-      if (!open) pendingConvertTarget.current = null
-    }}>
+    <AlertDialog open={convertDialogOpen} onOpenChange={setConvertDialogOpen}>
       <AlertDialogContent onClick={(e) => e.stopPropagation()}>
         <AlertDialogHeader>
-          <AlertDialogTitle>
-            {pendingConvertTarget.current === "topic" ? "Topicに転換" : "MEMOに転換"}
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            {pendingConvertTarget.current === "topic"
-              ? `「${itemText}」のMEMOをTopicに転換してよろしいですか。「状態カラム」は手動で修正してください。`
-              : `「${itemText}」のTopicをMEMOに転換してよろしいですか。「種類カラム」は手動で修正してください。`}
-          </AlertDialogDescription>
+          <AlertDialogTitle>他タイプに転換</AlertDialogTitle>
+          <AlertDialogDescription>{convertMessage}</AlertDialogDescription>
         </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogAction onClick={handleConvertConfirm}>Yes</AlertDialogAction>
-          <AlertDialogCancel onClick={() => { pendingConvertTarget.current = null }}>No</AlertDialogCancel>
+        <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+          {entryType !== 2 && onConvertToTopic && (
+            <AlertDialogAction
+              onClick={() => {
+                onConvertToTopic(item.id)
+                setConvertDialogOpen(false)
+              }}
+            >
+              Topicに転換
+            </AlertDialogAction>
+          )}
+          {entryType !== 1 && onConvertToMemo && (
+            <AlertDialogAction
+              onClick={() => {
+                onConvertToMemo(item.id)
+                setConvertDialogOpen(false)
+              }}
+            >
+              MEMOに転換
+            </AlertDialogAction>
+          )}
+          {entryType !== 3 && onConvertToTarget && (
+            <AlertDialogAction
+              onClick={() => {
+                onConvertToTarget(item.id)
+                setConvertDialogOpen(false)
+              }}
+            >
+              Targetに転換
+            </AlertDialogAction>
+          )}
+          <AlertDialogCancel>No</AlertDialogCancel>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -252,7 +260,7 @@ export function SortableRow<T extends { id: number }>({
       </TableCell>
       {children}
     </TableRow>
-    {(onConvertToTopic || onConvertToMemo) && typeof document !== "undefined" && createPortal(convertDialogContent, document.body)}
+    {hasAnyConvert && typeof document !== "undefined" && createPortal(convertDialogContent, document.body)}
     </>
   )
 }

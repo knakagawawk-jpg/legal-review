@@ -52,6 +52,8 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
+import { SUBJECT_COLORS } from "@/lib/dashboard-constants"
+import { MemoField } from "@/components/memo-field"
 
 type NoteSectionWithPages = NoteSection & {
   pages?: NotePage[]
@@ -59,105 +61,6 @@ type NoteSectionWithPages = NoteSection & {
 
 type NotebookWithSections = Notebook & {
   sections?: NoteSectionWithPages[]
-}
-
-// Dashboardと同じ高さ制御ロジック（入力時は最大5行、表示時は1〜3行）
-function MemoField({
-  value,
-  onChange,
-  onBlur,
-  onKeyDown,
-  placeholder = "",
-}: {
-  value: string
-  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
-  onBlur?: () => void
-  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
-  placeholder?: string
-}) {
-  const [isFocused, setIsFocused] = useState(false)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const lineHeight = 24 // 1.5rem = 24px
-  const inputHeight = 7.5 // 入力時高さ（5行分: 1.5rem * 5）
-  const maxHeight = inputHeight * 16 // 7.5rem = 120px (16px基準)
-
-  const adjustHeight = useCallback(() => {
-    if (!textareaRef.current) return
-
-    if (isFocused) {
-      textareaRef.current.style.height = "auto"
-      const scrollHeight = textareaRef.current.scrollHeight
-      textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`
-      textareaRef.current.style.maxHeight = `${maxHeight}px`
-    } else {
-      if (!value || value.trim() === "") {
-        textareaRef.current.style.height = "1.5rem"
-        textareaRef.current.style.maxHeight = "1.5rem"
-        return
-      }
-
-      textareaRef.current.style.height = "1.5rem"
-      const scrollHeight = textareaRef.current.scrollHeight
-
-      let displayLines = 1
-      if (scrollHeight > lineHeight + 1) {
-        if (scrollHeight <= lineHeight * 2 + 1) {
-          displayLines = 2
-        } else {
-          displayLines = 3
-        }
-      }
-
-      const displayHeight = displayLines * lineHeight
-      textareaRef.current.style.height = `${displayHeight}px`
-      textareaRef.current.style.maxHeight = `${displayHeight}px`
-    }
-  }, [isFocused, value, lineHeight, maxHeight])
-
-  useEffect(() => {
-    adjustHeight()
-  }, [adjustHeight])
-
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    onChange(e)
-    setTimeout(() => {
-      adjustHeight()
-    }, 0)
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      textareaRef.current?.blur()
-      if (onBlur) onBlur()
-      return
-    }
-    if (onKeyDown) onKeyDown(e)
-  }
-
-  return (
-    <Textarea
-      ref={textareaRef}
-      value={value}
-      onChange={handleChange}
-      onKeyDown={handleKeyDown}
-      onFocus={() => setIsFocused(true)}
-      onBlur={() => {
-        setIsFocused(false)
-        if (onBlur) onBlur()
-      }}
-      placeholder={placeholder}
-      className={cn(
-        "text-xs border-0 shadow-none bg-transparent hover:bg-muted/50 focus:bg-muted/50 focus-visible:ring-0 resize-none whitespace-pre-wrap break-words py-1 px-0",
-        isFocused ? "overflow-y-auto min-h-[7.5rem]" : "overflow-hidden"
-      )}
-      style={{
-        lineHeight: "1.5rem",
-        height: (!value || value.trim() === "") && !isFocused ? "1.5rem" : undefined,
-        minHeight: isFocused ? "7.5rem" : "1.5rem",
-      }}
-    />
-  )
 }
 
 type StudyTag = {
@@ -180,63 +83,6 @@ type StudyItem = {
   createdAt: string  // 作成日 (mm/dd形式)
 }
 
-
-/**
- * 科目と色の対応:
- * 
- * 【憲法系（赤系）】
- * - 憲法: bg-red-100 text-red-700
- * - 行政法: bg-rose-100 text-rose-700
- * - 国際関係法（公法系）: bg-pink-100 text-pink-700
- * 
- * 【民事系（青系）】
- * - 民法: bg-blue-100 text-blue-700
- * - 商法: bg-cyan-100 text-cyan-700
- * - 民事訴訟法: bg-sky-100 text-sky-700
- * - 実務基礎（民事）: bg-indigo-100 text-indigo-700
- * - 倒産法: bg-teal-100 text-teal-700
- * - 租税法: bg-blue-200 text-blue-800
- * - 知的財産法: bg-sky-200 text-sky-800
- * - 労働法: bg-indigo-200 text-indigo-800
- * - 国際関係法（私法系）: bg-blue-300 text-blue-900
- * 
- * 【刑事系（緑系）】
- * - 刑法: bg-green-100 text-green-700
- * - 刑事訴訟法: bg-emerald-100 text-emerald-700
- * - 実務基礎（刑事）: bg-lime-100 text-lime-700
- * 
- * 【その他】
- * - 経済法: bg-yellow-100 text-yellow-700
- * - 環境法: bg-amber-100 text-amber-700
- * - 一般教養科目: bg-gray-100 text-gray-700
- */
-const SUBJECT_COLORS: Record<string, string> = {
-  // 憲法系（赤系）
-  "憲法": "bg-red-100 text-red-700",
-  "行政法": "bg-rose-100 text-rose-700",
-  "国際関係法（公法系）": "bg-pink-100 text-pink-700",
-
-  // 民事系（青系）
-  "民法": "bg-blue-100 text-blue-700",
-  "商法": "bg-cyan-100 text-cyan-700",
-  "民事訴訟法": "bg-sky-100 text-sky-700",
-  "実務基礎（民事）": "bg-indigo-100 text-indigo-700",
-  "倒産法": "bg-teal-100 text-teal-700",
-  "租税法": "bg-blue-200 text-blue-800",
-  "知的財産法": "bg-sky-200 text-sky-800",
-  "労働法": "bg-indigo-200 text-indigo-800",
-  "国際関係法（私法系）": "bg-blue-300 text-blue-900",
-
-  // 刑事系（緑系）
-  "刑法": "bg-green-100 text-green-700",
-  "刑事訴訟法": "bg-emerald-100 text-emerald-700",
-  "実務基礎（刑事）": "bg-lime-100 text-lime-700",
-
-  // その他
-  "経済法": "bg-yellow-100 text-yellow-700",
-  "環境法": "bg-amber-100 text-amber-700",
-  "一般教養科目": "bg-gray-100 text-gray-700",
-}
 
 function SubjectPage() {
   const params = useParams()
@@ -912,6 +758,7 @@ function SubjectPage() {
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             placeholder="内容を入力..."
+            maxDisplayLines={3}
           />
         </TableCell>
         <TableCell className="text-xs align-top">
@@ -921,6 +768,7 @@ function SubjectPage() {
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             placeholder="メモを入力..."
+            maxDisplayLines={3}
           />
         </TableCell>
         <TableCell className="text-xs align-top">
@@ -1078,6 +926,7 @@ function SubjectPage() {
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             placeholder="内容を入力..."
+            maxDisplayLines={3}
           />
         </TableCell>
         <TableCell className="text-xs align-top">
@@ -1087,6 +936,7 @@ function SubjectPage() {
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             placeholder="メモを入力..."
+            maxDisplayLines={3}
           />
         </TableCell>
         <TableCell className="text-xs align-top">
@@ -1920,6 +1770,7 @@ function SubjectPage() {
                                               queueUpdateStudyItem(norm.id, { content: v })
                                             }}
                                             placeholder="内容を入力..."
+                                            maxDisplayLines={3}
                                           />
                                         </TableCell>
                                         <TableCell className="text-xs align-top">
@@ -1931,6 +1782,7 @@ function SubjectPage() {
                                               queueUpdateStudyItem(norm.id, { memo: v })
                                             }}
                                             placeholder="メモを入力..."
+                                            maxDisplayLines={3}
                                           />
                                         </TableCell>
                                         <TableCell className="text-xs align-top">
@@ -2266,6 +2118,7 @@ function SubjectPage() {
                                               queueUpdateStudyItem(point.id, { content: v })
                                             }}
                                             placeholder="内容を入力..."
+                                            maxDisplayLines={3}
                                           />
                                         </TableCell>
                                         <TableCell className="text-xs align-top">
@@ -2277,6 +2130,7 @@ function SubjectPage() {
                                               queueUpdateStudyItem(point.id, { memo: v })
                                             }}
                                             placeholder="メモを入力..."
+                                            maxDisplayLines={3}
                                           />
                                         </TableCell>
                                         <TableCell className="text-xs align-top">
