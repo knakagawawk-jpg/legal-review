@@ -229,6 +229,20 @@ def get_non_review_cost_yen_total(db: Session, user_id: int) -> Decimal:
     return Decimal(str(row.total))
 
 
+def get_total_cost_yen_total(db: Session, user_id: int) -> Decimal:
+    """全機能の LlmRequest の cost_yen 合計（Review 含む・全期間）。
+    この総額が上限に達すると講評チャット・フリーチャット・復習問題が制限される。
+    講評作成は回数が残っていれば可能。"""
+    row = (
+        db.query(func.coalesce(func.sum(LlmRequest.cost_yen), 0).label("total"))
+        .filter(LlmRequest.user_id == user_id)
+        .first()
+    )
+    if not row or row.total is None:
+        return Decimal("0")
+    return Decimal(str(row.total))
+
+
 def count_recent_review_success_sessions(db: Session, user_id: int, study_date: str) -> int:
     """復習問題生成の成功セッション数（指定 study_date 内）。"""
     from .models import RecentReviewProblemSession
@@ -303,7 +317,8 @@ def check_free_chat_message_limit(db: Session, user: User, *, after_add: int = 0
 
 
 def check_non_review_cost_limit(db: Session, user: User) -> None:
-    """Review 以外の合計コスト（円）が上限以内か。"""
+    """総利用額（Review含む）が上限以内か。超過時は講評チャット・フリーチャット・復習問題をブロック。
+    講評作成は回数が残っていれば可能（本関数は講評作成時には呼ばれない）。"""
     if not is_plan_limits_enabled():
         return
     _raise_if_no_subscription(db, user)
@@ -312,11 +327,11 @@ def check_non_review_cost_limit(db: Session, user: User) -> None:
     max_yen = limits.get(LIMIT_MAX_NON_REVIEW_COST_YEN_TOTAL)
     if max_yen is None:
         return
-    total = get_non_review_cost_yen_total(db, user.id)
+    total = get_total_cost_yen_total(db, user.id)
     if total >= Decimal(str(max_yen)):
         raise HTTPException(
             status_code=429,
-            detail=f"LLM利用額が上限（{max_yen}円）に達しています。（Review以外の合計）",
+            detail=f"LLM利用額が上限（{max_yen}円）に達しています。講評は回数が残っていれば利用可能です。",
         )
 
 

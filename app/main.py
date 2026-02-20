@@ -731,9 +731,10 @@ async def get_plan_limits_usage(
         review_chat_used = plan_limits_module.count_review_chat_user_messages(db, current_user.id)
         free_chat_used = plan_limits_module.count_free_chat_user_messages(db, current_user.id)
         try:
-            non_review_cost_yen_used = float(plan_limits_module.get_non_review_cost_yen_total(db, current_user.id))
+            # 額の計算は Review 含む総利用額（上限に達すると講評チャット・フリーチャット・復習問題が制限されるが講評は回数が残っていれば可能）
+            non_review_cost_yen_used = float(plan_limits_module.get_total_cost_yen_total(db, current_user.id))
         except (TypeError, ValueError) as e:
-            logger.warning(f"get_non_review_cost_yen_total coercion failed for user {current_user.id}: {e}")
+            logger.warning(f"get_total_cost_yen_total coercion failed for user {current_user.id}: {e}")
             non_review_cost_yen_used = 0.0
 
         return PlanLimitUsageResponse(
