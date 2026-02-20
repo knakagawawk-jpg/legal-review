@@ -22,7 +22,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label"
 import { Calendar, DatePickerCalendar } from "@/components/ui/calendar"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { SUBJECT_COLORS, POINT_STATUS_OPTIONS, TASK_STATUS_OPTIONS } from "@/lib/dashboard-constants"
+import { SUBJECT_COLORS, POINT_STATUS_OPTIONS, TASK_STATUS_OPTIONS, TARGET_ACHIEVEMENT_OPTIONS } from "@/lib/dashboard-constants"
 import { MemoField } from "@/components/memo-field"
 import { AddRowBar } from "@/components/add-row-bar"
 import { TableWithAddRow } from "@/components/table-with-add-row"
@@ -240,6 +240,7 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
   // 作成日編集用のPopover状態
   const [memoCreatedDatePickerOpen, setMemoCreatedDatePickerOpen] = useState<Record<number, boolean>>({})
   const [topicCreatedDatePickerOpen, setTopicCreatedDatePickerOpen] = useState<Record<number, boolean>>({})
+  const [targetCreatedDatePickerOpen, setTargetCreatedDatePickerOpen] = useState<Record<number, boolean>>({})
   
   // Sensors for drag and drop
   const sensors = useSensors(
@@ -259,10 +260,11 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
     return d.getFullYear() * 100 + (d.getMonth() + 1)
   }, [])
 
-  // データ取得
-  const loadData = useCallback(async () => {
+  // データ取得（silent: true のときは loading を立てず、既存表示を維持したまま再取得）
+  const loadData = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       if (variant === "memo-topics-only") {
         const [memoData, topicData] = await Promise.all([
           apiClient.get<{ items: DashboardItem[], total: number }>("/api/dashboard/items/all?entry_type=1"),
@@ -310,7 +312,7 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
       setTopicItems([])
       setTargetItems([])
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [goalYyyymm, variant])
 
@@ -370,7 +372,7 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
         position: null,
         created_at: today,
       })
-      await loadData()
+      await loadData({ silent: true })
     } catch (error) {
       console.error("Failed to create memo item:", error)
     }
@@ -388,13 +390,13 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
         position: null,
         created_at: today,
       })
-      await loadData()
+      await loadData({ silent: true })
     } catch (error) {
       console.error("Failed to create topic item:", error)
     }
   }, [loadData])
 
-  // 今月の目標（Target）行を追加
+  // 今月の目標（Target）行を追加（entry_type=3 で作成）
   const createTargetItem = useCallback(async () => {
     try {
       const y = Math.floor(goalYyyymm / 100)
@@ -402,13 +404,13 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
       const firstDay = `${y}-${String(m).padStart(2, "0")}-01`
       await apiClient.post<DashboardItem>("/api/dashboard/items", {
         dashboard_date: firstDay,
-        entry_type: 3,
+        entry_type: 3, // Target
         item: "",
-        status: 1,
+        status: 4, // 達成率デフォルト 0%
         position: null,
         created_at: firstDay,
       })
-      await loadData()
+      await loadData({ silent: true })
     } catch (error) {
       console.error("Failed to create target item:", error)
     }
@@ -418,7 +420,7 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
   const deleteItem = useCallback(async (itemId: number) => {
     try {
       await apiClient.delete(`/api/dashboard/items/${itemId}`)
-      await loadData()
+      await loadData({ silent: true })
     } catch (error) {
       console.error("Failed to delete item:", error)
     }
@@ -428,7 +430,7 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
   const convertEntryType = useCallback(async (itemId: number, newEntryType: 1 | 2 | 3) => {
     try {
       await apiClient.put(`/api/dashboard/items/${itemId}`, { entry_type: newEntryType })
-      await loadData()
+      await loadData({ silent: true })
     } catch (error) {
       console.error("Failed to convert entry type:", error)
     }
@@ -467,7 +469,7 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
         })
       } catch (error) {
         console.error("Failed to reorder memo item:", error)
-        await loadData()
+        await loadData({ silent: true })
       }
     }
   }, [memoItems, loadData])
@@ -505,7 +507,7 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
         })
       } catch (error) {
         console.error("Failed to reorder topic item:", error)
-        await loadData()
+        await loadData({ silent: true })
       }
     }
   }, [topicItems, loadData])
@@ -613,8 +615,8 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
         delete pendingItemUpdates.current[itemId]
       } catch (error) {
         console.error("Failed to update item field:", error)
-        // エラー時はデータを再読み込み
-        await loadData()
+        // エラー時はデータを再読み込み（表示は維持）
+        await loadData({ silent: true })
         delete itemUpdateTimers.current[itemId]
         delete pendingItemUpdates.current[itemId]
       }
@@ -748,7 +750,15 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
     const date = new Date(dateString)
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
   }
-  
+  // 作成日を「YYYY-」と「MM-DD」の2行で表示する用
+  const formatDateTwoLines = (dateString: string | null): { line1: string; line2: string } | null => {
+    const s = dateString ? formatDate(dateString) : ""
+    if (!s) return null
+    const idx = s.indexOf("-")
+    if (idx === -1) return { line1: s, line2: "" }
+    return { line1: s.slice(0, idx + 1), line2: s.slice(idx + 1) }
+  }
+
   // 科目リスト
   const subjects = FIXED_SUBJECTS.map(name => ({
     id: getSubjectId(name),
@@ -768,16 +778,44 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
     )
   }, [targetItems, goalYyyymm])
 
-  // 表示する目標行：最大 targetDisplayLimit 件。0〜3件のときは4行になるよう空行を足す
+  // 表示する目標行：最大 targetDisplayLimit 件。削除で減っても常に最低4行分表示（データ＋空行で4行）
   const displayedTargetRows = useMemo(() => {
     const slice = targetItemsForMonth.slice(0, targetDisplayLimit)
-    if (slice.length <= 3) {
-      const emptyCount = 4 - slice.length
-      return { rows: slice, emptyCount }
-    }
-    return { rows: slice, emptyCount: 0 }
+    const emptyCount = Math.max(0, 4 - slice.length)
+    return { rows: slice, emptyCount }
   }, [targetItemsForMonth, targetDisplayLimit])
   const hasMoreTargets = targetItemsForMonth.length > targetDisplayLimit
+
+  // 今月の目標（Target）のドラッグ終了処理
+  const handleDragEndTarget = useCallback(async (event: DragEndEvent) => {
+    const { active, over } = event
+    if (over && active.id !== over.id) {
+      const oldIndex = targetItemsForMonth.findIndex((item) => item.id.toString() === active.id)
+      const newIndex = targetItemsForMonth.findIndex((item) => item.id.toString() === over.id)
+      if (oldIndex === -1 || newIndex === -1) return
+      const newOrdered = arrayMove(targetItemsForMonth, oldIndex, newIndex)
+      const movedItem = newOrdered[newIndex]
+      const prevItem = newIndex > 0 ? newOrdered[newIndex - 1] : null
+      const nextItem = newIndex < newOrdered.length - 1 ? newOrdered[newIndex + 1] : null
+      let newPosition: number
+      if (prevItem && nextItem) {
+        newPosition = Math.floor((prevItem.position + nextItem.position) / 2)
+      } else if (prevItem) {
+        newPosition = prevItem.position + 10
+      } else if (nextItem) {
+        newPosition = nextItem.position - 10
+      } else {
+        newPosition = 10
+      }
+      try {
+        await apiClient.put(`/api/dashboard/items/${movedItem.id}`, { position: newPosition })
+        await loadData({ silent: true })
+      } catch (error) {
+        console.error("Failed to reorder target item:", error)
+        await loadData({ silent: true })
+      }
+    }
+  }, [targetItemsForMonth, loadData])
 
   // 目標達成率カード用：該当月の勉強時間／目標（時間表示）
   const goalStudyMinutes = Math.floor((monthStatsForGoal?.total_seconds ?? 0) / 60)
@@ -793,6 +831,16 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
   const reviewNum = monthlyGoal?.review_count ?? planLimits?.reviews_used ?? 0
   const reviewRate = targetReview > 0 ? Math.min(100, Math.round((reviewNum / targetReview) * 100)) : 0
   const reviewDenom = targetReview > 0 ? targetReview : 0
+
+  // 左円グラフ用：今月の目標「項目」ベースの達成率（0%→0, 25%→0.25, 50%→0.5, 100%→1 を合算）
+  const TARGET_STATUS_TO_RATIO: Record<number, number> = { 1: 0.25, 2: 0.5, 3: 1, 4: 0 }
+  const targetItemCount = targetItemsForMonth.length
+  const targetAchievedItems = targetItemsForMonth.reduce(
+    (sum, item) => sum + (TARGET_STATUS_TO_RATIO[item.status] ?? 0),
+    0
+  )
+  const targetAchievementRate =
+    targetItemCount > 0 ? Math.min(100, Math.round((targetAchievedItems / targetItemCount) * 100)) : 0
 
   return (
     <div className="space-y-4">
@@ -842,7 +890,7 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
           </div>
           <div className="p-8 sm:p-10">
             <div className="flex gap-10 sm:gap-12">
-              {/* 左：円グラフ＋時間 */}
+              {/* 左：円グラフ＋項目数（今月の目標の達成率ベース） */}
               <div className="flex flex-col items-center flex-shrink-0">
                 <div className="relative w-40 h-40 sm:w-44 sm:h-44">
                   <svg className="w-full h-full" viewBox="0 0 100 100">
@@ -854,7 +902,7 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
                       fill="none"
                       stroke="url(#gradientCircleGoal)"
                       strokeWidth="8"
-                      strokeDasharray={`${42 * Math.PI * (studyRate / 100)}, ${42 * Math.PI * 2}`}
+                      strokeDasharray={`${42 * Math.PI * (targetAchievementRate / 100)}, ${42 * Math.PI * 2}`}
                       strokeLinecap="round"
                       transform="rotate(-90 50 50)"
                     />
@@ -866,15 +914,15 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
                     </defs>
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-3xl sm:text-4xl font-bold tabular-nums text-orange-600">{studyRate}%</span>
+                    <span className="text-3xl sm:text-4xl font-bold tabular-nums text-orange-600">{targetAchievementRate}%</span>
                     <span className="text-xs font-medium text-slate-500 mt-1 tracking-wide uppercase">達成</span>
                   </div>
                 </div>
                 <p className="mt-6 text-center">
                   <span className="text-2xl font-semibold tabular-nums text-slate-800">
-                    {studyNumHours.toFixed(1)} / <span className="text-orange-600 cursor-pointer hover:text-orange-700 transition-colors" onClick={openGoalEdit} title={studyDenomHours > 0 ? "クリックで目標を編集" : "クリックで目標を設定"}>{studyDenomHours.toFixed(1)}</span>
+                    {targetAchievedItems.toFixed(1)} / <span className="text-orange-600 cursor-pointer hover:text-orange-700 transition-colors" onClick={openGoalEdit} title={targetItemCount > 0 ? "クリックで目標を編集" : "クリックで目標を設定"}>{targetItemCount}</span>
                   </span>
-                  <span className="text-sm font-medium text-slate-500 ml-1.5">時間</span>
+                  <span className="text-sm font-medium text-slate-500 ml-1.5">項目</span>
                 </p>
               </div>
 
@@ -913,102 +961,8 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
                 </div>
 
                 <div className="border-t border-slate-100 pt-5 mt-1">
-                  <p className="text-xs font-semibold text-slate-600 mb-3 tracking-wide">今月の目標</p>
-                  <div className="overflow-x-auto rounded-xl border border-slate-100">
-                    <table className="w-full text-xs" style={{ tableLayout: "fixed" }}>
-                      <colgroup>
-                        <col style={{ width: "3.5rem" }} />
-                        <col style={{ width: "calc((100% - 7rem) * 0.25)" }} />
-                        <col style={{ width: "3.5rem" }} />
-                        <col style={{ width: "calc((100% - 7rem) * 0.75)" }} />
-                      </colgroup>
-                      <thead>
-                        <tr className="bg-slate-50/80 border-b border-slate-100">
-                          <th className="py-1 px-0.5 w-14 text-left font-medium text-slate-600">科目</th>
-                          <th className="py-1 px-1 text-left font-medium text-slate-600">項目</th>
-                          <th className="py-1 px-0 w-14 text-left font-medium text-slate-600">状態</th>
-                          <th className="py-1 px-1 text-left font-medium text-slate-600">メモ</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {displayedTargetRows.rows.map((item) => {
-                          const statusOption = TASK_STATUS_OPTIONS.find((s) => s.value === item.status)
-                          const selectedSubject = subjects.find((s) => s.id === item.subject)
-                          return (
-                            <tr key={item.id} className="border-b border-slate-50">
-                              <TableCell className="py-1.5 px-0.5 w-14 align-top">
-                                <Select
-                                  value={item.subject?.toString() || undefined}
-                                  onValueChange={(value) => updateItemField(item.id, "subject", value ? parseInt(value) : null, 3)}
-                                >
-                                  <SelectTrigger className="h-7 text-[10px] border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
-                                    {selectedSubject ? (
-                                      <span className={cn("text-xs px-1.5 py-0.5 rounded", SUBJECT_COLORS[selectedSubject.name] || "")}>
-                                        {getSubjectShortName(selectedSubject.name)}
-                                      </span>
-                                    ) : (
-                                      <SelectValue placeholder="--" />
-                                    )}
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {subjects.filter((s) => s.id != null && s.id.toString() !== "").map((s) => (
-                                      <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
-                                        <span className={cn(SUBJECT_COLORS[s.name] ? `px-1.5 py-0.5 rounded ${SUBJECT_COLORS[s.name]}` : "")}>
-                                          {getSubjectShortName(s.name)}
-                                        </span>
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </TableCell>
-                              <TableCell className="py-1.5 px-1 min-w-0 align-top">
-                                <ItemField
-                                  value={item.item}
-                                  onChange={(e) => updateItemField(item.id, "item", e.target.value, 3)}
-                                />
-                              </TableCell>
-                              <TableCell className="py-1.5 px-0 w-14 align-top">
-                                <Select
-                                  value={item.status.toString()}
-                                  onValueChange={(value) => updateItemField(item.id, "status", parseInt(value), 3)}
-                                >
-                                  <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-14">
-                                    {statusOption ? (
-                                      <span className={cn("text-xs px-1.5 py-0.5 rounded", statusOption.color)}>
-                                        {statusOption.label}
-                                      </span>
-                                    ) : (
-                                      <SelectValue />
-                                    )}
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {TASK_STATUS_OPTIONS.filter((opt) => opt.value != null && opt.value.toString() !== "").map((opt) => (
-                                      <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
-                                        <span className={cn("px-1.5 py-0.5 rounded", opt.color)}>{opt.label}</span>
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </TableCell>
-                              <TableCell className="py-1.5 px-1 min-w-0 align-top">
-                                <MemoField
-                                  value={item.memo || ""}
-                                  onChange={(e) => updateMemo(item.id, e.target.value, 3)}
-                                  maxDisplayLines={10}
-                                />
-                              </TableCell>
-                            </tr>
-                          )
-                        })}
-                        {Array.from({ length: displayedTargetRows.emptyCount }).map((_, i) => (
-                          <tr key={`empty-${i}`} className="border-b border-slate-50">
-                            <TableCell colSpan={4} className="px-4 py-2 h-8" />
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="mt-2 flex justify-end items-center gap-2">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-semibold text-slate-600 tracking-wide">今月の目標</p>
                     {hasMoreTargets && (
                       <button
                         type="button"
@@ -1018,16 +972,155 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
                         さらに10件表示
                       </button>
                     )}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={createTargetItem}
-                      className="h-7 text-xs gap-1"
+                  </div>
+                  <div className="rounded-xl border border-slate-100 overflow-hidden">
+                    <TableWithAddRow
+                      maxHeight="320px"
+                      addRowBar={<AddRowBar onClick={createTargetItem} label="行追加" />}
                     >
-                      <Plus className="h-3 w-3" />
-                      行追加
-                    </Button>
+                      <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={handleDragEndTarget}
+                      >
+                        <table className="w-full text-sm border-collapse" style={{ minWidth: "560px" }}>
+                          <colgroup>
+                            <col style={{ width: "1.5rem", minWidth: "1.5rem" }} />
+                            <col style={{ width: "6rem", minWidth: "6rem" }} />
+                            <col style={{ minWidth: "130px", maxWidth: "240px" }} />
+                            <col style={{ width: "5.5rem", minWidth: "5.5rem" }} />
+                            <col style={{ width: "5rem", minWidth: "5rem" }} />
+                            <col style={{ minWidth: "320px" }} />
+                          </colgroup>
+                          <thead>
+                            <tr className="border-b border-border text-xs text-muted-foreground sticky top-0 bg-white">
+                              <th className="py-1 px-1 w-6" />
+                              <th className="py-1 px-0.5 text-left font-medium" style={{ width: "6rem", minWidth: "6rem" }}>科目</th>
+                              <th className="py-1 px-1 text-left font-medium" style={{ minWidth: "130px", maxWidth: "240px" }}>項目</th>
+                              <th className="py-1 px-0 text-left font-medium" style={{ width: "5.5rem", minWidth: "5.5rem" }}>達成率</th>
+                              <th className="py-1 px-0 text-left font-medium" style={{ width: "5rem", minWidth: "5rem" }}>作成日</th>
+                              <th className="py-1 px-1 text-left font-medium">メモ</th>
+                            </tr>
+                          </thead>
+                          <SortableContext items={displayedTargetRows.rows.map((p) => p.id.toString())} strategy={verticalListSortingStrategy}>
+                            <tbody>
+                              {displayedTargetRows.rows.map((item) => {
+                                const achievementOption = TARGET_ACHIEVEMENT_OPTIONS.find((s) => s.value === item.status)
+                                const selectedSubject = subjects.find((s) => s.id === item.subject)
+                                const targetCreatedDate = item.created_at ? formatDate(item.created_at) : ""
+                                const targetCreatedDateParts = formatDateTwoLines(item.created_at)
+                                return (
+                                  <SortableRow
+                                    key={item.id}
+                                    item={item}
+                                    onDelete={deleteItem}
+                                    onEditCreatedDate={(id) => setTargetCreatedDatePickerOpen((prev) => ({ ...prev, [id]: true }))}
+                                    showCreatedDateButton={true}
+                                    entryType={3}
+                                    onConvertToMemo={(id) => convertEntryType(id, 1)}
+                                    onConvertToTopic={(id) => convertEntryType(id, 2)}
+                                    itemText={item.item}
+                                  >
+                                    <TableCell className="py-1.5 px-0.5 align-top" style={{ width: "6rem", minWidth: "6rem" }}>
+                                      <Select
+                                        value={item.subject?.toString() || undefined}
+                                        onValueChange={(value) => updateItemField(item.id, "subject", value ? parseInt(value) : null, 3)}
+                                      >
+                                        <SelectTrigger className="h-7 text-[10px] border-0 bg-transparent hover:bg-muted/50 focus:bg-muted/50 px-1 w-14">
+                                          {selectedSubject ? (
+                                            <span className={cn("text-xs px-1.5 py-0.5 rounded", SUBJECT_COLORS[selectedSubject.name] || "")}>
+                                              {getSubjectShortName(selectedSubject.name)}
+                                            </span>
+                                          ) : (
+                                            <SelectValue placeholder="--" />
+                                          )}
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {subjects.filter((s) => s.id != null && s.id.toString() !== "").map((s) => (
+                                            <SelectItem key={s.id} value={s.id.toString()} className="text-xs">
+                                              <span className={cn(SUBJECT_COLORS[s.name] ? `px-1.5 py-0.5 rounded ${SUBJECT_COLORS[s.name]}` : "")}>
+                                                {getSubjectShortName(s.name)}
+                                              </span>
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </TableCell>
+                                    <TableCell className="py-1.5 px-1 align-top" style={{ minWidth: "130px", maxWidth: "240px" }}>
+                                      <ItemField
+                                        value={item.item}
+                                        onChange={(e) => updateItemField(item.id, "item", e.target.value, 3)}
+                                      />
+                                    </TableCell>
+                                    <TableCell className="py-1.5 px-0 align-top" style={{ width: "5.5rem", minWidth: "5.5rem" }}>
+                                      <Select
+                                        value={item.status.toString()}
+                                        onValueChange={(value) => updateItemField(item.id, "status", parseInt(value), 3)}
+                                      >
+                                        <SelectTrigger className="h-7 text-[10px] border-0 px-1 w-14">
+                                          {achievementOption ? (
+                                            <span className={cn("text-xs px-1.5 py-0.5 rounded", achievementOption.color)}>
+                                              {achievementOption.label}
+                                            </span>
+                                          ) : (
+                                            <SelectValue />
+                                          )}
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {TARGET_ACHIEVEMENT_OPTIONS.filter((opt) => opt.value != null && opt.value.toString() !== "").map((opt) => (
+                                            <SelectItem key={opt.value} value={opt.value.toString()} className="text-xs">
+                                              <span className={cn("px-1.5 py-0.5 rounded", opt.color)}>{opt.label}</span>
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </TableCell>
+                                    <TableCell className="py-1.5 px-1 text-xs text-muted-foreground text-center relative align-top" style={{ width: "5rem", minWidth: "5rem" }}>
+                                      <Popover
+                                        open={targetCreatedDatePickerOpen[item.id] || false}
+                                        onOpenChange={(open) => setTargetCreatedDatePickerOpen((prev) => ({ ...prev, [item.id]: open }))}
+                                      >
+                                        <PopoverTrigger asChild>
+                                          <button type="button" className="w-full h-full hover:bg-muted/50 rounded px-1">
+                                            {targetCreatedDateParts ? (
+                                              <><span>{targetCreatedDateParts.line1}</span><br /><span>{targetCreatedDateParts.line2}</span></>
+                                            ) : ""}
+                                          </button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-auto p-3" align="start">
+                                          <DatePickerCalendar
+                                            selectedDate={item.created_at ? new Date(item.created_at) : null}
+                                            onSelect={(date) => {
+                                              if (date) {
+                                                const dateStr = date.toISOString().split("T")[0]
+                                                updateItemField(item.id, "created_at", dateStr, 3)
+                                              }
+                                              setTargetCreatedDatePickerOpen((prev) => ({ ...prev, [item.id]: false }))
+                                            }}
+                                          />
+                                        </PopoverContent>
+                                      </Popover>
+                                    </TableCell>
+                                    <TableCell className="py-1.5 px-1 align-top" style={{ minWidth: "320px" }}>
+                                      <MemoField
+                                        value={item.memo || ""}
+                                        onChange={(e) => updateMemo(item.id, e.target.value, 3)}
+                                        maxDisplayLines={10}
+                                      />
+                                    </TableCell>
+                                  </SortableRow>
+                                )
+                              })}
+                              {Array.from({ length: displayedTargetRows.emptyCount }).map((_, i) => (
+                                <tr key={`empty-target-${i}`} className="border-b border-slate-100">
+                                  <td colSpan={6} className="px-4 py-2 h-8" />
+                                </tr>
+                              ))}
+                            </tbody>
+                          </SortableContext>
+                        </table>
+                      </DndContext>
+                    </TableWithAddRow>
                   </div>
                 </div>
               </div>
@@ -1210,35 +1303,49 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
             </Select>
             
             {/* 期間 */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-7 text-xs">
-                  <CalendarIcon className="h-3 w-3 mr-1" />
-                  {memoStartDate ? formatDate(memoStartDate.toISOString()) : "開始日"}
+            <div className="flex items-center gap-0.5">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-7 text-xs">
+                    <CalendarIcon className="h-3 w-3 mr-1" />
+                    {memoStartDate ? formatDate(memoStartDate.toISOString()) : "開始日"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <DatePickerCalendar
+                    selectedDate={memoStartDate || null}
+                    onSelect={(date) => setMemoStartDate(date || undefined)}
+                  />
+                </PopoverContent>
+              </Popover>
+              {memoStartDate != null && (
+                <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setMemoStartDate(undefined)} aria-label="開始日を解除">
+                  <X className="h-3 w-3" />
                 </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <DatePickerCalendar
-                  selectedDate={memoStartDate || null}
-                  onSelect={(date) => setMemoStartDate(date || undefined)}
-                />
-              </PopoverContent>
-            </Popover>
+              )}
+            </div>
             <span className="text-xs text-muted-foreground">～</span>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-7 text-xs">
-                  <CalendarIcon className="h-3 w-3 mr-1" />
-                  {memoEndDate ? formatDate(memoEndDate.toISOString()) : "終了日"}
+            <div className="flex items-center gap-0.5">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-7 text-xs">
+                    <CalendarIcon className="h-3 w-3 mr-1" />
+                    {memoEndDate ? formatDate(memoEndDate.toISOString()) : "終了日"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <DatePickerCalendar
+                    selectedDate={memoEndDate || null}
+                    onSelect={(date) => setMemoEndDate(date || undefined)}
+                  />
+                </PopoverContent>
+              </Popover>
+              {memoEndDate != null && (
+                <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setMemoEndDate(undefined)} aria-label="終了日を解除">
+                  <X className="h-3 w-3" />
                 </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <DatePickerCalendar
-                  selectedDate={memoEndDate || null}
-                  onSelect={(date) => setMemoEndDate(date || undefined)}
-                />
-              </PopoverContent>
-            </Popover>
+              )}
+            </div>
             
             {/* fav */}
             <Select 
@@ -1256,6 +1363,22 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
                 <SelectItem value="all" className="text-xs">フィルターなし</SelectItem>
               </SelectContent>
             </Select>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground"
+              onClick={() => {
+                setMemoSubjectFilter(null)
+                setMemoStatusFilter(null)
+                setMemoStartDate(undefined)
+                setMemoEndDate(undefined)
+                setMemoFavoriteFilter("all")
+              }}
+            >
+              <Filter className="h-3 w-3 mr-1" />
+              フィルターをクリア
+            </Button>
           </div>
           
           {/* MEMOテーブル */}
@@ -1301,6 +1424,7 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
                     const statusOption = POINT_STATUS_OPTIONS.find((s) => s.value === item.status)
                     const selectedSubject = subjects.find(s => s.id === item.subject)
                     const memoCreatedDate = item.created_at ? formatDate(item.created_at) : ""
+                    const memoCreatedDateParts = formatDateTwoLines(item.created_at)
                     return (
                       <SortableRow
                         key={item.id}
@@ -1375,7 +1499,9 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
                           >
                             <PopoverTrigger asChild>
                               <button className="w-full h-full hover:bg-muted/50 rounded px-1">
-                                {memoCreatedDate}
+                                {memoCreatedDateParts ? (
+                                  <><span>{memoCreatedDateParts.line1}</span><br /><span>{memoCreatedDateParts.line2}</span></>
+                                ) : ""}
                               </button>
                             </PopoverTrigger>
                             <PopoverContent className="w-auto p-3" align="start">
@@ -1529,35 +1655,49 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
             </Select>
             
             {/* 期間 */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-7 text-xs">
-                  <CalendarIcon className="h-3 w-3 mr-1" />
-                  {topicStartDate ? formatDate(topicStartDate.toISOString()) : "開始日"}
+            <div className="flex items-center gap-0.5">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-7 text-xs">
+                    <CalendarIcon className="h-3 w-3 mr-1" />
+                    {topicStartDate ? formatDate(topicStartDate.toISOString()) : "開始日"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <DatePickerCalendar
+                    selectedDate={topicStartDate || null}
+                    onSelect={(date) => setTopicStartDate(date || undefined)}
+                  />
+                </PopoverContent>
+              </Popover>
+              {topicStartDate != null && (
+                <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setTopicStartDate(undefined)} aria-label="開始日を解除">
+                  <X className="h-3 w-3" />
                 </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <DatePickerCalendar
-                  selectedDate={topicStartDate || null}
-                  onSelect={(date) => setTopicStartDate(date || undefined)}
-                />
-              </PopoverContent>
-            </Popover>
+              )}
+            </div>
             <span className="text-xs text-muted-foreground">～</span>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="h-7 text-xs">
-                  <CalendarIcon className="h-3 w-3 mr-1" />
-                  {topicEndDate ? formatDate(topicEndDate.toISOString()) : "終了日"}
+            <div className="flex items-center gap-0.5">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-7 text-xs">
+                    <CalendarIcon className="h-3 w-3 mr-1" />
+                    {topicEndDate ? formatDate(topicEndDate.toISOString()) : "終了日"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <DatePickerCalendar
+                    selectedDate={topicEndDate || null}
+                    onSelect={(date) => setTopicEndDate(date || undefined)}
+                  />
+                </PopoverContent>
+              </Popover>
+              {topicEndDate != null && (
+                <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setTopicEndDate(undefined)} aria-label="終了日を解除">
+                  <X className="h-3 w-3" />
                 </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <DatePickerCalendar
-                  selectedDate={topicEndDate || null}
-                  onSelect={(date) => setTopicEndDate(date || undefined)}
-                />
-              </PopoverContent>
-            </Popover>
+              )}
+            </div>
             
             {/* fav */}
             <Select 
@@ -1575,6 +1715,22 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
                 <SelectItem value="all" className="text-xs">フィルターなし</SelectItem>
               </SelectContent>
             </Select>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground"
+              onClick={() => {
+                setTopicSubjectFilter(null)
+                setTopicStatusFilter(null)
+                setTopicStartDate(undefined)
+                setTopicEndDate(undefined)
+                setTopicFavoriteFilter("all")
+              }}
+            >
+              <Filter className="h-3 w-3 mr-1" />
+              フィルターをクリア
+            </Button>
           </div>
           
           {/* Topicsテーブル */}
@@ -1621,6 +1777,7 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
                     const statusOption = TASK_STATUS_OPTIONS.find((s) => s.value === item.status)
                     const selectedSubject = subjects.find(s => s.id === item.subject)
                     const createdDate = item.created_at ? formatDate(item.created_at) : ""
+                    const createdDateParts = formatDateTwoLines(item.created_at)
                     return (
                       <SortableRow 
                         key={item.id} 
@@ -1674,7 +1831,9 @@ export function StudyManagementPage({ variant = "full" }: { variant?: "full" | "
                           >
                             <PopoverTrigger asChild>
                               <button className="w-full h-full hover:bg-muted/50 rounded px-1">
-                                {createdDate}
+                                {createdDateParts ? (
+                                  <><span>{createdDateParts.line1}</span><br /><span>{createdDateParts.line2}</span></>
+                                ) : ""}
                               </button>
                             </PopoverTrigger>
                             <PopoverContent className="w-auto p-3" align="start">
@@ -2392,35 +2551,49 @@ function ChatHistorySection() {
           </Select>
           
           {/* 期間 */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="h-7 text-xs">
-                <CalendarIcon className="h-3 w-3 mr-1" />
-                {startDate ? formatDate(startDate.toISOString()) : "開始日"}
+          <div className="flex items-center gap-0.5">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-7 text-xs">
+                  <CalendarIcon className="h-3 w-3 mr-1" />
+                  {startDate ? formatDate(startDate.toISOString()) : "開始日"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <DatePickerCalendar
+                  selectedDate={startDate || null}
+                  onSelect={(date) => setStartDate(date || undefined)}
+                />
+              </PopoverContent>
+            </Popover>
+            {startDate != null && (
+              <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setStartDate(undefined)} aria-label="開始日を解除">
+                <X className="h-3 w-3" />
               </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0">
-              <DatePickerCalendar
-                selectedDate={startDate || null}
-                onSelect={(date) => setStartDate(date || undefined)}
-              />
-            </PopoverContent>
-          </Popover>
+            )}
+          </div>
           <span className="text-xs text-muted-foreground">～</span>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="h-7 text-xs">
-                <CalendarIcon className="h-3 w-3 mr-1" />
-                {endDate ? formatDate(endDate.toISOString()) : "終了日"}
+          <div className="flex items-center gap-0.5">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-7 text-xs">
+                  <CalendarIcon className="h-3 w-3 mr-1" />
+                  {endDate ? formatDate(endDate.toISOString()) : "終了日"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0">
+                <DatePickerCalendar
+                  selectedDate={endDate || null}
+                  onSelect={(date) => setEndDate(date || undefined)}
+                />
+              </PopoverContent>
+            </Popover>
+            {endDate != null && (
+              <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setEndDate(undefined)} aria-label="終了日を解除">
+                <X className="h-3 w-3" />
               </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0">
-              <DatePickerCalendar
-                selectedDate={endDate || null}
-                onSelect={(date) => setEndDate(date || undefined)}
-              />
-            </PopoverContent>
-          </Popover>
+            )}
+          </div>
           
           {/* fav */}
           <Select 
@@ -2438,6 +2611,21 @@ function ChatHistorySection() {
               <SelectItem value="all" className="text-xs">フィルターなし</SelectItem>
             </SelectContent>
           </Select>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-muted-foreground"
+            onClick={() => {
+              setTypeFilter(null)
+              setStartDate(undefined)
+              setEndDate(undefined)
+              setFavoriteFilter("all")
+            }}
+          >
+            <Filter className="h-3 w-3 mr-1" />
+            フィルターをクリア
+          </Button>
         </div>
         
         {/* テーブル */}

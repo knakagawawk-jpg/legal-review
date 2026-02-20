@@ -41,5 +41,13 @@ export const TASK_STATUS_OPTIONS = [
   { value: 4, label: "\u5f8c\u3067", color: "bg-emerald-50 text-emerald-600" },
 ] as const
 
+/** Target \u9054\u6210\u7387: 1=25%, 2=50%, 3=100%, 4=0% (\u30c7\u30d5\u30a9\u30eb\u30c84) */
+export const TARGET_ACHIEVEMENT_OPTIONS = [
+  { value: 1, label: "25%", color: "bg-slate-100 text-slate-700" },
+  { value: 2, label: "50%", color: "bg-amber-100 text-amber-700" },
+  { value: 3, label: "100%", color: "bg-blue-100 text-blue-700" },
+  { value: 4, label: "0%", color: "bg-emerald-50 text-emerald-600" },
+] as const
+
 /** Alias: Task/Left use TASK_STATUS_OPTIONS */
 export const STATUS_OPTIONS = TASK_STATUS_OPTIONS

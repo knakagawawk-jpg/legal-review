@@ -120,18 +120,20 @@ export function TableWithAddRow({
   return (
     <div className={className}>
       <div className="flex flex-col min-h-0">
-        {/* 外側：縦スクロール（通常のスクロールバー）、ref を渡す */}
+        {/* 外側：縦スクロール。tabIndex=-1 でフォーカスは子の入力要素へ */}
         <div
           ref={outerScrollRef}
           onScroll={handleOuterScroll}
           className="overflow-y-auto overflow-x-hidden flex-1 min-h-0"
           style={{ maxHeight: maxHeight ?? undefined }}
+          tabIndex={-1}
         >
-          {/* 内側：横スクロールのみ、横スクロールバー非表示 */}
+          {/* 内側：横スクロールのみ、横スクロールバー非表示。tabIndex=-1 でフォーカスは子の入力要素へ */}
           <div
             ref={horizontalScrollRef}
             onScroll={handleHorizontalScroll}
             className="table-scroll-area-hide-hbar"
+            tabIndex={-1}
             style={{
               overflowX: needsHorizontalScrollbar ? "scroll" : "hidden",
               overflowY: "visible",
