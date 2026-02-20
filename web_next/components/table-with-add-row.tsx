@@ -12,7 +12,7 @@ interface TableWithAddRowProps {
   /** スクロール時のコールバック（親で loadMore 等に使用） */
   onScroll?: (e: React.UIEvent<HTMLDivElement>) => void
   /** 親から ref を渡す場合（縦スクロール要素を指す） */
-  scrollRef?: React.RefObject<HTMLDivElement | null>
+  scrollRef?: React.RefObject<HTMLDivElement>
   className?: string
 }
 
