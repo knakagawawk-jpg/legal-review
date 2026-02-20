@@ -495,6 +495,13 @@ def _build_review_chat_user_prompt_text(question: str) -> str:
     return template.replace("{QUESTION}", (question or "").strip())
 
 
+def _build_free_chat_user_prompt_text(question: str) -> str:
+    template = _load_prompt_text("free_chat_user")
+    if not template:
+        template = "ユーザーの質問:\n{QUESTION}"
+    return template.replace("{QUESTION}", (question or "").strip())
+
+
 def _get_review_chat_context_by_review_id(
     *,
     review_id: int,
@@ -3352,16 +3359,35 @@ async def create_message(
                 review.has_chat = True
 
         else:
-            # free_chat（従来）
+            # free_chat（review_chat と同様: コンテキスト → 要約＋直前ラリー＋以降 → 今回のユーザー発話）
             from pathlib import Path
             prompt_file = Path(__file__).parent.parent / "prompts" / "main" / "free_chat.txt"
             system_prompt = ""
             if prompt_file.exists():
                 system_prompt = prompt_file.read_text(encoding="utf-8").strip()
+            current_turn = (len(chat_history) // 2) + 1
+            # コンテキスト（フリーチャットは参照情報なし）
+            context_text = "【参照情報】\n（このスレッドに参照情報はありません。会話履歴とユーザーの発話に基づいて回答してください。）"
+            messages_for_llm = [{"role": "user", "content": context_text}]
+            summary_up_to = getattr(thread, "summary_up_to_turn", None) or 0
+            conversation_summary = getattr(thread, "conversation_summary", None) or ""
+            if conversation_summary.strip():
+                messages_for_llm.append({"role": "user", "content": "【これまでの会話の要約】\n" + conversation_summary.strip()})
+                last_exchange_start = 2 * (summary_up_to - 1)
+                last_exchange_end = 2 * summary_up_to
+                if last_exchange_start >= 0 and last_exchange_end <= len(chat_history):
+                    messages_for_llm.extend(chat_history[last_exchange_start:last_exchange_end])
+                if last_exchange_end < len(chat_history):
+                    messages_for_llm.extend(chat_history[last_exchange_end:])
+            else:
+                if chat_history:
+                    messages_for_llm.extend(chat_history)
+            user_prompt = _build_free_chat_user_prompt_text(message_data.content)
+            messages_for_llm.append({"role": "user", "content": user_prompt})
             from .llm_service import free_chat as llm_free_chat
             assistant_content, model_name, input_tokens, output_tokens, request_id, latency_ms = llm_free_chat(
-                question=message_data.content,
-                chat_history=chat_history if chat_history else None
+                system_prompt=system_prompt,
+                messages=messages_for_llm,
             )
         
         # 4. アシスタントメッセージを保存
@@ -3436,8 +3462,8 @@ async def create_message(
             )
             db.add(llm_row)
 
-        # 7. 講評チャットで 5 の倍数ターン完了時は会話セグメントを要約して保存
-        if thread.type == "review_chat" and current_turn is not None and current_turn % 5 == 0:
+        # 7. 講評チャット／フリーチャットで 5 の倍数ターン完了時は会話セグメントを要約して保存
+        if thread.type in ("review_chat", "free_chat") and current_turn is not None and current_turn % 5 == 0:
             summary_up_to = getattr(thread, "summary_up_to_turn", None) or 0
             seg_start = 2 * summary_up_to
             seg_end = 2 * (current_turn - 1)
@@ -3448,7 +3474,10 @@ async def create_message(
             segment_list.append({"role": "assistant", "content": assistant_content or ""})
             try:
                 from .llm_service import summarize_conversation_segment
-                seg_summary, sum_model, sum_in, sum_out, sum_req_id, sum_latency = summarize_conversation_segment(segment_list)
+                prompt_name = "free_chat_summarize" if thread.type == "free_chat" else "review_chat_summarize"
+                seg_summary, sum_model, sum_in, sum_out, sum_req_id, sum_latency = summarize_conversation_segment(
+                    segment_list, prompt_name=prompt_name
+                )
                 if seg_summary:
                     if thread.conversation_summary and thread.conversation_summary.strip():
                         thread.conversation_summary = (thread.conversation_summary or "").rstrip() + "\n\n【" + str(summary_up_to + 1) + "～" + str(current_turn) + "ターンの要約】\n" + seg_summary
@@ -3456,13 +3485,14 @@ async def create_message(
                         thread.conversation_summary = "【1～" + str(current_turn) + "ターンの要約】\n" + seg_summary
                     thread.summary_up_to_turn = current_turn
                     if sum_in is not None or sum_out is not None or sum_req_id:
+                        sum_prompt_ver = "free_chat_summarize_v1" if thread.type == "free_chat" else "review_chat_summarize_v1"
                         sum_llm_row = LlmRequest(
                             **build_llm_request_row(
                                 user_id=current_user.id,
-                                feature_type="review_chat",
+                                feature_type=thread.type,
                                 thread_id=thread_id,
                                 model=sum_model,
-                                prompt_version="review_chat_summarize_v1",
+                                prompt_version=sum_prompt_ver,
                                 input_tokens=sum_in,
                                 output_tokens=sum_out,
                                 request_id=sum_req_id,
@@ -3471,7 +3501,7 @@ async def create_message(
                         )
                         db.add(sum_llm_row)
             except Exception as sum_err:
-                logger.warning(f"講評チャット要約に失敗: {sum_err}")
+                logger.warning(f"チャット要約に失敗 ({thread.type}): {sum_err}")
 
         db.commit()
         db.refresh(assistant_message)

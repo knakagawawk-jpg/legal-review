@@ -973,23 +973,20 @@ def chat_about_review(
 
 
 def free_chat(
-    question: str,
-    chat_history: Optional[List[Dict[str, str]]] = None
+    system_prompt: str,
+    messages: List[Dict[str, str]],
+    max_tokens: int = 4096,
+    temperature: float = 0.7,
 ) -> tuple[str, str, Optional[int], Optional[int], Optional[str], Optional[int]]:
     """
-    フリーチャット（文脈に縛られない汎用的なチャット）
-    
-    Args:
-        question: ユーザーの質問
-        chat_history: チャット履歴（オプション）
-    
+    フリーチャット用のLLM呼び出し（review_chat と同様の構成）。
+    - messages は Anthropic messages 形式の配列（role=user/assistant, content）
+    - system_prompt は main で free_chat.txt を読んで渡す
+
     Returns:
-        LLMからの回答
+        (answer_text, model_name, input_tokens, output_tokens, request_id, latency_ms)
     """
-    # LLM設定を取得
     llm_config = get_llm_config()
-    
-    # APIキーが設定されていない場合はダミーを返す
     if not llm_config.is_available():
         return (
             "申し訳ございませんが、現在LLM機能が利用できません。APIキーが設定されていないため、チャット機能を使用できません。",
@@ -999,53 +996,25 @@ def free_chat(
             None,
             None,
         )
-    
     try:
         import time
         client = llm_config.get_client()
         model_name = llm_config.get_model(USE_CASE_FREE_CHAT)
-        
-        # システムプロンプト（汎用的なアシスタントとして動作）
-        system_prompt = """あなたは親切で知識豊富なアシスタントです。ユーザーからの質問に対して、正確で分かりやすい回答を提供してください。
-法律に関する質問については、可能な範囲で法的な観点から説明してください。
-一般的な質問についても、丁寧に回答してください。"""
-        
-        # メッセージ履歴を構築
-        messages = []
-        
-        # チャット履歴があれば追加
-        if chat_history:
-            messages.extend(chat_history)
-        
-        # 現在の質問を追加
-        messages.append({
-            "role": "user",
-            "content": question
-        })
-        
-        # Claude APIにリクエスト
         start_time = time.time()
         message = client.messages.create(
             model=model_name,
-            max_tokens=4096,
-            temperature=0.7,
-            system=system_prompt,
-            messages=messages
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system=system_prompt or "",
+            messages=messages,
         )
         latency_ms = int((time.time() - start_time) * 1000)
-        
-        # レスポンスを取得
-        answer = message.content[0].text
-        input_tokens = None
-        output_tokens = None
-        if hasattr(message, "usage") and message.usage:
-            input_tokens = getattr(message.usage, "input_tokens", None)
-            output_tokens = getattr(message.usage, "output_tokens", None)
+        answer = message.content[0].text if message.content and len(message.content) > 0 else ""
+        input_tokens = getattr(message.usage, "input_tokens", None) if hasattr(message, "usage") and message.usage else None
+        output_tokens = getattr(message.usage, "output_tokens", None) if hasattr(message, "usage") and message.usage else None
         request_id = getattr(message, "id", None)
         return answer, model_name, input_tokens, output_tokens, request_id, latency_ms
-        
     except Exception as e:
-        # エラーが発生した場合
         print(f"フリーチャット生成エラー: {e}")
         model_name = llm_config.get_model(USE_CASE_FREE_CHAT)
         return (
@@ -1247,9 +1216,11 @@ def get_related_review_json_items(
 def summarize_conversation_segment(
     messages: List[Dict[str, str]],
     max_tokens: int = 2048,
+    prompt_name: str = "review_chat_summarize",
 ) -> tuple[str, str, Optional[int], Optional[int], Optional[str], Optional[int]]:
     """
-    講評チャットの会話セグメント（user/assistant のリスト）を要約する。
+    会話セグメント（user/assistant のリスト）を要約する。
+    prompt_name: 使用するプロンプト（review_chat_summarize / free_chat_summarize など）
     Returns:
         (summary_text, model_name, input_tokens, output_tokens, request_id, latency_ms)
     """
@@ -1266,7 +1237,7 @@ def summarize_conversation_segment(
         lines.append(f"{label}:\n{content}")
     conversation_text = "\n\n".join(lines)
     try:
-        template = _load_prompt_template("review_chat_summarize")
+        template = _load_prompt_template(prompt_name)
     except FileNotFoundError:
         template = (
             "以下は講評チャットの会話の一部です。ユーザーの疑問・観点、行った回答の要点、残っている論点を整理して要約してください。\n\n"
