@@ -374,13 +374,15 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
     if (enableMultiThreadChat && reviewId && (leftTab === "chat" || unifiedTab === "chat")) loadThreadList()
   }, [enableMultiThreadChat, reviewId, leftTab, unifiedTab, loadThreadList])
 
-  /** 左右どちらかがチャットタブのときのみ、テキストを「」でくくって入力欄に挿入（カーソル位置 or 末尾） */
+  /** 左右どちらかがチャットタブのときのみ、テキストを「」でくくって入力欄に挿入（カーソル位置 or 末尾）。講評由来のときは [講評引用] を付けてLLMに認識させる */
   const isChatTabVisible = leftTab === "chat" || rightTab === "chat" || unifiedTab === "chat"
   /** 未送信時のみ表示する「答案・講評をクリックで入力欄に挿入」の説明（第一メッセージ送信時に消す） */
   const showCopyExplanation =
     chatMessages.length === 1 && chatMessages[0].role === "assistant" && chatMessages[0].content === DEFAULT_CHAT_GREETING
-  const handleInsertToChat = useCallback((text: string) => {
-    if (isChatTabVisible) chatInputRef.current?.insertText(`「${text}」`)
+  const handleInsertToChat = useCallback((text: string, fromReview?: boolean) => {
+    if (!isChatTabVisible) return
+    const wrapped = fromReview ? `[講評引用] 「${text}」` : `「${text}」`
+    chatInputRef.current?.insertText(wrapped)
   }, [isChatTabVisible])
 
   // ChatInputをメモ化して再マウントを防ぐ（早期リターンの前に配置）
@@ -952,7 +954,7 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
                                 description={strength.description}
                                 paragraphs={strength.paragraph_numbers}
                                 onParagraphClick={handleParagraphClick}
-                                onCopyToChat={handleInsertToChat}
+                                onCopyToChat={(t) => handleInsertToChat(t, true)}
                                 isChatTabVisible={isChatTabVisible}
                               />
                             </div>
@@ -989,7 +991,7 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
                                 paragraphs={weakness.paragraph_numbers}
                                 suggestion={weakness.suggestion}
                                 onParagraphClick={handleParagraphClick}
-                                onCopyToChat={handleInsertToChat}
+                                onCopyToChat={(t) => handleInsertToChat(t, true)}
                                 isChatTabVisible={isChatTabVisible}
                               />
                             </div>
@@ -1058,9 +1060,9 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
                                   tabIndex={0}
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    handleInsertToChat((point.what_is_good ?? "") + (pNum != null ? `（§${pNum}）` : ""))
+                                    handleInsertToChat((point.what_is_good ?? "") + (pNum != null ? `（§${pNum}）` : ""), true)
                                   }}
-                                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); handleInsertToChat((point.what_is_good ?? "") + (pNum != null ? `（§${pNum}）` : "")) } }}
+                                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); handleInsertToChat((point.what_is_good ?? "") + (pNum != null ? `（§${pNum}）` : ""), true) } }}
                                 >
                                   <div className="w-1 rounded-full bg-success shrink-0" />
                                   <div>
@@ -1076,9 +1078,9 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
                                   tabIndex={0}
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    handleInsertToChat((point.what_is_lacking ?? "") + (pNum != null ? `（§${pNum}）` : ""))
+                                    handleInsertToChat((point.what_is_lacking ?? "") + (pNum != null ? `（§${pNum}）` : ""), true)
                                   }}
-                                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); handleInsertToChat((point.what_is_lacking ?? "") + (pNum != null ? `（§${pNum}）` : "")) } }}
+                                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); handleInsertToChat((point.what_is_lacking ?? "") + (pNum != null ? `（§${pNum}）` : ""), true) } }}
                                 >
                                   <div className="w-1 rounded-full bg-error shrink-0" />
                                   <div>
@@ -1092,9 +1094,9 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
                                   tabIndex={0}
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    handleInsertToChat((point.why_important ?? "") + (pNum != null ? `（§${pNum}）` : ""))
+                                    handleInsertToChat((point.why_important ?? "") + (pNum != null ? `（§${pNum}）` : ""), true)
                                   }}
-                                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); handleInsertToChat((point.why_important ?? "") + (pNum != null ? `（§${pNum}）` : "")) } }}
+                                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); handleInsertToChat((point.why_important ?? "") + (pNum != null ? `（§${pNum}）` : ""), true) } }}
                                 >
                                   <span className="text-xs font-semibold text-primary uppercase tracking-wider">改善点</span>
                                   <p className="mt-1 text-xs text-foreground/70 italic leading-relaxed">{point.why_important}</p>
@@ -1126,13 +1128,13 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
                               id={futureId}
                               role={firstPara != null ? "button" : undefined}
                               tabIndex={firstPara != null ? 0 : undefined}
-                              onClick={firstPara != null ? () => { if (isChatTabVisible) handleInsertToChat((content ?? "") + (validParagraphNumbers.length > 0 ? `（§${validParagraphNumbers.join("，§")}）` : "")); else handleParagraphClick(firstPara, validParagraphNumbers) } : undefined}
+                              onClick={firstPara != null ? () => { if (isChatTabVisible) handleInsertToChat((content ?? "") + (validParagraphNumbers.length > 0 ? `（§${validParagraphNumbers.join("，§")}）` : ""), true); else handleParagraphClick(firstPara, validParagraphNumbers) } : undefined}
                               onKeyDown={
                                 firstPara != null
                                   ? (e) => {
                                       if (e.key === "Enter" || e.key === " ") {
                                         e.preventDefault()
-                                        if (isChatTabVisible) handleInsertToChat((content ?? "") + (validParagraphNumbers.length > 0 ? `（§${validParagraphNumbers.join("，§")}）` : ""))
+                                        if (isChatTabVisible) handleInsertToChat((content ?? "") + (validParagraphNumbers.length > 0 ? `（§${validParagraphNumbers.join("，§")}）` : ""), true)
                                         else handleParagraphClick(firstPara, validParagraphNumbers)
                                       }
                                     }
@@ -1383,7 +1385,7 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
                                 description={strength.description}
                                 paragraphs={strength.paragraph_numbers}
                                 onParagraphClick={handleParagraphClick}
-                                onCopyToChat={handleInsertToChat}
+                                onCopyToChat={(t) => handleInsertToChat(t, true)}
                                 isChatTabVisible={isChatTabVisible}
                               />
                             </div>
@@ -1421,7 +1423,7 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
                                 paragraphs={weakness.paragraph_numbers}
                                 suggestion={weakness.suggestion}
                                 onParagraphClick={handleParagraphClick}
-                                onCopyToChat={handleInsertToChat}
+                                onCopyToChat={(t) => handleInsertToChat(t, true)}
                                 isChatTabVisible={isChatTabVisible}
                               />
                             </div>
@@ -1491,9 +1493,9 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
                                   tabIndex={0}
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    handleInsertToChat((point.what_is_good ?? "") + (pNum != null ? `（§${pNum}）` : ""))
+                                    handleInsertToChat((point.what_is_good ?? "") + (pNum != null ? `（§${pNum}）` : ""), true)
                                   }}
-                                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); handleInsertToChat((point.what_is_good ?? "") + (pNum != null ? `（§${pNum}）` : "")) } }}
+                                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); handleInsertToChat((point.what_is_good ?? "") + (pNum != null ? `（§${pNum}）` : ""), true) } }}
                                 >
                                   <div className="w-1 rounded-full bg-success shrink-0" />
                                   <div>
@@ -1509,9 +1511,9 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
                                   tabIndex={0}
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    handleInsertToChat((point.what_is_lacking ?? "") + (pNum != null ? `（§${pNum}）` : ""))
+                                    handleInsertToChat((point.what_is_lacking ?? "") + (pNum != null ? `（§${pNum}）` : ""), true)
                                   }}
-                                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); handleInsertToChat((point.what_is_lacking ?? "") + (pNum != null ? `（§${pNum}）` : "")) } }}
+                                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); handleInsertToChat((point.what_is_lacking ?? "") + (pNum != null ? `（§${pNum}）` : ""), true) } }}
                                 >
                                   <div className="w-1 rounded-full bg-error shrink-0" />
                                   <div>
@@ -1525,9 +1527,9 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
                                   tabIndex={0}
                                   onClick={(e) => {
                                     e.stopPropagation()
-                                    handleInsertToChat((point.why_important ?? "") + (pNum != null ? `（§${pNum}）` : ""))
+                                    handleInsertToChat((point.why_important ?? "") + (pNum != null ? `（§${pNum}）` : ""), true)
                                   }}
-                                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); handleInsertToChat((point.why_important ?? "") + (pNum != null ? `（§${pNum}）` : "")) } }}
+                                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); handleInsertToChat((point.why_important ?? "") + (pNum != null ? `（§${pNum}）` : ""), true) } }}
                                 >
                                   <span className="text-xs font-semibold text-primary uppercase tracking-wider">改善点</span>
                                   <p className="mt-1 text-xs text-foreground/70 italic leading-relaxed">{point.why_important}</p>
@@ -1560,13 +1562,13 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
                               id={futureId}
                               role={firstPara != null ? "button" : undefined}
                               tabIndex={firstPara != null ? 0 : undefined}
-                              onClick={firstPara != null ? () => { if (isChatTabVisible) handleInsertToChat((content ?? "") + (validParagraphNumbers.length > 0 ? `（§${validParagraphNumbers.join("，§")}）` : "")); else handleParagraphClick(firstPara, validParagraphNumbers) } : undefined}
+                              onClick={firstPara != null ? () => { if (isChatTabVisible) handleInsertToChat((content ?? "") + (validParagraphNumbers.length > 0 ? `（§${validParagraphNumbers.join("，§")}）` : ""), true); else handleParagraphClick(firstPara, validParagraphNumbers) } : undefined}
                               onKeyDown={
                                 firstPara != null
                                   ? (e) => {
                                       if (e.key === "Enter" || e.key === " ") {
                                         e.preventDefault()
-                                        if (isChatTabVisible) handleInsertToChat((content ?? "") + (validParagraphNumbers.length > 0 ? `（§${validParagraphNumbers.join("，§")}）` : ""))
+                                        if (isChatTabVisible) handleInsertToChat((content ?? "") + (validParagraphNumbers.length > 0 ? `（§${validParagraphNumbers.join("，§")}）` : ""), true)
                                         else handleParagraphClick(firstPara, validParagraphNumbers)
                                       }
                                     }
@@ -1783,7 +1785,7 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
                                   description={strength.description}
                                   paragraphs={strength.paragraph_numbers}
                                   onParagraphClick={handleParagraphClick}
-                                  onCopyToChat={handleInsertToChat}
+                                  onCopyToChat={(t) => handleInsertToChat(t, true)}
                                   isChatTabVisible={isChatTabVisible}
                                 />
                               </div>
@@ -1820,7 +1822,7 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
                                   paragraphs={weakness.paragraph_numbers}
                                   suggestion={weakness.suggestion}
                                   onParagraphClick={handleParagraphClick}
-                                  onCopyToChat={handleInsertToChat}
+                                  onCopyToChat={(t) => handleInsertToChat(t, true)}
                                   isChatTabVisible={isChatTabVisible}
                                 />
                               </div>
@@ -1889,9 +1891,9 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
                                     tabIndex={0}
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      handleInsertToChat((point.what_is_good ?? "") + (pNum != null ? `（§${pNum}）` : ""))
+                                      handleInsertToChat((point.what_is_good ?? "") + (pNum != null ? `（§${pNum}）` : ""), true)
                                     }}
-                                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); handleInsertToChat((point.what_is_good ?? "") + (pNum != null ? `（§${pNum}）` : "")) } }}
+                                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); handleInsertToChat((point.what_is_good ?? "") + (pNum != null ? `（§${pNum}）` : ""), true) } }}
                                   >
                                     <div className="w-1 rounded-full bg-success shrink-0" />
                                     <div>
@@ -1905,9 +1907,9 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
                                     tabIndex={0}
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      handleInsertToChat((point.what_is_lacking ?? "") + (pNum != null ? `（§${pNum}）` : ""))
+                                      handleInsertToChat((point.what_is_lacking ?? "") + (pNum != null ? `（§${pNum}）` : ""), true)
                                     }}
-                                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); handleInsertToChat((point.what_is_lacking ?? "") + (pNum != null ? `（§${pNum}）` : "")) } }}
+                                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); handleInsertToChat((point.what_is_lacking ?? "") + (pNum != null ? `（§${pNum}）` : ""), true) } }}
                                   >
                                     <div className="w-1 rounded-full bg-error shrink-0" />
                                     <div>
@@ -1921,9 +1923,9 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
                                     tabIndex={0}
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      handleInsertToChat((point.why_important ?? "") + (pNum != null ? `（§${pNum}）` : ""))
+                                      handleInsertToChat((point.why_important ?? "") + (pNum != null ? `（§${pNum}）` : ""), true)
                                     }}
-                                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); handleInsertToChat((point.why_important ?? "") + (pNum != null ? `（§${pNum}）` : "")) } }}
+                                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); handleInsertToChat((point.why_important ?? "") + (pNum != null ? `（§${pNum}）` : ""), true) } }}
                                   >
                                     <span className="text-xs font-semibold text-primary uppercase tracking-wider">改善点</span>
                                     <p className="mt-1 text-xs text-foreground/70 italic leading-relaxed">{point.why_important}</p>
@@ -1950,13 +1952,13 @@ export function ReviewResultView({ reviewId, threadIdFromUrl = null, databaseUrl
                                 key={index}
                                 role={firstPara != null ? "button" : undefined}
                                 tabIndex={firstPara != null ? 0 : undefined}
-                                onClick={firstPara != null ? () => { if (isChatTabVisible) handleInsertToChat((content ?? "") + (validParagraphNumbers.length > 0 ? `（§${validParagraphNumbers.join("，§")}）` : "")); else handleParagraphClick(firstPara, validParagraphNumbers) } : undefined}
+                                onClick={firstPara != null ? () => { if (isChatTabVisible) handleInsertToChat((content ?? "") + (validParagraphNumbers.length > 0 ? `（§${validParagraphNumbers.join("，§")}）` : ""), true); else handleParagraphClick(firstPara, validParagraphNumbers) } : undefined}
                                 onKeyDown={
                                   firstPara != null
                                     ? (e) => {
                                         if (e.key === "Enter" || e.key === " ") {
                                           e.preventDefault()
-                                          if (isChatTabVisible) handleInsertToChat((content ?? "") + (validParagraphNumbers.length > 0 ? `（§${validParagraphNumbers.join("，§")}）` : ""))
+                                          if (isChatTabVisible) handleInsertToChat((content ?? "") + (validParagraphNumbers.length > 0 ? `（§${validParagraphNumbers.join("，§")}）` : ""), true)
                                           else handleParagraphClick(firstPara, validParagraphNumbers)
                                         }
                                       }
