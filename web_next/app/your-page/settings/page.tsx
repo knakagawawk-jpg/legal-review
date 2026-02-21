@@ -378,35 +378,53 @@ function SettingsPage() {
                     <CardDescription>
                       Your Plan: {planLoading ? "Loading..." : getPlanLabel()}
                     </CardDescription>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-xs text-slate-500">
+                      <Link href="/service-details" className="text-indigo-600 hover:underline inline-flex items-center gap-1">
+                        &nbsp;&nbsp;サービス詳細
+                        <ExternalLink className="h-3 w-3" />
+                      </Link>
+                      <Link href="/commercial-disclosure" className="text-indigo-600 hover:underline inline-flex items-center gap-1">
+                        &nbsp;&nbsp;商取引に関する開示
+                        <ExternalLink className="h-3 w-3" />
+                      </Link>
+                    </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        onClick={() => startSubscriptionCheckout("basic_plan")}
-                        disabled={checkoutLoading !== null}
-                      >
-                        {checkoutLoading === "basic" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Basic Plan (3,980円 税抜き)
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() => startSubscriptionCheckout("high_plan")}
-                        disabled={checkoutLoading !== null}
-                      >
-                        {checkoutLoading === "high" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        High Plan (7,200円 税抜き)
-                      </Button>
-                      {fmDmEligible && (
+                    <div className="flex flex-wrap gap-4">
+                      <div className="flex flex-col gap-1">
                         <Button
                           type="button"
-                          variant="outline"
-                          onClick={() => startSubscriptionCheckout("first_month_fm_dm")}
+                          onClick={() => startSubscriptionCheckout("basic_plan")}
                           disabled={checkoutLoading !== null}
                         >
-                          Basic Plan (for 1st Month): <span className="line-through mx-1">3,980円</span> 1,000円
+                          {checkoutLoading === "basic" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                          Basic Plan 3,980円（4,378円 税込み）
                         </Button>
+                        <p className="text-xs text-slate-500">{"  "}AI レビューが8回可能</p>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => startSubscriptionCheckout("high_plan")}
+                          disabled={checkoutLoading !== null}
+                        >
+                          {checkoutLoading === "high" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                          High Plan 7,200円（7,920円 税込み）
+                        </Button>
+                        <p className="text-xs text-slate-500">{"  "}AI レビューが20回可能</p>
+                      </div>
+                      {fmDmEligible && (
+                        <div className="flex flex-col gap-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => startSubscriptionCheckout("first_month_fm_dm")}
+                            disabled={checkoutLoading !== null}
+                          >
+                            Basic Plan for 1st Month: <span className="line-through mx-1">3,980円（4,378円 税込み）</span> 1,000円（1,100円 税込み）
+                          </Button>
+                        </div>
                       )}
                     </div>
 
@@ -418,7 +436,7 @@ function SettingsPage() {
                           disabled={checkoutLoading !== null || !canBuyTicket}
                         >
                           {checkoutLoading === "ticket" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                          追加チケット購入（900円 税抜き / +レビュー2回）
+                          追加チケット購入 900円（990円 税込み）/ +レビュー2回
                         </Button>
                       </div>
                       {!canBuyTicket && (

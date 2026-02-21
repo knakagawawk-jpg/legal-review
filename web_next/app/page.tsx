@@ -137,6 +137,14 @@ export default function HomePage() {
           <br />
           法的なアドバイスを行うサービスではありません。
         </p>
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 mt-3 text-xs">
+          <Link href="/service-details" className="text-slate-400 hover:text-slate-300 underline underline-offset-2">
+            サービス詳細
+          </Link>
+          <Link href="/commercial-disclosure" className="text-slate-400 hover:text-slate-300 underline underline-offset-2">
+            商取引に関する開示
+          </Link>
+        </div>
       </div>
     </div>
   )
